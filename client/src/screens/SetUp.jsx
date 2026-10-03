@@ -5,7 +5,7 @@ import { randomName } from "../playerName";
 import { AvatarArt, Icon } from "../components/Icons";
 import { useEnterRoom } from "../hooks/useEnterRoom";
 import OptionRow from "../components/OptionRow";
-import { DIFFICULTY_CHOICES, VISIBILITY_CHOICES } from "../roomOptions";
+import { DIFFICULTY_CHOICES, ROOM_DIFFICULTY_CHOICES, VISIBILITY_CHOICES } from "../roomOptions";
 
 // หน้า SET UP (กดสร้างห้องแล้วมาหน้านี้): ซ้าย ตั้งค่ารอบ/เวลา · ขวา การ์ดโหมดใหญ่สองใบ · ล่าง ปุ่มสร้างห้อง
 // ค่าที่เลือกส่งไปกับ create_room (events.md §1) server เช็คซ้ำ ค่าไม่ถูกจะใช้ค่าเริ่มต้น
@@ -16,7 +16,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
   const [mode, setMode] = useState("classic"); // classic | team | ai (ai = Solo แข่งกับ AI ไม่สร้างห้อง)
   const [rounds, setRounds] = useState(3);
   const [drawTime, setDrawTime] = useState(60);
-  const [difficulty, setDifficulty] = useState("easy"); // ชุดคำ (ไม่เกี่ยวกับเวลา)
+  const [difficulty, setDifficulty] = useState("mixed"); // ชุดคำ (ไม่เกี่ยวกับเวลา) · mixed ใช้ได้เฉพาะห้อง
   const [visibility, setVisibility] = useState("private");
   // Challenge เลือกเปิด/ปิดทีละใบในห้องรอ (การ์ด 4 ใบ) ไม่ตั้งที่นี่แล้ว — ห้องเริ่มด้วยชุดเริ่มต้นของ server
   const { busy, enter } = useEnterRoom({ connected, onEntered, onError });
@@ -27,7 +27,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
   function submit() {
     if (isAI) {
       // โหมดแข่งกับ AI: ไม่สร้างห้อง เข้าเกม Solo ทันทีด้วยความยากที่เลือก
-      onStartSolo(difficulty);
+      onStartSolo(difficulty === "mixed" ? "easy" : difficulty); // Solo ไม่มีผสม เริ่มที่ง่าย
       return;
     }
     const who = name.trim() || randomName(); // กันกรณีชื่อว่าง
@@ -89,7 +89,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
             <h3 className="setup__head">
               <Icon name="star" size={22} /> ความยากของคำ
             </h3>
-            <OptionRow label="ระดับความยากของคำ" choices={DIFFICULTY_CHOICES} value={difficulty} onChange={setDifficulty} />
+            <OptionRow label="ระดับความยากของคำ" choices={isAI ? DIFFICULTY_CHOICES : ROOM_DIFFICULTY_CHOICES} value={isAI && difficulty === "mixed" ? "easy" : difficulty} onChange={setDifficulty} />
           </div>
           {/* โหมดแข่งกับ AI ไม่ต้องมีห้อง จึงซ่อนตัวเลือกประเภทห้อง */}
           {!isAI && (

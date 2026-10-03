@@ -1,0 +1,709 @@
+/* ==========================================================================
+   ห้องรอ (WaitingRoom.jsx) — แถบบนเล็ก + กล่องใหญ่กล่องเดียว สองคอลัมน์
+   ซ้าย = ตั้งค่าเกม + Mini Challenge · ขวา = รายชื่อ/ปุ่ม + แชท
+   จอ ≥ 900px อยู่หน้าเดียวไม่เลื่อน · ต่ำกว่านั้นเรียงบนลงล่างแล้วเลื่อนได้
+   คลาสทั้งหมดขึ้นต้น lb- (ตรวจแล้วไม่ชนของเดิม)
+   ========================================================================== */
+/* สีของห้องรอ: ใช้ธีมหลัก (arcade.css: ม่วง มุมมน ฟอนต์เดิม) · ปุ่มที่เลือกอยู่ใช้ "สีเดียว" ทุกกล่อง
+   เหลืองทอง (ปุ่มที่เลือก/ไอคอน/ป้ายนับ) + ป้ายเปิดเขียวอ่อน */
+.screen--lb {
+  --lb-sel-bg: var(--yellow);
+  --lb-sel-fg: var(--ink);
+  --lb-box-bg: var(--tab-idle);
+  --lb-icon-bg: var(--yellow);
+  --lb-chip-bg: var(--yellow);
+  --lb-chip-fg: var(--ink);
+  --lb-on-bg: var(--green-soft);
+  --lb-on-fg: #166534;
+  --lb-on-bd: var(--green);
+  --lb-accent: var(--purple);
+  justify-content: flex-start;
+  align-items: stretch;
+  gap: 10px;
+  padding: 10px 16px 12px;
+  max-width: 1240px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* ── แถบบน ── */
+.lb-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.lb-top .logo {
+  display: flex;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.lb-top .logo span {
+  text-shadow:
+    2px 2px 0 var(--ink),
+    -2px 2px 0 var(--ink),
+    2px -2px 0 var(--ink),
+    -2px -2px 0 var(--ink);
+}
+
+.lb-top__code,
+.lb-top__me {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  min-height: 40px;
+  box-sizing: border-box;
+  border: var(--border);
+  border-radius: var(--r-pill);
+  background: var(--white);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  box-shadow: var(--shadow-xs);
+}
+
+.lb-top__me {
+  padding-left: 4px;
+}
+
+.lb-top__name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lb-top__spacer,
+.lb-box__spacer {
+  flex: 1 1 0;
+}
+
+.lb-top .icon-btn {
+  width: 40px;
+  height: 40px;
+}
+
+.lb-top__leave {
+  min-height: 40px;
+  padding: 0 14px;
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── กล่องใหญ่ ── */
+.lb-box {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--cream);
+  border: var(--border-thick);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow);
+}
+
+.lb-box__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding-bottom: 10px;
+  border-bottom: 3px solid var(--ink);
+}
+
+.lb-codechip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 4px 14px;
+  border: var(--border);
+  border-radius: var(--r-pill);
+  background: var(--lb-chip-bg);
+  color: var(--lb-chip-fg);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-head);
+  font-size: 22px;
+  letter-spacing: 3px;
+  cursor: pointer;
+}
+
+.lb-codechip__tag {
+  font-size: 12px;
+  letter-spacing: 0;
+  font-weight: 700;
+}
+
+.lb-box__invite {
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: 15px;
+}
+
+.lb-vis {
+  padding: 4px 14px;
+  border: var(--border);
+  border-radius: var(--r-pill);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.lb-vis--pub {
+  background: var(--green-soft);
+}
+
+.lb-vis--priv {
+  background: var(--tab-idle);
+}
+
+.lb-cols {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.lb-left,
+.lb-right {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ── การ์ดย่อย ── */
+.lb-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px 14px;
+  background: var(--white);
+  border: var(--border);
+  border-radius: var(--r-card);
+}
+
+.lb-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lb-card__title {
+  flex: 1;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.lb-count,
+.lb-live {
+  padding: 2px 10px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-pill);
+  background: var(--lb-chip-bg);
+  color: var(--lb-chip-fg);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.lb-live {
+  background: var(--green);
+  color: var(--white);
+  letter-spacing: 0.08em;
+}
+
+/* ── ตั้งค่าเกม ── */
+.lb-settings {
+  flex: 1 1 auto;
+}
+
+.lb-settings__grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(min-content, 1fr); /* 3 แถวสูงเท่ากัน แต่ไม่ต่ำกว่าเนื้อหา (กันกล่องซ้อนการ์ดข้างล่าง) */
+  gap: 10px;
+}
+
+.lb-set {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-ctl);
+  background: var(--lb-box-bg);
+}
+
+.lb-set__label {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.lb-set__label b {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 4px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--white);
+  font-size: 14px;
+}
+
+.lb-seg {
+  display: flex;
+  gap: 6px;
+}
+
+/* ปุ่มกระจายเต็มความกว้างกล่องพอดี (ไม่ชิดซ้ายแล้วเหลือที่ว่างขวา) */
+.lb-seg .seg {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 36px;
+  padding: 4px 6px;
+  border-radius: var(--r-ctl);
+  font-size: 15px;
+  text-align: center;
+}
+
+.lb-seg .seg--active {
+  background: var(--lb-sel-bg);
+  color: var(--lb-sel-fg);
+}
+
+.lb-seg .seg:disabled {
+  cursor: default;
+}
+
+.lb-seg .seg:disabled:not(.seg--active) {
+  opacity: 0.6;
+}
+
+/* ── Mini Challenge 2×2 (แต่ละใบ: ไอคอนซ้าย · ชื่อ+คำอธิบายกลาง · ป้ายเปิด/ปิดขวา) ── */
+.lb-chal {
+  flex: 0 0 auto;
+}
+
+.lb-chal__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.lb-ch {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  text-align: left;
+  border: var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--tab-idle);
+  color: var(--ink);
+  font-family: var(--font-body);
+  opacity: 0.65;
+}
+
+.lb-ch--on {
+  background: var(--white);
+  opacity: 1;
+  box-shadow: var(--shadow-xs);
+}
+
+.lb-ch--host {
+  cursor: pointer;
+}
+
+.lb-ch--host:disabled {
+  cursor: not-allowed;
+}
+
+.lb-ch__icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--lb-icon-bg);
+}
+
+.lb-ch__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lb-ch__title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.lb-ch__desc {
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.lb-ch__badge {
+  padding: 1px 8px;
+  border: 2px solid var(--ink);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.lb-ch__badge {
+  border-radius: var(--r-pill);
+}
+
+.lb-ch__badge--on {
+  background: var(--lb-on-bg);
+  color: var(--lb-on-fg);
+  border-color: var(--lb-on-bd);
+}
+
+.lb-ch__badge--off {
+  background: var(--tab-idle);
+  color: var(--muted);
+}
+
+/* ── รายชื่อ ── */
+.lb-roster {
+  flex: 1 1 0;
+}
+
+.lb-rules-btn {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
+  box-shadow: var(--shadow-xs);
+}
+
+.lb-roster__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lb-plist {
+  display: grid;
+  gap: 6px;
+}
+
+.lb-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 10px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-ctl);
+  background: var(--white);
+}
+
+.lb-player--me {
+  background: var(--green-soft);
+  border-color: var(--lb-accent);
+  border-width: 3px;
+}
+
+.lb-player--away {
+  opacity: 0.55;
+}
+
+.lb-player__info {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+
+.lb-player__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-head);
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.lb-player__score {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.lb-teams {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.lb-teams .team-col {
+  min-width: 0;
+}
+
+.lb-teams .lb-player {
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+
+.lb-mascot {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.lb-mascot .mascot-note {
+  transform: scale(0.6);
+  transform-origin: center;
+  margin: -24px 0;
+}
+
+.lb-roster__foot {
+  display: grid;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 3px dashed var(--ink);
+}
+
+.lb-bigbtn {
+  width: 100%;
+  min-height: 48px;
+  font-size: 20px;
+}
+
+.lb-roster__note {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ── แชท ── */
+.lb-chat {
+  flex: 0 0 34%;
+  min-height: 130px;
+}
+
+.lb-chat__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lb-chat__row {
+  margin: 0;
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  font-family: var(--font-body);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.lb-chat__row--sys {
+  background: var(--tab-idle);
+  color: var(--muted);
+  font-style: italic;
+}
+
+.lb-chat__row--me {
+  border-left: 4px solid var(--lb-accent);
+}
+
+.lb-chat__form {
+  display: flex;
+  gap: 8px;
+}
+
+.lb-chat__input {
+  flex: 1;
+  margin: 0;
+  min-width: 0;
+}
+
+.lb-chat__form .btn {
+  min-height: 44px;
+  padding: 0 16px;
+}
+
+/* ── จอกว้างพอ: อยู่หน้าเดียวไม่เลื่อน ── */
+@media (min-width: 900px) {
+  .screen--lb {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .lb-cols {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  }
+}
+
+/* จอเตี้ย (ไอแพด/โน้ตบุ๊ก ≤ 800px สูง): ย่อระยะ */
+@media (min-width: 900px) and (max-height: 800px) {
+  .screen--lb {
+    padding-top: 8px;
+    padding-bottom: 8px;
+    gap: 8px;
+  }
+
+  .lb-box {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+
+  .lb-box__head {
+    padding-bottom: 8px;
+  }
+
+  .lb-card {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .lb-card__title {
+    font-size: 16px;
+  }
+
+  .lb-set {
+    padding: 6px 8px;
+    gap: 4px;
+  }
+
+  .lb-ch {
+    padding: 6px 8px;
+  }
+}
+
+/* ต่ำมาก (≤ 700px เช่น 1024×690): ซ่อนคำอธิบายใต้ชื่อกติกา (ชื่อ + ป้ายเปิด/ปิดยังอยู่) */
+@media (min-width: 900px) and (max-height: 700px) {
+  .lb-ch__desc {
+    display: none;
+  }
+}
+
+/* จอแคบ: เรียงบนลงล่าง เลื่อนได้ */
+@media (max-width: 899px) {
+  .lb-chat {
+    flex-basis: 260px;
+  }
+
+  .lb-roster__list {
+    max-height: 420px;
+  }
+
+  .lb-top__code {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .lb-chal__grid,
+  .lb-settings__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lb-teams {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lb-top__name {
+    max-width: 80px;
+  }
+}
+
+/* ปุ่มเสียงลอยของทั้งแอปซ้ำกับปุ่มในแถบบนของหน้านี้ → ซ่อนตัวลอยเฉพาะตอนอยู่ห้องรอ */
+body:has(.screen--lb) .audio-dock {
+  display: none;
+}
+
+
+
+
+/* จอกลาง/เตี้ย: ปุ่มและกล่องกะทัดรัดขึ้น ให้ทั้ง 6 กล่อง + การ์ด Challenge อยู่ในหน้าเดียวไม่ซ้อนกัน */
+@media (min-width: 900px) and (max-width: 1250px), (min-width: 900px) and (max-height: 800px) {
+  .screen--lb .lb-set {
+    padding: 6px 8px;
+    gap: 4px;
+  }
+
+  .screen--lb .lb-seg {
+    gap: 5px;
+  }
+
+  .screen--lb .lb-seg .seg {
+    min-height: 32px;
+    padding: 2px 4px;
+    font-size: 14px;
+  }
+
+  .screen--lb .lb-set__label {
+    font-size: 15px;
+  }
+}
+
+@media (min-width: 900px) and (max-height: 800px) {
+  .screen--lb .lb-ch {
+    padding: 5px 8px;
+    gap: 8px;
+  }
+
+  .screen--lb .lb-ch__title {
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .screen--lb .lb-ch__desc {
+    -webkit-line-clamp: 1;
+  }
+}
+
+/* โหมดทีม: คอลัมน์ทีมแคบ → ซ่อนบรรทัดคะแนน (ก่อนเริ่มเกมเป็น 0 อยู่แล้ว) ให้ชื่อ/ป้ายไม่ซ้อนกัน */
+.lb-teams .lb-player__score {
+  display: none;
+}
+
+.lb-teams .lb-player__info {
+  flex: 1 1 60px;
+}

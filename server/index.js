@@ -121,12 +121,12 @@ app.get("/api/leaderboard", (req, res) => {
 app.get("/api/rooms", (req, res) => {
   const list = [];
   for (const room of rooms.values()) {
-    if (room.settings.visibility !== "public" || room.players.length >= MAX_PLAYERS) continue;
+    if (room.settings.visibility !== "public" || room.players.length >= room.settings.maxPlayers) continue;
     list.push({
       code: room.code,
       host: room.players.find((p) => p.id === room.hostId)?.name ?? "",
       players: room.players.length,
-      maxPlayers: MAX_PLAYERS,
+      maxPlayers: room.settings.maxPlayers, // ค่าที่หัวห้องตั้ง (4/6/8) ไม่ใช่เพดานของระบบ
       status: room.status,
       mode: room.settings.mode,
       difficulty: room.settings.difficulty,
@@ -167,7 +167,8 @@ function lanAddresses() {
 
 // ---------- ที่เก็บข้อมูลห้อง ----------
 const rooms = new Map(); // key = รหัสห้อง, value = ข้อมูลห้อง
-const MAX_PLAYERS = 8;
+const MAX_PLAYERS = 8; // เพดานของระบบ (นำเสนอไว้ว่ารองรับ 2–8 คน) · หัวห้องตั้งต่ำกว่านี้ได้ผ่าน settings.maxPlayers
+const MAX_PLAYER_CHOICES = [4, 6, 8]; // โหมดทีมต้องมีทีมละ 2 คน → ตัวเลือกต่ำสุดจึงเป็น 4
 
 // ---------- ฟังก์ชันช่วย ----------
 function makeRoomCode() {
@@ -451,10 +452,10 @@ function loadWords() {
 
 loadWords();
 
-// สุ่มคำจากระดับความยากที่ห้องเลือก (settings.difficulty: easy | medium | hard)
+// สุ่มคำจากระดับความยากที่ห้องเลือก (settings.difficulty: mixed | easy | medium | hard) · mixed = สุ่มจากทุกระดับปนกัน
 // ระดับนั้นมีคำไม่พอ (เช่นตอนใช้คำสำรองที่มีแต่ easy) → ใช้ทุกระดับปนกัน เกมต้องเดินต่อได้เสมอ
 function pickWords(n, difficulty) {
-  const level = (WORD_BANK[difficulty] || []).map((item) => item.word);
+  const level = difficulty === "mixed" ? [] : (WORD_BANK[difficulty] || []).map((item) => item.word);
   const pool = level.length >= n ? level : ALL_WORDS;
   return [...pool].sort(() => Math.random() - 0.5).slice(0, n);
 }
@@ -1034,7 +1035,10 @@ function applySettings(room, data) {
   const drawTime = Number(data?.drawTime);
   if ([1, 2, 3, 4, 5].includes(rounds)) room.settings.rounds = rounds;
   if ([30, 45, 60, 90].includes(drawTime)) room.settings.drawTime = drawTime;
-  if (LEVELS.includes(data?.difficulty)) room.settings.difficulty = data.difficulty; // ระดับของ "ชุดคำ" เท่านั้น ไม่เกี่ยวกับเวลา
+  if (data?.difficulty === "mixed" || LEVELS.includes(data?.difficulty)) room.settings.difficulty = data.difficulty; // ระดับของ "ชุดคำ" เท่านั้น ไม่เกี่ยวกับเวลา (Solo ใช้ LEVELS ล้วน ไม่มี mixed)
+  // จำนวนผู้เล่นสูงสุด: เฉพาะ 4/6/8 · ตั้งต่ำกว่าคนที่อยู่แล้วได้ — ไม่เตะใคร แค่ห้ามคนใหม่เข้า (เช็คตอน join_room)
+  const maxPlayers = Number(data?.maxPlayers);
+  if (MAX_PLAYER_CHOICES.includes(maxPlayers)) room.settings.maxPlayers = maxPlayers;
   if (data?.visibility === "public" || data?.visibility === "private") room.settings.visibility = data.visibility;
   // ชุดกติกาที่เปิด (ใบไหนบ้าง) · รองรับค่าเดิม challenge: boolean ไว้ด้วย (true = ชุดเริ่มต้น · false = เปิดแค่ Standard)
   const sc = sanitizeChallenges(data?.challenges);
@@ -1442,7 +1446,7 @@ io.on("connection", (socket) => {
       hostId: socket.data.pid,
       status: "lobby",
       players: [{ id: socket.data.pid, name, avatar: cleanAvatar(data.avatar), score: 0, isHost: true, team: null, connected: true, ready: false }],
-      settings: { mode: "classic", rounds: 3, drawTime: 60, difficulty: "easy", visibility: "private", challenges: [...DEFAULT_CHALLENGES] },
+      settings: { mode: "classic", rounds: 3, drawTime: 60, difficulty: "mixed", maxPlayers: MAX_PLAYERS, visibility: "private", challenges: [...DEFAULT_CHALLENGES] },
     };
     rooms.set(code, room);
 
@@ -1466,7 +1470,7 @@ io.on("connection", (socket) => {
     if (!room) return callback({ ok: false, error: "ROOM_NOT_FOUND" });
     // เป็นสมาชิกห้องนี้อยู่แล้ว (เช่นรีเฟรชแล้วกดเข้าห้องเดิมภายในเวลารอ) = กลับเข้าที่เดิม ไม่สร้างผู้เล่นซ้ำ
     if (room.players.some((p) => p.id === socket.data.pid)) return callback(rejoinRoom(socket, room));
-    if (room.players.length >= MAX_PLAYERS) return callback({ ok: false, error: "ROOM_FULL" });
+    if (room.players.length >= room.settings.maxPlayers) return callback({ ok: false, error: "ROOM_FULL" });
     if (room.players.some((p) => p.name === name)) return callback({ ok: false, error: "NAME_TAKEN" });
 
     leaveRoom(socket);
@@ -1608,7 +1612,9 @@ io.on("connection", (socket) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room) return;
     const player = room.players.find((p) => p.id === socket.data.pid);
-    const text = String(data?.text ?? "").trim().slice(0, 100);
+    // ข้อความต้องเป็นสตริงเท่านั้น (ไม่งั้น String({}) กลายเป็น "[object Object]" แล้วถูกส่งต่อให้ทั้งห้อง)
+    if (typeof data?.text !== "string") return;
+    const text = data.text.trim().slice(0, 100);
     if (!player || !text) return;
     // จำกัดความถี่: ยิงทายรัว ๆ เกินเพดาน = ทิ้งเงียบ ๆ (เหมือน input ที่ไม่ผ่านกติกาอื่น ไม่บอกคนโกงว่าโดนดัก)
     if (!rateOk(socket, "guess", GUESS_MAX, GUESS_WINDOW_MS)) return;

@@ -69,6 +69,7 @@ export default function App() {
     sendGuess,
     startGame,
     resetGame,
+    clearMessages,
     // ข้อ 4: ส่งการวาดออก · ขอย้อน/ทำซ้ำ · ผูกกระดานเข้ากับตัวรับ action ของคนอื่น
     sendAction,
     askUndo,
@@ -204,6 +205,14 @@ export default function App() {
   const goHome = () => navigate("/");
   // อยู่ที่ URL ของห้อง และข้อมูลห้องนั้นมาถึงแล้ว
   const roomReady = route.screen === "room" && me && room && room.code === routeCode;
+  // กลับมาห้องรอหลังจบเกม (inGame จริง→เท็จ ทั้งที่ยังอยู่ในห้อง) = ล้างแชทของเกมก่อนหน้า
+  const wasInGame = useRef(false);
+  useEffect(() => {
+    if (wasInGame.current && !inGame && room) clearMessages();
+    wasInGame.current = inGame;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inGame]);
+
   const showGame = roomReady && inGame;
 
   return (
@@ -263,7 +272,9 @@ export default function App() {
         </div>
       )}
 
-      {roomReady && !inGame && <WaitingRoom room={room} me={me} onLeave={handleLeave} />}
+      {roomReady && !inGame && (
+        <WaitingRoom room={room} me={me} messages={game.messages} onSend={sendGuess} onLeave={handleLeave} />
+      )}
 
       {showGame && (
         <Game

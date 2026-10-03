@@ -8,6 +8,13 @@ export const DIFFICULTY_CHOICES = [
   ["hard", "ยาก"],
 ];
 
+// ห้องเล่นกับเพื่อนมี "ผสม" (สุ่มจากทุกระดับปนกัน) เพิ่มเป็นค่าเริ่มต้น · Solo ไม่มีผสม (ยากขึ้นตามด่าน)
+export const ROOM_DIFFICULTY_CHOICES = [["mixed", "ผสม"], ...DIFFICULTY_CHOICES];
+
+// จำนวนผู้เล่นสูงสุดของห้อง (เพดานระบบ 8 · โหมดทีมต้องมีทีมละ 2 คน จึงต่ำสุด 4)
+export const MAX_PLAYER_CHOICES = [4, 6, 8];
+export const DEFAULT_MAX_PLAYERS = 8;
+
 // Public = ขึ้นในรายการห้องหน้าแรก กดเข้าได้เลย · Private = เข้าได้ด้วยรหัสห้อง/ลิงก์เชิญเท่านั้น
 export const VISIBILITY_CHOICES = [
   ["private", "Private"],
@@ -26,4 +33,4 @@ export const CHALLENGE_CARDS = [
 // ค่าเริ่มต้นเมื่อ server ยังไม่ได้ส่ง challenges มา (กันพังตอน render)
 export const DEFAULT_CHALLENGES = ["none", "colour_fix", "dont_lift_pen", "shapes_only"];
 
-export const difficultyLabel = (d) => DIFFICULTY_CHOICES.find(([v]) => v === d)?.[1] ?? "ง่าย";
+export const difficultyLabel = (d) => ROOM_DIFFICULTY_CHOICES.find(([v]) => v === d)?.[1] ?? "ผสม";

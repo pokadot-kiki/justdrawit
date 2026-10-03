@@ -2,27 +2,24 @@ import { useState } from "react";
 import { socket } from "../socket";
 import Avatar from "../components/Avatar";
 import Logo from "../components/Logo";
-import Critter from "../components/Critter";
-import Ribbon from "../components/Ribbon";
+import LobbyChat from "../components/LobbyChat";
+import { AudioButtons } from "../components/AudioDock";
 import { MascotNote } from "../components/Mascot";
 import { InfoModal } from "../components/TopIcons";
 import YouTag from "../components/YouTag";
 import { markRulesSeen, rulesSeen } from "../prefs";
 import { Icon } from "../components/Icons";
 import { copyText, inviteUrl } from "../invite";
-import OptionRow from "../components/OptionRow";
 import ChallengeCards from "../components/ChallengeCards";
-import { DIFFICULTY_CHOICES, VISIBILITY_CHOICES, DEFAULT_CHALLENGES, difficultyLabel } from "../roomOptions";
+import { ROOM_DIFFICULTY_CHOICES, MAX_PLAYER_CHOICES, DEFAULT_MAX_PLAYERS, VISIBILITY_CHOICES, DEFAULT_CHALLENGES } from "../roomOptions";
 
 // ค่าที่ server ยอมรับ ตาม events.md (ค่าอื่น server จะเมิน)
 const ROUND_CHOICES = [1, 2, 3, 4, 5];
 const TIME_CHOICES = [30, 45, 60, 90];
-const MAX_PLAYERS = 8;
 const TEAMS = ["A", "B"];
 const TEAM_MIN = 2; // โหมดทีมต้องมีทีมละอย่างน้อย 2 คน (server เช็คซ้ำ)
 
-export default function WaitingRoom({ room, me, onLeave }) {
-  const [copied, setCopied] = useState(false);
+export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }) {
   const [linkCopied, setLinkCopied] = useState(false);
   // กล่องกติกาโชว์เองครั้งแรกที่เข้าห้อง (จำไว้ในเบราว์เซอร์) ครั้งต่อไปกดดูเองได้จากปุ่ม ℹ️ ในหน้าเกม
   const [showRules, setShowRules] = useState(() => !rulesSeen());
@@ -47,281 +44,221 @@ export default function WaitingRoom({ room, me, onLeave }) {
     }
   }
 
-  function copyCode() {
-    navigator.clipboard?.writeText(room.code).then(
-      () => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      },
-      () => {} // เบราว์เซอร์บางตัวไม่ให้คัดลอก ก็ไม่เป็นไร ให้ผู้ใช้จดเอง
-    );
-  }
 
-  // แก้ตั้งค่าได้เฉพาะหัวห้อง — server เช็คซ้ำอีกชั้นเสมอ
-  // ส่งไปทั้งก้อนตามหน้าตาใน events.md (server อ่านแค่ rounds กับ drawTime)
-  function changeSetting(patch) {
-    socket.emit("update_settings", { ...room.settings, ...patch });
-  }
-
-  function renderPlayer(player) {
-    return (
-      <div
-        key={player.id}
-        className={`player-card${player.id === me?.playerId ? " player-card--me" : ""}${player.connected === false ? " player-card--away" : ""}`}
-      >
-        <Avatar index={player.avatar} />
-        <span className="player-card__name">
-          {player.name}
-          {/* หลุดอยู่: server ยังเก็บที่ไว้ให้ 30 วิ เผื่อรีเฟรชแล้วกลับมา */}
-          {player.connected === false && <small className="player-card__away"> (หลุด กำลังรอ...)</small>}
-        </span>
-        {player.id === me?.playerId && <YouTag />}
-        <span className="player-card__badges">
-          {/* ใช้ hostId เป็นหลัก เพราะ server เป็นคนตัดสินว่าใครเป็นหัวห้อง */}
-          {player.id === room.hostId ? (
-            <span title="หัวห้อง" aria-label="หัวห้อง">
-              <Icon name="crown" size={22} />
-            </span>
-          ) : (
-            // ผู้เล่นคนอื่นโชว์สถานะ READY / WAITING
-            <span className={`ready-badge ready-badge--${player.ready ? "on" : "off"}`}>
-              {player.ready ? "READY" : "WAITING"}
-            </span>
-          )}
-          {/* หัวห้องเห็นปุ่มเตะออกข้างชื่อคนอื่น (ไม่ใช่ตัวเอง) — server ตรวจซ้ำว่าเป็นหัวห้อง */}
-          {isHost && player.id !== me?.playerId && (
-            <button
-              type="button"
-              className="kick-btn"
-              aria-label={`เตะ ${player.name} ออกจากห้อง`}
-              title="เตะออกจากห้อง"
-              onClick={() => socket.emit("kick_player", { playerId: player.id })}
-            >
-              <Icon name="x" size={16} />
-            </button>
-          )}
-        </span>
-      </div>
-    );
-  }
-
-  // ปุ่มตั้งค่าของหัวห้อง (ใช้ซ้ำ 5 แถว) — คนอื่นไม่เห็น แต่เห็นสรุปค่าที่ตั้งไว้ (room-facts)
   const modeChoices = [
     ["classic", "แข่งเดี่ยว"],
     ["team", "ทีม A vs B"],
   ];
 
+  // แก้ตั้งค่าได้เฉพาะหัวห้อง — server เช็คซ้ำอีกชั้นเสมอ
+  // ส่งไปทั้งก้อนตามหน้าตาใน events.md
+  function changeSetting(patch) {
+    if (isHost) socket.emit("update_settings", { ...room.settings, ...patch });
+  }
+
+  function renderPlayer(player) {
+    const isMe = player.id === me?.playerId;
+    return (
+      <div
+        key={player.id}
+        className={`lb-player${isMe ? " lb-player--me" : ""}${player.connected === false ? " lb-player--away" : ""}`}
+      >
+        <Avatar index={player.avatar} />
+        <span className="lb-player__info">
+          <span className="lb-player__name">
+            {player.name}
+            {player.connected === false && <small> (หลุด กำลังรอ...)</small>}
+          </span>
+          <span className="lb-player__score">{player.score ?? 0} คะแนน</span>
+        </span>
+        {isMe && <YouTag />}
+        {player.id === room.hostId ? (
+          <span title="หัวห้อง" aria-label="หัวห้อง">
+            <Icon name="crown" size={22} />
+          </span>
+        ) : (
+          <span className={`ready-badge ready-badge--${player.ready ? "on" : "off"}`}>
+            {player.ready ? "พร้อม" : "รอ"}
+          </span>
+        )}
+        {/* หัวห้องเตะคนอื่นได้ (server ตรวจซ้ำว่าเป็นหัวห้อง) */}
+        {isHost && !isMe && (
+          <button
+            type="button"
+            className="kick-btn"
+            aria-label={`เตะ ${player.name} ออกจากห้อง`}
+            title="เตะออกจากห้อง"
+            onClick={() => socket.emit("kick_player", { playerId: player.id })}
+          >
+            <Icon name="x" size={16} />
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // กล่องย่อยของการ์ดตั้งค่า (มีเลขกำกับ) — คนที่ไม่ใช่หัวห้องกดไม่ได้
+  function Choice({ no, title, className = "", label, choices, value, onChange }) {
+    return (
+      <div className={`lb-set ${className}`}>
+        <span className="lb-set__label">
+          <b>{no}</b> {title}
+        </span>
+        <div className="lb-seg" role="group" aria-label={label}>
+          {choices.map(([v, text]) => (
+            <button
+              key={String(v)}
+              type="button"
+              className={value === v ? "seg seg--active" : "seg"}
+              aria-pressed={value === v}
+              disabled={!isHost}
+              onClick={() => onChange(v)}
+            >
+              {text}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const s = room.settings;
+  const note = isHost
+    ? !enoughPlayers
+      ? teamMode
+        ? `ต้องมีทีมละอย่างน้อย ${TEAM_MIN} คน (ตอนนี้ A ${teamSize("A")} · B ${teamSize("B")})`
+        : "ต้องมีผู้เล่นอย่างน้อย 2 คนจึงเริ่มได้"
+      : !allReady
+        ? 'รอผู้เล่นคนอื่นกด "พร้อม" ให้ครบ'
+        : "ทุกคนพร้อมแล้ว เริ่มเกมได้เลย!"
+    : teamMode && !teamsReady
+      ? `โหมดทีมต้องมีทีมละอย่างน้อย ${TEAM_MIN} คน`
+      : "รอหัวห้องเริ่มเกม";
+
   return (
-    <div className="screen screen--wr">
-      {/* หน้านี้อยู่หน้าเดียวไม่เลื่อน: โลโก้ย่อ ริบบิ้นเล็ก (CSS .screen--wr) · สองคอลัมน์ ซ้าย = ห้อง+ตั้งค่า · ขวา = ผู้เล่น+ปุ่ม */}
-      <header className="wr-head">
+    <div className="screen screen--lb">
+      {/* แถบบนเล็ก: ซ้ายโลโก้+รหัสห้อง · ขวาเสียง ชื่อเรา ออกจากห้อง */}
+      <header className="lb-top">
         <Logo />
-        <Ribbon tone="teal">ห้องรอ</Ribbon>
+        <span className="lb-top__code">ห้อง {room.code}</span>
+        <span className="lb-top__spacer" />
+        <AudioButtons />
+        <span className="lb-top__me">
+          <Avatar index={me?.avatar ?? 0} />
+          <span className="lb-top__name">{me?.name}</span>
+        </span>
+        <button type="button" className="btn btn--danger lb-top__leave" onClick={onLeave}>
+          <Icon name="door" size={18} /> ออกจากห้อง
+        </button>
       </header>
 
-      <div className="wr">
-        {/* ── ซ้าย: รหัสห้อง · ลิงก์เชิญ · ตั้งค่า · Mini Challenge ── */}
-        <section className="panel wr__left deco-host" aria-label="ห้องและการตั้งค่า">
-          <Critter name="cat" className="crit crit--top-left" />
-          <div className="wr-code">
-            <div className="wr-code__main">
-              <button
-                type="button"
-                className="code-badge"
-                onClick={copyCode}
-                aria-label={`คัดลอกรหัสห้อง ${room.code}`}
-              >
-                {room.code}
-              </button>
-              <p className="code-hint">
-                {copied ? "คัดลอกรหัสห้องแล้ว!" : "กดรหัสเพื่อคัดลอก แล้วส่งให้เพื่อน"}
-              </p>
-            </div>
-            <button type="button" className="btn btn--invite" onClick={copyLink}>
-              <Icon name="share" size={20} /> {linkCopied ? "คัดลอกลิงก์แล้ว!" : "คัดลอกลิงก์เชิญ"}
-            </button>
+      <main className="lb-box" aria-label="ห้องรอ">
+        <div className="lb-box__head">
+          <button type="button" className="lb-codechip" onClick={copyLink} aria-label={`คัดลอกลิงก์เชิญห้อง ${room.code}`}>
+            <span className="lb-codechip__tag">รหัสห้อง</span>
+            <b>{room.code}</b>
+            <Icon name="share" size={20} />
+          </button>
+          <button type="button" className="btn lb-box__invite" onClick={copyLink}>
+            {linkCopied ? "คัดลอกลิงก์แล้ว!" : "คัดลอกลิงก์เชิญ"}
+          </button>
+          <span className="lb-box__spacer" />
+          <span className={`lb-vis lb-vis--${s.visibility === "public" ? "pub" : "priv"}`}>
+            {s.visibility === "public" ? "ห้อง Public" : "ห้อง Private"}
+          </span>
+        </div>
+
+        <div className="lb-cols">
+          {/* ── ซ้าย: ตั้งค่าเกม · Mini Challenge ── */}
+          <div className="lb-left">
+            <section className="lb-card lb-settings" aria-label="ตั้งค่าเกม">
+              <div className="lb-card__head">
+                <h2 className="lb-card__title">ตั้งค่าเกม</h2>
+                {!isHost && <span className="lb-count">ดูอย่างเดียว</span>}
+              </div>
+              <div className="lb-settings__grid">
+                <Choice no="1" title="โหมด" label="โหมดเกม" choices={modeChoices} value={s.mode} onChange={(mode) => changeSetting({ mode })} />
+                <Choice no="2" title="เวลาต่อตา (วิ)" label="เวลาวาดต่อตา" choices={TIME_CHOICES.map((n) => [n, n])} value={s.drawTime} onChange={(drawTime) => changeSetting({ drawTime })} />
+                <Choice no="3" title="จำนวนรอบ" label="จำนวนรอบ" choices={ROUND_CHOICES.map((n) => [n, n])} value={s.rounds} onChange={(rounds) => changeSetting({ rounds })} />
+                <Choice no="4" title="ความยากของคำ" label="ระดับความยากของคำ" choices={ROOM_DIFFICULTY_CHOICES} value={s.difficulty} onChange={(difficulty) => changeSetting({ difficulty })} />
+                <Choice no="5" title="จำนวนผู้เล่นสูงสุด" label="จำนวนผู้เล่นสูงสุด" choices={MAX_PLAYER_CHOICES.map((n) => [n, n])} value={s.maxPlayers ?? DEFAULT_MAX_PLAYERS} onChange={(maxPlayers) => changeSetting({ maxPlayers })} />
+                <Choice no="6" title="ประเภทห้อง" label="ประเภทห้อง" choices={VISIBILITY_CHOICES} value={s.visibility} onChange={(visibility) => changeSetting({ visibility })} />
+              </div>
+            </section>
+            <ChallengeCards enabled={s.challenges ?? DEFAULT_CHALLENGES} isHost={isHost} />
           </div>
 
-          {/* ค่าที่ตั้งไว้ของห้อง — ทุกคนในห้องเห็น (มาจาก room.settings ที่ server เก็บ) */}
-          {!isHost && (
-            <ul className="room-facts" aria-label="ตั้งค่าของห้องนี้">
-              <li>{teamMode ? "ทีม A vs B" : "แข่งเดี่ยว"}</li>
-              <li>{room.settings.rounds} รอบ</li>
-              <li>{room.settings.drawTime} วิ/ตา</li>
-              <li>คำระดับ{difficultyLabel(room.settings.difficulty)}</li>
-              <li>{room.settings.visibility === "public" ? "Public" : "Private"}</li>
-              <li>Challenge {(room.settings.challenges ?? DEFAULT_CHALLENGES).length}/4</li>
-            </ul>
-          )}
-          {isHost ? (
-            <div className="settings wr-settings">
-              <div className="settings__row">
-                <span className="field__label">โหมด</span>
-                <div className="segmented" role="group" aria-label="โหมดเกม">
-                  {modeChoices.map(([m, label]) => (
-                    <button
-                      key={m}
-                      type="button"
-                      className={room.settings.mode === m ? "seg seg--active" : "seg"}
-                      aria-pressed={room.settings.mode === m}
-                      onClick={() => changeSetting({ mode: m })}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+          {/* ── ขวา: รายชื่อผู้เล่น + ปุ่ม · แชท ── */}
+          <div className="lb-right">
+            <section className="lb-card lb-roster" aria-label="ผู้เล่น">
+              <div className="lb-card__head">
+                <h2 className="lb-card__title">
+                  <Icon name="users" size={22} /> ผู้เล่น
+                </h2>
+                <span className="lb-count">
+                  {room.players.length}/{s.maxPlayers ?? DEFAULT_MAX_PLAYERS} คน
+                </span>
+                {teamMode && (
+                  <button type="button" className="btn lb-rules-btn" onClick={() => setShowTeamRules(true)}>
+                    <Icon name="info" size={16} /> กติกาทีม
+                  </button>
+                )}
               </div>
 
-              <div className="settings__row">
-                <span className="field__label">จำนวนรอบ</span>
-                <div className="segmented" role="group" aria-label="จำนวนรอบ">
-                  {ROUND_CHOICES.map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      className={room.settings.rounds === n ? "seg seg--active" : "seg"}
-                      aria-pressed={room.settings.rounds === n}
-                      onClick={() => changeSetting({ rounds: n })}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
+              <div className="lb-roster__list">
+                {teamMode ? (
+                  <div className="lb-teams">
+                    {TEAMS.map((t) => (
+                      <section className={`team-col team-col--${t}`} key={t} aria-label={`ทีม ${t}`}>
+                        <h3 className="team-col__title">
+                          <span>ทีม {t}{myTeam === t ? " (ทีมคุณ)" : ""}</span>
+                          <span className="team-col__count">{teamSize(t)} คน</span>
+                        </h3>
+                        <div className="lb-plist">
+                          {room.players.filter((p) => p.team === t).map(renderPlayer)}
+                          {teamSize(t) === 0 && <p className="team-col__empty">ยังไม่มีใคร</p>}
+                        </div>
+                        {myTeam !== t && (
+                          <button type="button" className="btn team-col__join" onClick={() => socket.emit("set_team", { team: t })}>
+                            ย้ายมาทีม {t}
+                          </button>
+                        )}
+                      </section>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="lb-plist">{room.players.map(renderPlayer)}</div>
+                )}
+                {/* คนยังน้อย = มาสคอตตัวเล็กรอเพื่อนในที่ว่างของรายชื่อ */}
+                {room.players.length < 4 && !teamMode && (
+                  <div className="lb-mascot">
+                    <MascotNote mood="wait">{room.players.length < 2 ? "รอเพื่อนเข้าห้อง..." : "รอเพื่อนอีกนิด..."}</MascotNote>
+                  </div>
+                )}
               </div>
 
-              <div className="settings__row">
-                <span className="field__label">เวลาวาด (วินาที)</span>
-                <div className="segmented" role="group" aria-label="เวลาวาดต่อตา">
-                  {TIME_CHOICES.map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      className={room.settings.drawTime === n ? "seg seg--active" : "seg"}
-                      aria-pressed={room.settings.drawTime === n}
-                      onClick={() => changeSetting({ drawTime: n })}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
+              <div className="lb-roster__foot">
+                {isHost ? (
+                  <button type="button" className="btn btn--primary lb-bigbtn" disabled={!canStart} onClick={() => socket.emit("start_game")}>
+                    เริ่มเกม
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={myReady ? "btn btn--ready-on lb-bigbtn" : "btn btn--primary lb-bigbtn"}
+                    onClick={() => socket.emit("set_ready", { ready: !myReady })}
+                  >
+                    {myReady ? "พร้อมแล้ว · กดเพื่อยกเลิก" : "พร้อม"}
+                  </button>
+                )}
+                <p className="lb-roster__note">{note}</p>
               </div>
+            </section>
 
-              <div className="settings__row">
-                <span className="field__label">ความยากของคำ</span>
-                <OptionRow
-                  label="ระดับความยากของคำ"
-                  choices={DIFFICULTY_CHOICES}
-                  value={room.settings.difficulty}
-                  onChange={(difficulty) => changeSetting({ difficulty })}
-                />
-              </div>
-              <div className="settings__row">
-                <span className="field__label">ประเภทห้อง</span>
-                <OptionRow
-                  label="ประเภทห้อง"
-                  choices={VISIBILITY_CHOICES}
-                  value={room.settings.visibility}
-                  onChange={(visibility) => changeSetting({ visibility })}
-                />
-              </div>
-            </div>
-          ) : (
-            <p className="hint-text">รอหัวห้องเริ่มเกม...</p>
-          )}
-
-          {/* การ์ด Mini Challenge — ทุกคนเห็น (หัวห้องกดสลับได้ คนอื่นดูอย่างเดียว) */}
-          <ChallengeCards enabled={room.settings.challenges ?? DEFAULT_CHALLENGES} isHost={isHost} />
-        </section>
-
-        {/* ── ขวา: รายชื่อผู้เล่น (เลื่อนในกรอบได้) · ปุ่ม Ready/เริ่มเกม อยู่ล่างสุดของคอลัมน์เสมอ ── */}
-        <section className="panel wr__right" aria-label="ผู้เล่น">
-          <div className="wr-players-head">
-            <h2 className="panel__title">
-              ผู้เล่น ({room.players.length}/{MAX_PLAYERS})
-            </h2>
-            {teamMode && (
-              <button type="button" className="btn wr-rules-btn" onClick={() => setShowTeamRules(true)}>
-                <Icon name="info" size={16} /> กติกาทีม
-              </button>
-            )}
+            <LobbyChat messages={messages} meId={me?.playerId} onSend={onSend} />
           </div>
-          {teamMode && myTeam && (
-            <p className={`team-me-banner team-me-banner--${myTeam}`}>
-              คุณอยู่ทีม {myTeam} · อยากย้ายทีม กดปุ่ม "ย้ายมาทีม {myTeam === "A" ? "B" : "A"}" ได้เลย
-            </p>
-          )}
-          <div className="wr-players">
-            {teamMode ? (
-              // โหมดทีม: สองฝั่ง ทีม A แดง ทีม B ฟ้า · ย้ายได้เฉพาะตัวเอง (set_team ของ server เป็นของตัวเองเท่านั้น)
-              <div className="team-cols">
-                {TEAMS.map((t) => (
-                  <section className={`team-col team-col--${t}`} key={t} aria-label={`ทีม ${t}`}>
-                    <h3 className="team-col__title">
-                      <span>ทีม {t}</span>
-                      <span className="team-col__count">{teamSize(t)} คน</span>
-                    </h3>
-                    <div className="player-list">
-                      {room.players.filter((p) => p.team === t).map(renderPlayer)}
-                      {teamSize(t) === 0 && <p className="team-col__empty">ยังไม่มีใคร</p>}
-                    </div>
-                    {myTeam !== t && (
-                      <button type="button" className="btn team-col__join" onClick={() => socket.emit("set_team", { team: t })}>
-                        ย้ายมาทีม {t}
-                      </button>
-                    )}
-                  </section>
-                ))}
-              </div>
-            ) : (
-              <div className="player-list">{room.players.map(renderPlayer)}</div>
-            )}
-            {/* คนยังน้อย = มาสคอตถือนาฬิการอเพื่อนอยู่ในช่องว่างของรายชื่อ (หายเองเมื่อมีคนครบ 4) */}
-            {room.players.length < 4 && !teamMode && (
-              <MascotNote mood="wait">{room.players.length < 2 ? "รอเพื่อนเข้าห้อง..." : "รอเพื่อนอีกนิด..."}</MascotNote>
-            )}
-          </div>
-
-          <div className="wr-foot">
-            {isHost && !enoughPlayers && (
-              <p className="form-note">
-                {teamMode
-                  ? `ต้องมีทีมละอย่างน้อย ${TEAM_MIN} คนจึงเริ่มได้ (ตอนนี้ทีม A ${teamSize("A")} คน · ทีม B ${teamSize("B")} คน)`
-                  : "ต้องมีผู้เล่นอย่างน้อย 2 คนจึงเริ่มได้"}
-              </p>
-            )}
-            {isHost && enoughPlayers && !allReady && (
-              <p className="form-note">รอผู้เล่นคนอื่นกด "พร้อม" ให้ครบทุกคนก่อนเริ่มเกม</p>
-            )}
-            {!isHost && teamMode && !teamsReady && (
-              <p className="form-note">โหมดทีมต้องมีทีมละอย่างน้อย {TEAM_MIN} คนถึงจะเริ่มได้</p>
-            )}
-            <div className="actions">
-              {isHost ? (
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  disabled={!canStart}
-                  onClick={() => socket.emit("start_game")}
-                >
-                  START GAME
-                </button>
-              ) : (
-                // ผู้เล่นคนอื่นกดพร้อม/ยกเลิก (สลับได้) — รอหัวห้องเริ่มเกม
-                <button
-                  type="button"
-                  className={myReady ? "btn btn--ready-on" : "btn btn--primary"}
-                  onClick={() => socket.emit("set_ready", { ready: !myReady })}
-                >
-                  {myReady ? "ยกเลิกพร้อม" : "พร้อม (READY)"}
-                </button>
-              )}
-              <button type="button" className="btn" onClick={onLeave}>
-                ออกจากห้อง
-              </button>
-            </div>
-          </div>
-        </section>
-      </div>
+        </div>
+      </main>
 
       {showRules && (
         <InfoModal

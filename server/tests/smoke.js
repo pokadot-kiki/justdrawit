@@ -2148,7 +2148,7 @@ async function main() {
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const last = (P, name) => P.dump().filter((e) => e.name === name).at(-1)?.args[0];
     // ค่าเริ่มต้นของตัวเลือกห้องที่เพิ่มทีหลัง (ข้อ 32 เทสตัวเลือกพวกนี้โดยตรง)
-    const NEW_DEFAULTS = { difficulty: "easy", visibility: "private", challenges: ["none", "colour_fix", "dont_lift_pen", "shapes_only"] };
+    const NEW_DEFAULTS = { difficulty: "mixed", maxPlayers: 8, visibility: "private", challenges: ["none", "colour_fix", "dont_lift_pen", "shapes_only"] };
     const socks = [];
     const make = async (data) => {
       const P = track(await connect()); socks.push(P);
@@ -2670,7 +2670,7 @@ async function main() {
       await wait(150);
       const hid = made.playerId;
       check("create_room รับ difficulty/visibility/challenge และเก็บไว้กับห้อง", last(H, "room_update").settings,
-        { mode: "classic", rounds: 1, drawTime: 30, difficulty: "hard", visibility: "public", challenges: ["none"] });
+        { mode: "classic", rounds: 1, drawTime: 30, difficulty: "hard", maxPlayers: 8, visibility: "public", challenges: ["none"] });
       checkOk("playerId ไม่ใช่ socket.id และเป็นรหัส 20 ตัว (แปลงจากกุญแจ)", hid !== H.socket.id && /^[0-9a-f]{20}$/.test(hid));
       checkOk("กุญแจลับไม่อยู่ใน event ใดๆ ที่ส่งกลับมา", !JSON.stringify(H.dump()).includes(KEY_H));
       check("ผู้เล่นมีช่อง connected: true", last(H, "room_update").players[0].connected, true);
@@ -2678,7 +2678,7 @@ async function main() {
       H.socket.emit("update_settings", { difficulty: "banana", visibility: "secret", challenge: "yes" });
       await wait(150);
       check("ค่าตัวเลือกที่ไม่อนุญาตถูกเมิน", last(H, "room_update").settings,
-        { mode: "classic", rounds: 1, drawTime: 30, difficulty: "hard", visibility: "public", challenges: ["none"] });
+        { mode: "classic", rounds: 1, drawTime: 30, difficulty: "hard", maxPlayers: 8, visibility: "public", challenges: ["none"] });
 
       // ---------- รายการห้อง Public ----------
       const P2 = await connectAs("test-key-private-0123456789");
@@ -3104,6 +3104,122 @@ async function main() {
     H.socket.disconnect();
     G.socket.disconnect();
     K.socket.disconnect();
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // ข้อ 38 — แชทในห้องรอ (ส่งผ่าน event guess เดิม): ถึงทั้งห้อง ไม่ข้ามห้อง ตัด 100 ตัว จำกัดความถี่
+  // ══════════════════════════════════════════════════════════════════
+  await runPart("38. แชทห้องรอ — ถึงทั้งห้อง · ไม่ข้ามห้อง · ตัด 100 ตัวอักษร · จำกัดความถี่ · คนนอกห้องส่งแล้วเงียบ", async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const conn = () => new Promise((resolve, reject) => {
+      const s = io(URL, { transports: ["websocket"] });
+      const t = setTimeout(() => reject(new Error("ต่อ server ไม่ติด")), 8000);
+      s.on("connect", () => { clearTimeout(t); resolve(track(s)); });
+      s.on("connect_error", (e) => { clearTimeout(t); reject(e); });
+    });
+    const [P, Q, R, X] = [await conn(), await conn(), await conn(), await conn()];
+    const roomX = await emitAck(P.socket, "create_room", { name: "LobbyP", avatar: 0 });
+    const joinQ = await emitAck(Q.socket, "join_room", { code: roomX.code, name: "LobbyQ", avatar: 1 });
+    await emitAck(R.socket, "create_room", { name: "LobbyR", avatar: 2 }); // ห้องอื่น
+    await wait(200);
+    [P, Q, R, X].forEach((r) => r.clear());
+
+    Q.socket.emit("guess", { text: "  สวัสดีทุกคน  " });
+    const gotP = await P.wait("chat_message", null, 2000);
+    const gotQ = await Q.wait("chat_message", null, 2000);
+    check("ข้อความถึงทุกคนในห้องรอ (ตัดช่องว่างหัวท้าย)", [gotP.text, gotQ.text, gotP.name, gotP.playerId], ["สวัสดีทุกคน", "สวัสดีทุกคน", "LobbyQ", joinQ.playerId]);
+    check("ห้องอื่น/คนที่ไม่ได้อยู่ห้อง ไม่ได้รับ", (await R.quiet("chat_message", 300)).length + (await X.quiet("chat_message", 1)).length, 0);
+
+    P.clear();
+    X.socket.emit("guess", { text: "คนนอกห้อง" });
+    check("คนที่ไม่ได้อยู่ในห้องส่งแล้วเงียบ", (await P.quiet("chat_message", 300)).length, 0);
+
+    P.clear();
+    Q.socket.emit("guess", { text: "ก".repeat(300) });
+    check("ข้อความยาวถูกตัดที่ 100 ตัวอักษร", (await P.wait("chat_message", null, 2000)).text.length, 100);
+
+    P.clear();
+    Q.socket.emit("guess", { text: "   " });
+    Q.socket.emit("guess", { text: { evil: 1 } });
+    check("ข้อความว่าง/ชนิดผิด ถูกทิ้ง server ไม่ล่ม", (await P.quiet("chat_message", 400)).length, 0);
+
+    // ยิงรัว 25 ครั้ง → ผ่านไม่เกินเพดานเดียวกับแชทในเกม (GUESS_MAX = 10 ต่อ 5 วิ)
+    await wait(5200); // รอให้หน้าต่างเก่าหมดอายุก่อน
+    P.clear();
+    for (let i = 0; i < 25; i++) Q.socket.emit("guess", { text: `spam${i}` });
+    const delivered = (await P.quiet("chat_message", 700)).length;
+    check("ยิงแชทรัว 25 ครั้ง ผ่านไม่เกิน 10", delivered > 0 && delivered <= 10, true);
+
+    for (const r of [P, Q, R, X]) r.socket.disconnect();
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // ข้อ 39 — จำนวนผู้เล่นสูงสุด (maxPlayers) + ความยาก "ผสม"
+  // ══════════════════════════════════════════════════════════════════
+  await runPart("39. maxPlayers 4/6/8 · ห้องเต็มเข้าไม่ได้ · ลดต่ำกว่าคนในห้องไม่เตะ · /api/rooms · ความยากผสม", async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const conn = () => new Promise((resolve, reject) => {
+      const s = io(URL, { transports: ["websocket"] });
+      const t = setTimeout(() => reject(new Error("ต่อ server ไม่ติด")), 8000);
+      s.on("connect", () => { clearTimeout(t); resolve(track(s)); });
+      s.on("connect_error", (e) => { clearTimeout(t); reject(e); });
+    });
+    const P = [];
+    for (let i = 0; i < 6; i++) P.push(await conn());
+    const made = await emitAck(P[0].socket, "create_room", { name: "Mx0", avatar: 0 });
+    const st = () => P[0].dump().filter((e) => e.name === "room_update").at(-1).args[0].settings;
+    await wait(150);
+    check("ค่าเริ่มต้น difficulty=mixed maxPlayers=8", [st().difficulty, st().maxPlayers], ["mixed", 8]);
+
+    const set = async (patch) => { P[0].socket.emit("update_settings", { ...st(), ...patch }); await wait(200); };
+    await set({ maxPlayers: 3 }); check("maxPlayers=3 ถูกเมิน", st().maxPlayers, 8);
+    await set({ maxPlayers: 10 }); check("maxPlayers=10 (เกินเพดาน) ถูกเมิน", st().maxPlayers, 8);
+    await set({ maxPlayers: "6" }); check("maxPlayers เป็นสตริง '6' แปลงเป็นเลขได้ (เหมือน rounds)", st().maxPlayers, 6);
+    await set({ maxPlayers: { x: 1 } }); check("maxPlayers ชนิดแปลกถูกเมิน", st().maxPlayers, 6);
+    await set({ difficulty: "hard" }); check("difficulty hard", st().difficulty, "hard");
+    await set({ difficulty: "mixed" }); check("difficulty กลับเป็น mixed ได้", st().difficulty, "mixed");
+    await set({ difficulty: "nightmare" }); check("difficulty แปลกถูกเมิน", st().difficulty, "mixed");
+
+    // คนที่ไม่ใช่หัวห้องตั้งไม่ได้
+    P[1].socket.emit("join_room", { code: made.code, name: "Mx1", avatar: 1 }, () => {});
+    await wait(250);
+    P[1].socket.emit("update_settings", { ...st(), maxPlayers: 4 });
+    await wait(200);
+    check("ลูกห้องตั้ง maxPlayers ไม่ได้", st().maxPlayers, 6);
+
+    // ตั้ง 4 แล้วเติมให้เต็ม → คนที่ 5 เข้าไม่ได้
+    await set({ maxPlayers: 4 });
+    for (const i of [2, 3]) await emitAck(P[i].socket, "join_room", { code: made.code, name: `Mx${i}`, avatar: i });
+    const full = await emitAck(P[4].socket, "join_room", { code: made.code, name: "Mx4", avatar: 4 });
+    check("ห้องเต็มตามค่าที่ตั้ง (4) → ROOM_FULL", full, { ok: false, error: "ROOM_FULL" });
+
+    // ลดต่ำกว่าคนที่อยู่ (4 คน ตั้ง... ทดสอบด้วยการขยายเป็น 6 เติม 6 แล้วลดเป็น 4)
+    await set({ maxPlayers: 6 });
+    for (const i of [4, 5]) await emitAck(P[i].socket, "join_room", { code: made.code, name: `Mx${i}`, avatar: i });
+    await wait(200);
+    check("เติมครบ 6 คน", P[0].dump().filter((e) => e.name === "room_update").at(-1).args[0].players.length, 6);
+    await set({ maxPlayers: 4 });
+    check("ลดเหลือ 4 ตอนมี 6 คน ไม่เตะใคร", P[0].dump().filter((e) => e.name === "room_update").at(-1).args[0].players.length, 6);
+    const late = await conn();
+    check("คนใหม่เข้าไม่ได้ (ROOM_FULL) ทั้งที่ลดแล้ว", await emitAck(late.socket, "join_room", { code: made.code, name: "MxLate", avatar: 0 }), { ok: false, error: "ROOM_FULL" });
+
+    // /api/rooms: public แสดง maxPlayers ตามที่ตั้ง · เต็ม (>= ค่าที่ตั้ง) ไม่ขึ้นรายการ
+    await set({ visibility: "public" });
+    const list1 = (await (await fetch(`http://localhost:${TEST_PORT}/api/rooms`)).json()).rooms;
+    check("ห้องที่คนเต็ม/เกินค่าที่ตั้ง ไม่ขึ้นในรายการ public", list1.some((r) => r.code === made.code), false);
+    await set({ maxPlayers: 8 });
+    const list2 = (await (await fetch(`http://localhost:${TEST_PORT}/api/rooms`)).json()).rooms.find((r) => r.code === made.code);
+    check("เพิ่มเป็น 8 → ขึ้นรายการ พร้อม players=6 maxPlayers=8 difficulty=mixed", [list2?.players, list2?.maxPlayers, list2?.difficulty], [6, 8, "mixed"]);
+
+    // ความยากผสมเริ่มเกมได้จริง (มีตัวเลือกคำ 3 คำ)
+    for (const r of P.slice(1)) r.socket.emit("set_ready", { ready: true });
+    await wait(200);
+    P[0].clear();
+    P[0].socket.emit("start_game");
+    const chosen = await P[0].tryWait("choose_word", null, 5000) ?? await (async () => { for (const r of P) { const x = await r.tryWait("choose_word", null, 300); if (x) return x; } return null; })();
+    check("difficulty=mixed เริ่มเกมได้และได้ตัวเลือกคำ 3 คำ", chosen?.options?.length, 3);
+
+    for (const r of [...P, late]) r.socket.disconnect();
   });
 
   // ปิดทุก socket เพื่อให้โปรเซสจบได้

@@ -392,6 +392,8 @@ export function useGame() {
     chooseWord: (word) => socket.emit("word_chosen", { word }),
     sendGuess: (text) => socket.emit("guess", { text }),
     startGame: () => socket.emit("start_game"),
+    // ล้างแชทเก่า (ตอนกลับมาห้องรอหลังจบเกม จะได้ไม่เห็นข้อความของเกมก่อนหน้า)
+    clearMessages: () => setGame((g) => (g.messages.length ? { ...g, messages: [] } : g)),
     // ออกจากห้องแล้วล้างให้เกลี้ยง ไม่งั้นกลับเข้าห้องใหม่แล้วอาจเห็นของเก่าค้างอยู่แวบหนึ่ง
     resetGame: () => {
       setGame(emptyGame());

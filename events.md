@@ -47,7 +47,8 @@
     mode: "classic",   // "classic" (แข่งเดี่ยวกับเพื่อน) | "team"
     rounds: 3,         // ทุกคนได้วาดกี่รอบ
     drawTime: 60,      // วินาทีต่อตา
-    difficulty: "easy",    // "easy" | "medium" | "hard" — ระดับของ "ชุดคำ" เท่านั้น ไม่เกี่ยวกับเวลา
+    difficulty: "mixed",   // "mixed" (สุ่มทุกระดับปนกัน ค่าเริ่มต้น) | "easy" | "medium" | "hard" — ระดับของ "ชุดคำ" เท่านั้น ไม่เกี่ยวกับเวลา
+    maxPlayers: 8,         // 4 | 6 | 8 — จำนวนผู้เล่นสูงสุดของห้อง (เพดานระบบ 8)
     visibility: "private", // "private" (เข้าด้วยรหัสเท่านั้น) | "public" (ขึ้นในรายการห้องหน้าแรก)
     challenges: ["none", "colour_fix", "dont_lift_pen", "shapes_only"] // Mini Challenge ที่เปิด (ดูหัวข้อ 5) ค่าเริ่มต้นเปิดครบ 4 ใบ · เปิดอย่างน้อย 1 ใบเสมอ
   }
@@ -80,10 +81,10 @@ server แปลงกุญแจเป็น `playerId` ด้วย SHA-256 (
 
 ### `create_room` C → S
 ```js
-{ name: "mh", avatar: 3, mode: "team", rounds: 3, drawTime: 60, difficulty: "easy", visibility: "private" }
+{ name: "mh", avatar: 3, mode: "team", rounds: 3, drawTime: 60, difficulty: "mixed", maxPlayers: 8, visibility: "private" }
 // ทุกช่องยกเว้น name ไม่ส่งก็ได้
 ```
-`mode` `rounds` `drawTime` `difficulty` `visibility` (ไม่บังคับ) เลือกตั้งแต่หน้า SET UP — ตรวจด้วยกติกาเดียวกับ `update_settings`
+`mode` `rounds` `drawTime` `difficulty` `maxPlayers` `visibility` (ไม่บังคับ) เลือกตั้งแต่หน้า SET UP — ตรวจด้วยกติกาเดียวกับ `update_settings`
 (ค่าที่ไม่อนุญาตถูกเมิน ใช้ค่าเริ่มต้น `classic` / 3 / 60 / `easy` / `private`)
 Mini Challenge (`challenges`) ไม่ตั้งที่นี่ — เปิด/ปิดทีละใบในห้องรอ (ดู `set_challenges` หัวข้อ 5) ห้องเริ่มด้วยชุดเริ่มต้น
 (ยังรับ `challenge: true/false` แบบเก่าได้: `true` = ชุดเริ่มต้น · `false` = เปิดแค่ Standard)
@@ -171,18 +172,19 @@ server ตัดช่องว่างหน้าหลังชื่อ แ
 
 ### `update_settings` C → S (หัวห้องเท่านั้น)
 ```js
-{ mode: "classic", rounds: 3, drawTime: 60, difficulty: "easy", visibility: "private" }
+{ mode: "classic", rounds: 3, drawTime: 60, difficulty: "mixed", maxPlayers: 8, visibility: "private" }
 ```
 รับเฉพาะค่าที่กำหนด ค่าอื่น server ไม่สนใจ (ช่องที่ไม่ส่ง = คงค่าเดิม) · Mini Challenge ใช้ `set_challenges` แยกต่างหาก (หัวข้อ 5)
 `rounds`: 1, 2, 3, 4, 5 · `drawTime`: 30, 45, 60, 90
-`difficulty`: `"easy"` `"medium"` `"hard"` — server สุ่มตัวเลือกคำจากคลังระดับนั้นใน `words.json` (**มีผลกับชุดคำอย่างเดียว ไม่เปลี่ยนเวลา**) ระดับนั้นมีคำไม่พอ → ใช้ทุกระดับปนกัน
+`maxPlayers`: `4` `6` `8` เท่านั้น (ค่าอื่นถูกเมิน คงค่าเดิม · เพดาน 8 · โหมดทีมต้องมีทีมละ 2 คน จึงต่ำสุด 4) — ห้องเต็ม = `players.length >= maxPlayers` → `join_room` ได้ `ROOM_FULL` · **หัวห้องลดจำนวนต่ำกว่าคนที่อยู่แล้วได้ ไม่เตะใคร แค่ห้ามคนใหม่เข้า** · คนที่หลุดแล้ว `rejoin` ยังกลับได้ (ยังเป็นสมาชิก)
+`difficulty`: `"mixed"` `"easy"` `"medium"` `"hard"` — `mixed` = สุ่มจากทุกระดับปนกัน (ค่าเริ่มต้นของห้อง · Solo ไม่มี mixed) · server สุ่มตัวเลือกคำจากคลังระดับนั้นใน `words.json` (**มีผลกับชุดคำอย่างเดียว ไม่เปลี่ยนเวลา**) ระดับนั้นมีคำไม่พอ → ใช้ทุกระดับปนกัน
 `visibility`: `"private"` `"public"` · `challenge`: `true` `false` (ต้องเป็น boolean)
 แก้ได้เฉพาะตอนเกมไม่ได้เล่นอยู่
 
 ### รายการห้อง Public `GET /api/rooms`
-HTTP ธรรมดา (หน้าแรกขอใหม่ทุก ~5 วิ) ส่งเฉพาะห้องที่ `visibility: "public"` และยังไม่เต็ม สูงสุด 30 ห้อง
+HTTP ธรรมดา (หน้าแรกขอใหม่ทุก ~5 วิ) ส่งเฉพาะห้องที่ `visibility: "public"` และยังไม่เต็ม (เทียบกับ `maxPlayers` ที่หัวห้องตั้ง) `maxPlayers` ในรายการ = ค่าที่ตั้ง สูงสุด 30 ห้อง
 ```js
-{ rooms: [ { code: "48213", host: "mh", players: 2, maxPlayers: 8, status: "lobby", mode: "classic", difficulty: "easy" } ] }
+{ rooms: [ { code: "48213", host: "mh", players: 2, maxPlayers: 8, status: "lobby", mode: "classic", difficulty: "mixed" } ] }
 ```
 ห้อง private ไม่อยู่ในรายการ · ไม่มีคำ คะแนน หรือ playerId ในคำตอบ · เข้าห้องจริงยังใช้ `join_room` เหมือนเดิม (server ตรวจห้องเต็ม/ชื่อซ้ำ)
 
@@ -337,6 +339,7 @@ HTTP ธรรมดา (หน้าแรกขอใหม่ทุก ~5 ว
 คนวาด พิมพ์อะไรมา server ทิ้งทั้งหมด ไม่มีใครเห็น
 คนที่ทายถูกไปแล้ว พิมพ์มา ส่งถึงแค่คนวาดกับคนที่ทายถูกแล้วเท่านั้น
 ช่วงอื่น (lobby เลือกคำ พักระหว่างตา จบเกม) คุยกันได้ปกติทุกคน
+(แชทในห้องรอใช้ event `guess` ตัวเดียวกัน: `text` ต้องเป็นสตริง ตัดช่องว่างหัวท้ายและยาวไม่เกิน 100 ตัวอักษร ชื่อผู้ส่งมาจาก `cleanName` ตอนเข้าห้อง จำกัดความถี่เดียวกับแชทในเกม 10 ครั้ง/5 วิ ข้อความถึงเฉพาะห้องตัวเอง)
 
 ### `chat_message` S → ห้อง
 ```js
@@ -760,7 +763,7 @@ server เรียก `saveScore` เองตอนจบ client ส่งค�
 | code | เกิดเมื่อ |
 |---|---|
 | `ROOM_NOT_FOUND` | ใส่รหัสห้องผิด |
-| `ROOM_FULL` | ห้องเต็ม (สูงสุด 8 คน) |
+| `ROOM_FULL` | ห้องเต็ม (ตามจำนวนผู้เล่นสูงสุดที่หัวห้องตั้ง 4/6/8) |
 | `NAME_TAKEN` | ชื่อซ้ำกับคนในห้อง |
 | `NOT_IN_ROOM` | `rejoin` แต่ไม่ได้เป็นสมาชิกห้องนั้น (ไม่เคยเข้า · ออกเอง · หลุดเกิน 30 วิ) |
 | `TOO_MANY_ATTEMPTS` | เรียก `join_room`/`rejoin` ถี่เกินเพดาน (กันไล่เดารหัสห้อง) — รอสักครู่แล้วลองใหม่ |
@@ -819,3 +822,5 @@ server เรียก `saveScore` เองตอนจบ client ส่งค�
 | 3 ต.ค. | Claude | **Mini Challenge** จังหวะกลับตามที่ตกลง: ตาแรกไม่มี · ตาถัดไป ~1/3 · ไม่ติดกัน ใช้เสมอไม่ว่าเปิด `none` หรือไม่ (เดิมปิด `none` = ทุกตาเป็นกติกาพิเศษ) |
 | 3 ต.ค. | Claude | **Solo ช่อง "AI วาด"** — `ai_draw_start` เพิ่ม `hintAt` · event ใหม่ `ai_draw_hint { hint }` ส่งตอนเวลาเหลือครึ่งหนึ่ง (ช่องวรรณยุกต์ ไม่มีตัวอักษรจริง) |
 | 3 ต.ค. | mh | **ตั้งค่า/ความยาก** — Solo: เวลา 60 วิ เท่ากันทุกด่าน (เดิม 60/45/30) · `ai_start.difficulty` เปลี่ยนความหมายจาก "ชุดคำทั้งเกม" เป็น "ระดับเริ่มต้น" แล้วยากขึ้นทุก 2 ด่าน · `draw_shape` รับ `triangle` เพิ่ม (สามเหลี่ยมหน้าจั่วในกรอบของสองจุด) · ค่าเริ่มต้นของ `settings.challenges` เปิดครบ 4 ใบ (เพิ่ม `shapes_only`) |
+| 4 ต.ค. | Claude | **แชทห้องรอ** — ไม่เพิ่ม event: ใช้ `guess` เดิมนอกช่วงวาด (ส่งถึงทั้งห้อง) · เพิ่มกติกา `text` ต้องเป็นสตริง (ชนิดอื่นถูกทิ้ง เดิมกลายเป็น "[object Object]") · เขียนกติกาแชทห้องรอไว้ในหัวข้อแชท |
+| 4 ต.ค. | Claude | **จำนวนผู้เล่นสูงสุด + ความยาก "ผสม"** — `settings.maxPlayers` (4/6/8 ค่าเริ่มต้น 8) รับใน `create_room`/`update_settings` · `join_room` เช็คกับค่านี้ (ลดต่ำกว่าคนที่อยู่ไม่เตะใคร) · `GET /api/rooms` ใช้ค่านี้ · `settings.difficulty` เพิ่มค่า `"mixed"` เป็นค่าเริ่มต้นของห้อง (Solo ยังเป็น easy/medium/hard) |
