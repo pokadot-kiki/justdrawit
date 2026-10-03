@@ -4919,3 +4919,75 @@ select[class] {
   }
 }
 
+
+
+/* ==========================================================================
+   มือถือแนวตั้ง: แถบคำเหนือกระดานสูงตามเนื้อหา (เดิมสูงตายตัว 66px ทำให้ป้ายช่วง/Mini Challenge กับคำ
+   แยกเป็นสองบรรทัดแล้วคำล้นลงไปอยู่หลังกระดาน) · ป้ายอยู่บน คำอยู่ล่าง ปุ่มให้คำใบ้อยู่ท้ายสุด
+   ========================================================================== */
+@media (max-width: 1000px) {
+  .wordbar {
+    height: auto;
+    min-height: 66px;
+  }
+
+  /* แถบรายชื่อเลื่อนข้าง: ปล่อยให้คอลัมน์ถูกสร้างอัตโนมัติ (grid-auto-columns) — กฎฐาน minmax(0, 1fr) ทำให้คอลัมน์แรก
+     ถูกบีบเหลือ ~58px แล้วแถวที่สองทับชื่อ/คะแนนของแถวแรก (วัดจริงบนมือถือ 390px) */
+  .score-list {
+    grid-template-columns: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .wordbar {
+    gap: 6px;
+    padding: 8px 10px;
+    align-content: center;
+  }
+
+  .wordbar__word {
+    align-self: auto;
+    min-height: 44px;
+    width: 100%;
+  }
+
+  .wordbar .topbar__real-word {
+    top: 0;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  /* คำใบ้สองแถว/คำยาว: ตัดบรรทัดได้ ไม่ล้นความกว้างจอ */
+  .wordbar .hint__row {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .solo-watch {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 4px;
+  }
+
+  .wordbar .challenge,
+  .wordbar .solo-stage {
+    max-width: 100%;
+  }
+}
+
+/* โหมดทีมบนมือถือ: แถบบนมีของมากกว่า (ป้ายทีมเรา · ชื่อคนวาด · คะแนนทีม A vs B · รอบ · เวลา)
+   ให้ป้ายทีม+ชื่อคนวาดอยู่แถวของตัวเองเต็มความกว้าง แล้วคะแนนทีมกับรอบ/เวลาอยู่แถวถัดไป (เดิมแถวแรกถูกบีบจนทับชิปคะแนน) */
+@media (max-width: 620px) {
+  .topbar:has(.team-vs) .topbar__who {
+    flex: 1 1 100%;
+    grid-auto-flow: column;
+    justify-content: start;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .topbar:has(.team-vs) .team-vs {
+    flex: 1 1 auto;
+    justify-content: flex-start;
+  }
+}

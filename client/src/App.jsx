@@ -68,6 +68,7 @@ export default function App() {
     chooseWord,
     sendGuess,
     startGame,
+    backToLobby,
     resetGame,
     clearMessages,
     // ข้อ 4: ส่งการวาดออก · ขอย้อน/ทำซ้ำ · ผูกกระดานเข้ากับตัวรับ action ของคนอื่น
@@ -93,6 +94,8 @@ export default function App() {
     const onGameStarted = () => setInGame(true);
     // รีเฟรชหลังเกมจบ: server ส่ง game_end กลับมาให้ (ไม่มี game_started) → ต้องอยู่หน้าเกมเพื่อโชว์ผลจบเกม
     const onGameEnd = () => setInGame(true);
+    // server พาทุกคนกลับห้องรอหลังจบเกม (ห้องเดิม หัวห้องเดิม) → สลับไปหน้าห้องรอ
+    const onLobbyReturn = () => setInGame(false);
     const onGameError = (err) => showToast(errorText(err?.code));
     // ถูกหัวห้องเตะออก — กลับหน้าแรกพร้อมข้อความ · ออกจาก URL ห้องแล้ว effect จะไม่ rejoin กลับเอง
     const onKicked = () => {
@@ -106,6 +109,7 @@ export default function App() {
     socket.on("room_update", onRoomUpdate);
     socket.on("game_started", onGameStarted);
     socket.on("game_end", onGameEnd);
+    socket.on("lobby_return", onLobbyReturn);
     socket.on("game_error", onGameError);
     socket.on("kicked", onKicked);
 
@@ -120,6 +124,7 @@ export default function App() {
       socket.off("room_update", onRoomUpdate);
       socket.off("game_started", onGameStarted);
       socket.off("game_end", onGameEnd);
+      socket.off("lobby_return", onLobbyReturn);
       socket.off("game_error", onGameError);
       socket.off("kicked", onKicked);
     };
@@ -285,6 +290,7 @@ export default function App() {
           chooseWord={chooseWord}
           sendGuess={sendGuess}
           startGame={startGame}
+          backToLobby={backToLobby}
           sendAction={sendAction}
           askUndo={askUndo}
           askRedo={askRedo}

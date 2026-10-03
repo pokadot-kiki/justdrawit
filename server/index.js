@@ -1019,12 +1019,51 @@ function endGame(room) {
     ended.winner = scores.A === scores.B ? null : scores.A > scores.B ? "A" : "B"; // เสมอ = null
   }
   room.lastEnded = ended; // คนที่รีเฟรชหลังจบเกมจะได้ผลนี้อีกครั้งตอน rejoin
+  // ไม่มีใครกด "กลับห้องรอ" → server พาทุกคนกลับเองเมื่อครบเวลา (server เป็นคนสั่งเปลี่ยนสถานะเสมอ)
+  clearTimeout(room.returnTimer);
+  room.returnAt = Date.now() + LOBBY_RETURN_MS;
+  room.returnTimer = setTimeout(() => returnToLobby(room), LOBBY_RETURN_MS);
   // บันทึกคะแนนของทุกคนลงกระดาน "เล่นกับเพื่อน" — server บันทึกเอง client ส่งคะแนนมาไม่ได้
   // คนที่ได้ 0 ไม่บันทึก (ไม่ได้เล่นจริง) · saveScore ไม่ throw จึงไม่ทำให้จบเกมพัง
   for (const p of room.players) {
     if (p.score > 0) leaderboard.saveScore({ name: p.name, score: p.score, levelReached: 0, board: "multi" });
   }
-  io.to(room.code).emit("game_end", ended);
+  io.to(room.code).emit("game_end", endedPayload(room));
+  io.to(room.code).emit("room_update", roomState(room));
+}
+
+// เวลาที่หน้าสรุปผลรอก่อนพากลับห้องรอเอง (env ไว้ให้เทสย่อเวลาเท่านั้น)
+const LOBBY_RETURN_MS = process.env.LOBBY_RETURN_MS !== undefined ? Number(process.env.LOBBY_RETURN_MS) : 15000;
+
+// ผลจบเกม + เวลาที่เหลือก่อนกลับห้องรอ (วินาที ปัดขึ้น) — ใช้ทั้งตอนจบเกมและตอน rejoin ระหว่างหน้าสรุปผล
+function endedPayload(room) {
+  const left = Math.max(0, Math.ceil(((room.returnAt ?? Date.now()) - Date.now()) / 1000));
+  return { ...room.lastEnded, returnIn: left };
+}
+
+// พาทุกคนกลับห้องรอ (หลังจบเกม): ห้อง/หัวห้อง/คนในห้อง/ทีมเหมือนเดิม · คะแนนกับ Ready รีเซ็ต · ล้างสถานะเกมเก่า
+// ถูกเรียกจาก back_to_lobby (ใครกดก็ได้) หรือตัวนับเวลา — เช็คสถานะที่ server ทุกครั้ง ไม่เชื่อ client
+function returnToLobby(room) {
+  clearTimeout(room.returnTimer);
+  room.returnTimer = null;
+  if (room.status !== "ended" || !rooms.has(room.code)) return;
+  room.status = "lobby";
+  room.phase = null;
+  room.lastEnded = null;
+  room.returnAt = null;
+  room.word = null;
+  room.drawerId = null;
+  room.round = 0;
+  room.roundGains = {};
+  room.guessedIds = new Set();
+  room.teams = null; // เลนของทีม สร้างใหม่ตอน start_game
+  room.challengeHistory = [];
+  resetCanvas(room);
+  for (const p of room.players) {
+    p.score = 0;
+    p.ready = false;
+  }
+  io.to(room.code).emit("lobby_return", {});
   io.to(room.code).emit("room_update", roomState(room));
 }
 
@@ -1104,7 +1143,7 @@ function handleDisconnect(socket) {
 // ลำดับสำคัญ: game_started → round_start → canvas_history (จอต้องล้างกระดานก่อนรับภาพ ไม่งั้นภาพที่เพิ่งได้จะถูกล้างทิ้ง)
 function sendGameState(socket, room, player) {
   if (room.status === "ended") {
-    if (room.lastEnded) socket.emit("game_end", room.lastEnded);
+    if (room.lastEnded) socket.emit("game_end", endedPayload(room));
     return;
   }
   if (room.status !== "playing") return;
@@ -1135,6 +1174,7 @@ function removePlayer(room, pid) {
 
   if (room.players.length === 0) {
     for (const t of room.dropTimers?.values() ?? []) clearTimeout(t);
+    clearTimeout(room.returnTimer);
     stopTimer(room);
     clearTimeout(room.chooseTimeout);
     rooms.delete(code);
@@ -1566,6 +1606,14 @@ io.on("connection", (socket) => {
     io.to(room.code).emit("room_update", roomState(room));
   });
 
+  // หน้าสรุปผล: ใครกด "กลับห้องรอ" ก็พาทุกคนกลับพร้อมกัน (server เช็คว่าเกมจบแล้วจริงและคนกดอยู่ในห้อง)
+  socket.on("back_to_lobby", () => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room || room.status !== "ended") return;
+    if (!room.players.some((p) => p.id === socket.data.pid)) return;
+    returnToLobby(room);
+  });
+
   socket.on("start_game", () => {
     const room = rooms.get(socket.data.roomCode);
     if (!room || room.status === "playing") return;
@@ -1579,6 +1627,7 @@ io.on("connection", (socket) => {
     if (isTeamMode(room) && TEAMS.some((t) => teamCount(room, t) < TEAM_MIN_PLAYERS)) {
       return socket.emit("game_error", { code: "NOT_ENOUGH_PLAYERS", message: "แต่ละทีมต้องมีอย่างน้อย 2 คน" });
     }
+    clearTimeout(room.returnTimer); // เล่นอีกรอบเอง → ยกเลิกตัวนับกลับห้องรอ
     room.status = "playing";
     room.players.forEach((p) => (p.score = 0));
     room.round = 1;

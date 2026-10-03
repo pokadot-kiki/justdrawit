@@ -20,6 +20,7 @@ function emptyGame() {
     chooseTime: 10,
     summary: null, // จาก round_end (เฉลย + คะแนนที่ได้แต่ละคน)
     ranking: null, // จาก game_end
+    returnAt: null, // เวลา (ms) ที่ server จะพากลับห้องรอเอง คิดจาก returnIn ใน game_end
     // ── โหมดทีม (events.md หัวข้อ 8) — โหมดปกติค่าเหล่านี้ไม่ถูกใช้เลย ──
     team: null, // ทีมของเรา จาก round_start
     solvedTeams: [], // ทีมที่มีคนทายถูกแล้วในตานี้ (ชื่อทีมเท่านั้น)
@@ -200,8 +201,15 @@ export function useGame() {
         ranking: data.ranking,
         teamRanking: data.teamRanking ?? null,
         winner: data.winner ?? null,
+        returnAt: typeof data.returnIn === "number" ? Date.now() + data.returnIn * 1000 : null,
         totalRounds: g.totalRounds,
       }));
+
+    // server พาทุกคนกลับห้องรอ (กดปุ่ม/ครบเวลา): ล้างสถานะเกมเก่าทั้งหมดรวมแชท · App จะสลับไปหน้าห้องรอเอง
+    const onLobbyReturn = () => {
+      pendingCanvasRef.current = [];
+      setGame(emptyGame());
+    };
 
     const onChat = (msg) => setGame((g) => ({ ...g, messages: [...g.messages, msg] }));
 
@@ -313,6 +321,7 @@ export function useGame() {
     socket.on("timer", onTimer);
     socket.on("round_end", onRoundEnd);
     socket.on("game_end", onGameEnd);
+    socket.on("lobby_return", onLobbyReturn);
     socket.on("chat_message", onChat);
     socket.on("correct_guess", onCorrectGuess);
     socket.on("room_update", onRoomUpdate);
@@ -332,6 +341,7 @@ export function useGame() {
       socket.off("timer", onTimer);
       socket.off("round_end", onRoundEnd);
       socket.off("game_end", onGameEnd);
+      socket.off("lobby_return", onLobbyReturn);
       socket.off("chat_message", onChat);
       socket.off("correct_guess", onCorrectGuess);
       socket.off("room_update", onRoomUpdate);
@@ -392,6 +402,7 @@ export function useGame() {
     chooseWord: (word) => socket.emit("word_chosen", { word }),
     sendGuess: (text) => socket.emit("guess", { text }),
     startGame: () => socket.emit("start_game"),
+    backToLobby: () => socket.emit("back_to_lobby"), // หน้าสรุปผล: ขอกลับห้องรอ (server ตัดสินและพาทุกคนกลับ)
     // ล้างแชทเก่า (ตอนกลับมาห้องรอหลังจบเกม จะได้ไม่เห็นข้อความของเกมก่อนหน้า)
     clearMessages: () => setGame((g) => (g.messages.length ? { ...g, messages: [] } : g)),
     // ออกจากห้องแล้วล้างให้เกลี้ยง ไม่งั้นกลับเข้าห้องใหม่แล้วอาจเห็นของเก่าค้างอยู่แวบหนึ่ง

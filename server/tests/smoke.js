@@ -3222,6 +3222,134 @@ async function main() {
     for (const r of [...P, late]) r.socket.disconnect();
   });
 
+  // ══════════════════════════════════════════════════════════════════
+  // ข้อ 40 — จบเกมแล้วกลับห้องรอ (back_to_lobby / กลับเองหลังครบเวลา) ทั้ง classic และทีม
+  // ══════════════════════════════════════════════════════════════════
+  await runPart("40. กลับห้องรอหลังจบเกม — กดปุ่ม/ครบเวลา · ห้อง/หัวห้อง/คนเดิม · คะแนน+Ready รีเซ็ต · rejoin ระหว่างสรุปผล · ทีม", async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const connectAs = (url, key) => new Promise((resolve, reject) => {
+      const sk = io(url, { transports: ["websocket"], auth: key ? { playerKey: key } : undefined });
+      const t = setTimeout(() => reject(new Error("ต่อ server ไม่ติด")), 8000);
+      sk.on("connect", () => { clearTimeout(t); resolve(track(sk)); });
+      sk.on("connect_error", (e) => { clearTimeout(t); reject(e); });
+    });
+    const rid = Math.random().toString(36).slice(2, 8);
+    const lastRoom = (r) => r.dump().filter((e) => e.name === "room_update").at(-1)?.args[0];
+
+    // ---------- classic: เล่น 2 คน 1 รอบ (2 ตา) ให้จบเกมจริง ----------
+    const key1 = `back40-${rid}-host-key`, key2 = `back40-${rid}-guest-key`;
+    const P = await connectAs(URL, key1), Q = await connectAs(URL, key2), X = await connectAs(URL);
+    const made = await emitAck(P.socket, "create_room", { name: "Bk40P", avatar: 0, rounds: 1, drawTime: 30 });
+    const joined = await emitAck(Q.socket, "join_room", { code: made.code, name: "Bk40Q", avatar: 1 });
+    await wait(150);
+    // ก่อนจบเกม กดกลับห้องรอไม่มีผล
+    P.clear(); Q.clear();
+    Q.socket.emit("back_to_lobby");
+    check("กลับห้องรอตอนยังไม่เล่น → ไม่มีผล", (await P.quiet("lobby_return", 300)).length, 0);
+    Q.socket.emit("set_ready", { ready: true });
+    await wait(150);
+    P.socket.emit("start_game");
+    const byPid = { [made.playerId]: P, [joined.playerId]: Q };
+    for (let turn = 0; turn < 2; turn++) {
+      let drawer = null, opts = null;
+      for (let i = 0; i < 80 && !opts; i++) {
+        for (const r of [P, Q]) { const c = r.dump().filter((e) => e.name === "choose_word").at(-1); if (c && c.args[0].options && !c.used) { c.used = true; opts = c.args[0].options; drawer = r; } }
+        if (!opts) await wait(100);
+      }
+      checkOk(`ตา ${turn + 1}: คนวาดได้ตัวเลือกคำ`, !!opts);
+      drawer.socket.emit("word_chosen", { word: opts[0] });
+      const w = (await drawer.wait("your_word", (x) => x.word === opts[0], 5000)).word;
+      const guesser = drawer === P ? Q : P;
+      await wait(250);
+      guesser.socket.emit("guess", { text: w });
+      await wait(500);
+    }
+    const ge = await P.wait("game_end", null, 12000);
+    check("game_end มี returnIn (1–15 วิ)", ge.returnIn >= 1 && ge.returnIn <= 15, true);
+    check("คะแนนก่อนกลับห้องรอ > 0", lastRoom(P).players.every((p) => p.score > 0) , true);
+
+    // คนนอกห้องกดแล้วไม่มีผล
+    P.clear(); Q.clear();
+    X.socket.emit("back_to_lobby");
+    check("คนที่ไม่ได้อยู่ในห้องกด back_to_lobby → ไม่มีผล", (await P.quiet("lobby_return", 300)).length, 0);
+
+    // รีเฟรช (ต่อใหม่ด้วยกุญแจเดิม) ระหว่างหน้าสรุปผล → ได้ game_end กลับมาพร้อมเวลาที่เหลือ
+    Q.socket.disconnect();
+    await wait(200);
+    const Q2 = await connectAs(URL, key2);
+    const rj = await emitAck(Q2.socket, "rejoin", { code: made.code });
+    check("rejoin ระหว่างหน้าสรุปผลสำเร็จ", [rj.ok, rj.playerId], [true, joined.playerId]);
+    const ge2 = await Q2.wait("game_end", null, 3000);
+    check("rejoin แล้วได้ game_end เดิมพร้อม returnIn", [ge2.ranking.length, typeof ge2.returnIn], [2, "number"]);
+
+    // ลูกห้องกดกลับห้องรอ → ทุกคนได้ lobby_return พร้อมกัน
+    P.clear(); Q2.clear();
+    Q2.socket.emit("back_to_lobby");
+    await P.wait("lobby_return", null, 3000); await Q2.wait("lobby_return", null, 3000);
+    await wait(150);
+    const rs = lastRoom(P);
+    check("กลับห้องรอ: สถานะ lobby ห้องเดิม หัวห้องเดิม คนครบ", [rs.status, rs.code, rs.hostId, rs.players.length], ["lobby", made.code, made.playerId, 2]);
+    check("คะแนนรีเซ็ตเป็น 0 และ Ready รีเซ็ตเป็น false ทุกคน", rs.players.map((p) => [p.score, p.ready]), [[0, false], [0, false]]);
+    check("กดซ้ำตอนอยู่ห้องรอแล้ว → ไม่มี lobby_return ซ้ำ", (await (async () => { P.clear(); Q2.socket.emit("back_to_lobby"); return P.quiet("lobby_return", 300); })()).length, 0);
+    // rejoin หลังกลับห้องรอแล้ว: ไม่มี game_end ค้าง
+    Q2.socket.disconnect(); await wait(200);
+    const Q3 = await connectAs(URL, key2);
+    await emitAck(Q3.socket, "rejoin", { code: made.code });
+    check("rejoin หลังกลับห้องรอแล้ว ไม่ได้ game_end เก่า", (await Q3.quiet("game_end", 300)).length, 0);
+    // หัวห้องเปลี่ยนตั้งค่าแล้วเริ่มเกมใหม่ได้
+    P.socket.emit("update_settings", { ...rs.settings, drawTime: 45, rounds: 2 });
+    await wait(200);
+    check("เปลี่ยนตั้งค่าหลังกลับห้องรอได้", [lastRoom(P).settings.drawTime, lastRoom(P).settings.rounds], [45, 2]);
+    Q3.socket.emit("set_ready", { ready: true }); await wait(150);
+    P.clear();
+    P.socket.emit("start_game");
+    checkOk("เริ่มเกมใหม่ได้", !!(await P.tryWait("choose_word", null, 5000)) || !!(await Q3.tryWait("choose_word", null, 2000)));
+    for (const r of [P, Q, Q2, Q3, X]) r.socket.disconnect();
+
+    // ---------- โหมดทีม + กลับเองหลังครบเวลา: server ตัวที่สอง LOBBY_RETURN_MS=1500 ----------
+    const URL2 = "http://localhost:3001";
+    const env = { ...process.env, SCORES_FILE, PORT: "3001", AI_MODE: "mock", LOBBY_RETURN_MS: "1500", CHALLENGE_NO_PACING: "1", CHALLENGE_INTRO_MS: "0" };
+    const srv = spawn(process.execPath, ["index.js"], { cwd: SERVER_DIR, stdio: "ignore", env });
+    const socks = [];
+    try {
+      let up = false;
+      for (let i = 0; i < 100 && !up; i++) { up = await fetch(`${URL2}/test.html`).then((r) => r.ok).catch(() => false); if (!up) await wait(100); }
+      checkOk("server ตัวที่สอง (กลับห้องรอเองใน 1.5 วิ) เปิดได้", up);
+      const T = [];
+      for (let i = 1; i <= 4; i++) { const t = await connectAs(URL2, `back40t-${rid}-${i}`); socks.push(t); T.push(t); }
+      const tm = await emitAck(T[0].socket, "create_room", { name: "BkT1", avatar: 0, mode: "team", rounds: 2, drawTime: 30 });
+      for (let i = 1; i < 4; i++) await emitAck(T[i].socket, "join_room", { code: tm.code, name: `BkT${i + 1}`, avatar: i });
+      for (let i = 1; i < 4; i++) T[i].socket.emit("set_ready", { ready: true });
+      await wait(250);
+      const before = lastRoom(T[0]);
+      const teamsBefore = Object.fromEntries(before.players.map((p) => [p.name, p.team]));
+      T[0].socket.emit("start_game");
+      await T[0].wait("game_started", null, 5000);
+      // ทีม B เหลือคนเดียว (คนที่ 2 ออก) → server จบเกม
+      const bPlayer = before.players.find((p) => p.team === "B" && p.id !== tm.playerId);
+      T[1].socket.emit("leave_room");
+      const ged = await T[0].wait("game_end", null, 8000);
+      check("โหมดทีม: จบเกมแล้วได้ teamRanking และ returnIn", [Array.isArray(ged.teamRanking), ged.returnIn >= 1 && ged.returnIn <= 2], [true, true]);
+      T[0].clear();
+      await T[0].wait("lobby_return", null, 5000);
+      await wait(150);
+      const tr = lastRoom(T[0]);
+      check("โหมดทีม: ครบเวลา server พากลับห้องรอเอง (lobby · ห้องเดิม · หัวห้องเดิม)", [tr.status, tr.code, tr.hostId], ["lobby", tm.code, tm.playerId]);
+      check("โหมดทีม: คนที่เหลืออยู่ครบ ทีมเดิม คะแนน 0 Ready รีเซ็ต", [tr.players.length, tr.players.every((p) => p.score === 0 && p.ready === false), tr.players.every((p) => p.team === teamsBefore[p.name]), tr.settings.mode], [3, true, true, "team"]);
+      // ทั้งสามจอได้ lobby_return
+      check("ทุกคนที่เหลือได้ lobby_return", [(await T[2].quiet("lobby_return", 50)).length >= 1, (await T[3].quiet("lobby_return", 50)).length >= 1], [true, true]);
+      // กลับห้องรอแล้วเกมใหม่เริ่มได้เมื่อทีมครบ: คนใหม่เข้าห้องมาแทน
+      const nw = await connectAs(URL2, `back40t-${rid}-new`); socks.push(nw);
+      const jn = await emitAck(nw.socket, "join_room", { code: tm.code, name: "BkNew", avatar: 2 });
+      checkOk("หลังกลับห้องรอ มีคนเข้าห้องใหม่ได้", jn?.ok === true);
+      void bPlayer;
+    } finally {
+      socks.forEach((x) => x.socket.disconnect());
+      srv.kill();
+      await wait(200);
+    }
+  });
+
   // ปิดทุก socket เพื่อให้โปรเซสจบได้
   for (const rec of [A, B, C, ...others]) rec.socket.disconnect();
 }

@@ -707,3 +707,31 @@ body:has(.screen--lb) .audio-dock {
 .lb-teams .lb-player__info {
   flex: 1 1 60px;
 }
+
+/* มือถือ/จอแคบ: ห้องรอเลื่อนทั้งหน้า — การ์ดทุกใบสูงตามเนื้อหา ห้ามหดจนปุ่ม/ข้อความทับการ์ดข้างล่าง */
+@media (max-width: 899px) {
+  .screen--lb {
+    height: auto;
+    min-height: 100%;
+  }
+
+  .lb-box,
+  .lb-cols,
+  .lb-left,
+  .lb-right,
+  .lb-card,
+  .lb-roster,
+  .lb-settings {
+    flex: none;
+    min-height: auto;
+  }
+
+  .lb-settings__grid {
+    flex: none;
+  }
+
+  .lb-chat {
+    flex: none;
+    height: 280px;
+  }
+}

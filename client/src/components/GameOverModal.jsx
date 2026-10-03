@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import Modal from "./Modal";
 import Mascot from "./Mascot";
 import Confetti from "./Confetti";
@@ -7,12 +8,21 @@ import { Icon } from "./Icons";
 const MEDALS = ["medal1", "medal2", "medal3"];
 
 // จบเกม — แท่นรางวัลอันดับ 1-3
-// หัวห้องมีปุ่มเล่นอีกรอบ (start_game) ทุกคนมีปุ่มกลับหน้าแรก (leave_room)
-export default function GameOverModal({ ranking, isHost, onPlayAgain, onLeave, teamRanking = null, winner = null, myTeam = null, meId = null }) {
+// ทุกคนมีปุ่มกลับห้องรอ (back_to_lobby → server พาทุกคนกลับพร้อมกัน หรือพาเองเมื่อครบเวลา) กับกลับหน้าแรก (leave_room) · หัวห้องมีปุ่มเล่นอีกรอบเลย (start_game)
+export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLobby, returnAt = null, onLeave, teamRanking = null, winner = null, myTeam = null, meId = null }) {
   // โหมดทีม: ประกาศทีมที่ชนะ (เสมอ = winner เป็น null) พลุเล่นเหมือนเดิมเพราะอยู่ในกล่องเดียวกัน
   const teamMode = Boolean(teamRanking);
   const top3 = ranking.slice(0, 3);
   const rest = ranking.slice(3);
+  // นับถอยหลังก่อน server พากลับห้องรอเอง (server เป็นคนสั่งจริง ตัวเลขนี้แค่โชว์)
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (returnAt == null) return;
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, [returnAt]);
+  const secLeft = returnAt == null ? null : Math.max(0, Math.ceil((returnAt - now) / 1000));
+
   // เรียงให้ที่ 1 อยู่กลาง เวลาตกแต่งด้วย CSS จะได้เหมือนแท่นรางวัลจริง
   const podiumOrder = [top3[1], top3[0], top3[2]].filter(Boolean);
 
@@ -73,17 +83,19 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onLeave, t
       )}
 
       <div className="modal__actions">
-        {isHost ? (
-          <button className="btn btn--primary" type="button" onClick={onPlayAgain}>
-            เล่นอีกรอบ
+        <button className="btn btn--primary" type="button" onClick={onBackToLobby}>
+          กลับห้องรอ
+        </button>
+        {isHost && (
+          <button className="btn" type="button" onClick={onPlayAgain}>
+            เล่นอีกรอบเลย
           </button>
-        ) : (
-          <p className="modal__note">รอหัวห้องกดเล่นอีกรอบ...</p>
         )}
         <button className="btn" type="button" onClick={onLeave}>
           กลับหน้าแรก
         </button>
       </div>
+      {secLeft != null && <p className="modal__note">กลับห้องรอเองอัตโนมัติใน {secLeft} วิ</p>}
     </Modal>
   );
 }

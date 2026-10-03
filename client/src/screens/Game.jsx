@@ -34,6 +34,7 @@ export default function Game({
   chooseWord,
   sendGuess,
   startGame,
+  backToLobby,
   sendAction,
   askUndo,
   askRedo,
@@ -363,6 +364,8 @@ export default function Game({
           meId={meId}
           isHost={room.hostId === meId}
           onPlayAgain={startGame}
+          onBackToLobby={backToLobby}
+          returnAt={game.returnAt}
           onLeave={onLeave}
         />
       )}
