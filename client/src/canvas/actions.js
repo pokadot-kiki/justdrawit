@@ -31,7 +31,7 @@ export function applyFill({ x, y, color }) {
   return { type: "fill", x, y, color };
 }
 
-// รูปทรง (line | rect | circle) ลากเสร็จแล้วส่งทีเดียว — ไม่มีสามจังหวะแบบเส้น
+// รูปทรง (line | rect | circle | triangle) ลากเสร็จแล้วส่งทีเดียว — ไม่มีสามจังหวะแบบเส้น
 export function drawShape({ shape, x1, y1, x2, y2, color, size }) {
   return { type: "draw_shape", shape, x1, y1, x2, y2, color, size };
 }

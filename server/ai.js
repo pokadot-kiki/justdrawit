@@ -59,11 +59,20 @@ function soloWords(fallbackBank) {
   return soloBank || fallbackBank;
 }
 
-// ด่าน 1–2 = 60 วิ easy · 3–4 = 45 วิ medium · 5+ = 30 วิ hard
-function levelConfig(level) {
-  if (level <= 2) return { time: 60, difficulty: "easy" };
-  if (level <= 4) return { time: 45, difficulty: "medium" };
-  return { time: 30, difficulty: "hard" };
+// เวลาต่อด่านเท่ากันทุกด่าน — ความยากที่เพิ่มขึ้นมาจากความซับซ้อนของคำอย่างเดียว
+const LEVEL_TIME = 60;
+
+const LEVELS = ["easy", "medium", "hard"];
+
+// คำยากขึ้นหนึ่งระดับทุก 2 ด่าน นับจากระดับเริ่มต้นที่ผู้เล่นเลือก (ไม่เลือก/ค่าแปลก = easy) แล้วค้างที่ hard
+//   เริ่ม easy:   ด่าน 1–2 easy · 3–4 medium · 5+ hard
+//   เริ่ม medium: ด่าน 1–2 medium · 3+ hard
+//   เริ่ม hard:   hard ทุกด่าน
+// เวลา 60 วิ เท่ากันทุกด่าน
+function levelConfig(level, start = "easy") {
+  const base = Math.max(0, LEVELS.indexOf(start));
+  const step = level <= 2 ? 0 : level <= 4 ? 1 : 2;
+  return { time: LEVEL_TIME, difficulty: LEVELS[Math.min(LEVELS.length - 1, base + step)] };
 }
 
 // สุ่มคำจากระดับที่ต้องการ ไม่ซ้ำกับที่ใช้ไปแล้วในเกมนี้ (หมดแล้วอนุญาตให้ซ้ำ)

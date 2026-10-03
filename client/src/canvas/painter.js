@@ -187,8 +187,9 @@ export function floodFill(img, w, h, sx, sy, fill, tol = FILL_TOLERANCE) {
 }
 
 /**
- * วาดเส้นขอบรูปทรงหนึ่งอัน (line | rect | circle) ลง ctx — ใช้ทั้งตอนวาดจริงและเงาตัวอย่างตอนลาก
+ * วาดเส้นขอบรูปทรงหนึ่งอัน (line | rect | circle | triangle) ลง ctx — ใช้ทั้งตอนวาดจริงและเงาตัวอย่างตอนลาก
  * พิกัดเป็นสัดส่วน 0–1 คูณด้วย w,h ของกระดาน · circle = วงรีที่พอดีกรอบสี่เหลี่ยมของสองจุด
+ * triangle = สามเหลี่ยมหน้าจั่วที่พอดีกรอบสี่เหลี่ยมของสองจุด
  * (ฝั่งที่ลากเป็นคนทำให้เป็นวงกลมจริงโดยบังคับกรอบเป็นจัตุรัสตามพิกเซลก่อนส่ง)
  */
 export function strokeShape(ctx, a, w, h) {
@@ -208,6 +209,12 @@ export function strokeShape(ctx, a, w, h) {
     ctx.rect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
   } else if (a.shape === "circle") {
     ctx.ellipse((x1 + x2) / 2, (y1 + y2) / 2, Math.abs(x2 - x1) / 2, Math.abs(y2 - y1) / 2, 0, 0, Math.PI * 2);
+  } else if (a.shape === "triangle") {
+    // ยอดอยู่กึ่งกลางด้านที่เริ่มลาก ฐานอยู่ด้านที่ปล่อยมือ (ลากลง = ยอดชี้ขึ้น · ลากขึ้น = ยอดชี้ลง)
+    ctx.moveTo((x1 + x2) / 2, y1);
+    ctx.lineTo(x2, y2);
+    ctx.lineTo(x1, y2);
+    ctx.closePath();
   } else {
     return; // ชนิดแปลกปลอม ไม่วาดอะไร
   }

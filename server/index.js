@@ -541,8 +541,8 @@ const COLOUR_FIX_COLORS = CHALLENGE_COLORS.filter((c) => c !== BOARD_COLOR);
 // ชนิดกติกาทั้งหมดที่เลือกเปิด/ปิดได้ · "none" = Standard Drawing (วาดอิสระ)
 const CHALLENGE_TYPES = ["none", "colour_fix", "dont_lift_pen", "shapes_only"];
 const SPECIAL_CHALLENGES = ["colour_fix", "dont_lift_pen", "shapes_only"]; // ทุกใบยกเว้น Standard
-// ค่าเริ่มต้นตอนสร้างห้อง: เปิด Standard + colour_fix + dont_lift_pen (shapes_only ปิดไว้ก่อน หัวห้องเปิดเองได้)
-const DEFAULT_CHALLENGES = ["none", "colour_fix", "dont_lift_pen"];
+// ค่าเริ่มต้นตอนสร้างห้อง: เปิดครบทั้ง 4 ใบ (Standard + colour_fix + dont_lift_pen + shapes_only) หัวห้องปิดทีละใบได้ในห้องรอ
+const DEFAULT_CHALLENGES = ["none", "colour_fix", "dont_lift_pen", "shapes_only"];
 
 // กรองลิสต์ให้เหลือชนิดที่รู้จัก ไม่ซ้ำ และต้องมีอย่างน้อย 1 ใบ (ไม่งั้นคืน null = ไม่รับค่านี้)
 function sanitizeChallenges(list) {
@@ -697,7 +697,7 @@ function rateOk(socket, key, max, windowMs) {
 const SIZE_MIN = 2;
 const SIZE_MAX = 40;
 const VALID_TOOLS = ["pen", "eraser"];
-const VALID_SHAPES = ["line", "rect", "circle"]; // รูปทรงที่ draw_shape รับ (ดู events.md หัวข้อ 4)
+const VALID_SHAPES = ["line", "rect", "circle", "triangle"]; // รูปทรงที่ draw_shape รับ (ดู events.md หัวข้อ 4)
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 const MAX_POINTS_PER_MSG = 500; // จุดสูงสุดในหนึ่งข้อความ stroke_points
@@ -1195,10 +1195,9 @@ const GUESS_MIN_GAP_MS = 300;  // พิมพ์ทายถี่กว่า�
 const MAX_GUESS_CHARS = 40;
 const IMAGE_RE = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
 
-// เวลาสั้นลงตามด่านเหมือนเดิม · ชุดคำ: ถ้าผู้เล่นเลือกระดับความยากไว้ใช้ระดับนั้นทั้งเกม ไม่เลือก = ไล่ตามด่านแบบเดิม
+// เวลาเท่ากันทุกด่าน · ชุดคำ: ระดับที่ผู้เล่นเลือกเป็นแค่ "ระดับเริ่มต้น" แล้วยากขึ้นตามด่าน (ไม่เลือก = เริ่มที่ easy)
 function soloConfig(solo) {
-  const cfg = ai.levelConfig(solo.level);
-  return solo.difficulty ? { ...cfg, difficulty: solo.difficulty } : cfg;
+  return ai.levelConfig(solo.level, solo.difficulty);
 }
 
 function stopSolo(socket) {
@@ -1731,7 +1730,7 @@ io.on("connection", (socket) => {
     socket.to(room.code).emit("fill", payload);
   });
 
-  // draw_shape: เส้นตรง/สี่เหลี่ยม/วงกลม ที่ลากเสร็จแล้วส่งทีเดียว (ไม่มี stroke_start/points/end)
+  // draw_shape: เส้นตรง/สี่เหลี่ยม/วงกลม/สามเหลี่ยม ที่ลากเสร็จแล้วส่งทีเดียว (ไม่มี stroke_start/points/end)
   // เก็บเป็นหนึ่งการกระทำในประวัติ จึงย้อน/ทำซ้ำ และส่งใน canvas_history ได้เหมือน fill
   socket.on("draw_shape", (data) => {
     const room = drawRoom(socket);

@@ -90,7 +90,7 @@ export function hslToHex(h, s, l) {
 }
 
 // โหมดของแถบเครื่องมือ — "bucket" ไม่ใช่วาดเส้น แต่เป็นการเทสี one-shot
-export const TOOLS = { PEN: "pen", ERASER: "eraser", BUCKET: "bucket", LINE: "line", RECT: "rect", CIRCLE: "circle" };
+export const TOOLS = { PEN: "pen", ERASER: "eraser", BUCKET: "bucket", LINE: "line", RECT: "rect", CIRCLE: "circle", TRIANGLE: "triangle" };
 // เครื่องมือรูปทรง: ชื่อ tool ตรงกับช่อง shape ของ draw_shape เป๊ะ
-export const SHAPE_TOOLS = [TOOLS.LINE, TOOLS.RECT, TOOLS.CIRCLE];
+export const SHAPE_TOOLS = [TOOLS.LINE, TOOLS.RECT, TOOLS.CIRCLE, TOOLS.TRIANGLE];
 export const isShapeTool = (t) => SHAPE_TOOLS.includes(t);

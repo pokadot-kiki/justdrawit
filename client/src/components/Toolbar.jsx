@@ -198,12 +198,13 @@ export default function Toolbar({
             <Icon name="bucket" size={40} accent={color} />
           </button>
         )}
-        {/* รูปทรง: เส้นตรง สี่เหลี่ยม วงกลม — ลากเห็นเงาก่อน ปล่อยแล้วค่อยวาดจริง */}
+        {/* รูปทรง: เส้นตรง สี่เหลี่ยม วงกลม สามเหลี่ยม — ลากเห็นเงาก่อน ปล่อยแล้วค่อยวาดจริง */}
         {!hideShapes &&
           [
             [TOOLS.LINE, "เส้นตรง", "shape-line"],
             [TOOLS.RECT, "สี่เหลี่ยม", "shape-rect"],
             [TOOLS.CIRCLE, "วงกลม", "shape-circle"],
+            [TOOLS.TRIANGLE, "สามเหลี่ยม", "shape-triangle"],
           ].map(([t, label, icon]) => (
             <button
               key={t}

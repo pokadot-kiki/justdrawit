@@ -16,7 +16,7 @@ const CHALLENGES = {
 export const CHALLENGE_INFO = {
   colour_fix: { icon: "palette", title: "COLOUR FIX", desc: "ตานี้วาดได้แค่สีเดียว ใช้สีที่ล็อกไว้เท่านั้น" },
   dont_lift_pen: { icon: "pen", title: "DON'T LIFT PEN", desc: "ลากเส้นเดียวต่อเนื่อง ห้ามยกปากกา ย้อนกลับไม่ได้" },
-  shapes_only: { icon: "shape-rect", title: "SHAPES ONLY", desc: "ตานี้วาดด้วยรูปทรงเท่านั้น (เส้น สี่เหลี่ยม วงกลม) ห้ามวาดมือเปล่า" },
+  shapes_only: { icon: "shape-rect", title: "SHAPES ONLY", desc: "ตานี้วาดด้วยรูปทรงเท่านั้น (เส้น สี่เหลี่ยม วงกลม สามเหลี่ยม) ห้ามวาดมือเปล่า" },
 };
 
 export default function ChallengeBanner({ challenge }) {

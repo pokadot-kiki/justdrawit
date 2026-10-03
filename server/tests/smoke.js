@@ -814,7 +814,7 @@ async function main() {
     D.socket.emit("clear_canvas");
     await E.tryWait("clear_canvas", null, 1000);
 
-    for (const shape of ["line", "rect", "circle"]) {
+    for (const shape of ["line", "rect", "circle", "triangle"]) {
       clearAll(D, E, F);
       D.socket.emit("draw_shape", { ...SH, shape });
       check(`draw_shape ชนิด ${shape} ถึงคนอื่นครบทุกช่อง`, await E.wait("draw_shape", null, 2000), { ...SH, shape });
@@ -824,7 +824,7 @@ async function main() {
 
     // ข้อมูลเพี้ยน: ทิ้งเงียบ ไม่ล่ม
     const bad = [
-      { ...SH, shape: "triangle" }, { ...SH, shape: "star" }, { ...SH, shape: 5 }, { ...SH, shape: undefined },
+      { ...SH, shape: "hexagon" }, { ...SH, shape: "star" }, { ...SH, shape: 5 }, { ...SH, shape: undefined },
       { ...SH, x1: "0.2" }, { ...SH, y2: -0.1 }, { ...SH, x2: 1.01 }, { ...SH, y1: null }, { ...SH, x1: Infinity },
       { ...SH, color: "blue" }, { ...SH, color: "#12345" }, { ...SH, size: 1 }, { ...SH, size: 41 }, { ...SH, size: "5" },
       null, "x", 42, [], {},
@@ -859,14 +859,14 @@ async function main() {
     D.socket.emit("redo");
     const h2 = await E.wait("canvas_history", (h) => h.canRedo === false, 2000);
     check("ทำซ้ำแล้วรูปทรงกลับมาในประวัติครบทุกช่อง", h2.items.at(-1), { type: "draw_shape", ...SH, shape: "circle" });
-    check("ประวัติมีรูปทรง 4 อัน (line rect circle + circle)", h2.items.filter((i) => i.type === "draw_shape").length, 4);
+    check("ประวัติมีรูปทรง 5 อัน (line rect circle triangle + circle)", h2.items.filter((i) => i.type === "draw_shape").length, 5);
 
     // คนเข้ากลางตาได้รูปทรงในภาพ
     const Late = track(await connect());
     others.push(Late);
     await emitAck(Late.socket, "join_room", { code: dcode, name: "ShapeLate", avatar: 1 });
     const lh = await Late.wait("canvas_history", null, 3000);
-    check("คนเข้ากลางตาได้รูปทรงในประวัติ", lh.items.filter((i) => i.type === "draw_shape").length, 4);
+    check("คนเข้ากลางตาได้รูปทรงในประวัติ", lh.items.filter((i) => i.type === "draw_shape").length, 5);
     check("ไม่มีคำจริงหลุดในประวัติ", JSON.stringify(lh).includes('"word"'), false);
     // คืนสถานะให้ข้อ 14: ย้อนรูปทรงทั้งหมดให้เหลือสถานะใกล้เดิม ไม่จำเป็น เพราะข้อ 14 เริ่มจาก redo แล้วยิงจุดทับ
   });
@@ -1032,9 +1032,9 @@ async function main() {
   // ══════════════════════════════════════════════════════════════════
   const CHALLENGE_TRIES = 30;
   // สุ่ม colour_fix ให้ได้มากพอจะจับได้ถ้า "สีขาว" หลุดกลับเข้ากอง (ข้อ 16.1)
-  // colour_fix ออกราว 30% ⇒ ต้องสร้างราว 3-4 ห้องต่อ 1 ตาสี
+  // colour_fix ออกราว 20% (กติกาพิเศษ 60% หารสามใบ) ⇒ ต้องสร้างราว 5 ห้องต่อ 1 ตาสี
   const COLOUR_FIX_WANTED = 25;
-  const COLOUR_FIX_MAX_ROOMS = 150;
+  const COLOUR_FIX_MAX_ROOMS = 250;
   const seenTypes = [];
   const seenChallengeColors = []; // ทุกสีที่ colour_fix ล็อกไว้ (เฉพาะสี ไม่ซ้ำคำ)
   const roomOfType = {};
@@ -1071,13 +1071,13 @@ async function main() {
     }
 
     checkOk(`สร้างห้องจริงได้ครบ ${CHALLENGE_TRIES} ตัวอย่าง`, seenTypes.length === CHALLENGE_TRIES);
-    checkOk("ทุกค่าที่ออกมาเป็นหนึ่งในสามชนิดที่กำหนด",
-      seenTypes.every((t) => ["none", "colour_fix", "dont_lift_pen"].includes(t)));
-    checkOk("ไม่มี shapes_only ออกมา (ปิดไว้โดยค่าเริ่มต้น หัวห้องต้องเปิดการ์ดเองในห้องรอ — ดูข้อ 34)",
-      seenTypes.every((t) => t !== "shapes_only"));
+    checkOk("ทุกค่าที่ออกมาเป็นหนึ่งในสี่ชนิดที่กำหนด",
+      seenTypes.every((t) => ["none", "colour_fix", "dont_lift_pen", "shapes_only"].includes(t)));
+    checkOk("shapes_only ออกมาด้วย (เปิดไว้โดยค่าเริ่มต้น — กติกาของมันเทสในข้อ 34)",
+      seenTypes.includes("shapes_only"));
     // ถ้าเขียนโค้ดให้ออกแต่ none อย่างเดียว หรือให้ชนิดใดชนิดหนึ่งไม่ออกเลย ข้อนี้จะจับได้
-    checkOk(`ทั้งสามชนิดออกจริงใน ${CHALLENGE_TRIES} ห้อง`,
-      new Set(seenTypes).size === 3);
+    checkOk(`ทั้งสี่ชนิดออกจริงใน ${CHALLENGE_TRIES} ห้อง`,
+      new Set(seenTypes).size === 4);
     // ตรวจความถี่แบบหลวม ๆ (ไม่ใช่การทดสอบสัดส่วนจริง ๆ เพราะต้องสุ่มหลายร้อยห้องจึงจะแยก 40/30/30
     // ออกจาก 35/35/30 ได้ ซึ่งจะทำให้เทสล้มมั่วเป็นครั้งคราว) — จับได้เฉพาะกรณีสุดโต่ง
     // เช่น none ออก 0 ครั้ง หรือออกเกือบทุกห้อง ซึ่งแปลว่าเขียนสัดส่วนผิดชัด ๆ
@@ -1405,8 +1405,15 @@ async function main() {
   await runPart("22. AI/กติกาด่าน — ความยาก · สุ่มคำ · คะแนน · โหมดทาย (ไม่ผ่าน socket)", async () => {
     const aiLib = require("../ai");
     check("ด่าน 1-2 = 60 วิ easy", [1, 2].map((l) => aiLib.levelConfig(l)), [{ time: 60, difficulty: "easy" }, { time: 60, difficulty: "easy" }]);
-    check("ด่าน 3-4 = 45 วิ medium", [3, 4].map((l) => aiLib.levelConfig(l)), [{ time: 45, difficulty: "medium" }, { time: 45, difficulty: "medium" }]);
-    check("ด่าน 5 ขึ้นไป = 30 วิ hard", [5, 9, 50].map((l) => aiLib.levelConfig(l)), Array(3).fill({ time: 30, difficulty: "hard" }));
+    check("ด่าน 3-4 = 60 วิ medium (เวลาไม่ลด)", [3, 4].map((l) => aiLib.levelConfig(l)), [{ time: 60, difficulty: "medium" }, { time: 60, difficulty: "medium" }]);
+    check("ด่าน 5 ขึ้นไป = 60 วิ hard (เวลาไม่ลด)", [5, 9, 50].map((l) => aiLib.levelConfig(l)), Array(3).fill({ time: 60, difficulty: "hard" }));
+    // ระดับที่ผู้เล่นเลือกเป็นแค่ระดับเริ่มต้น คำยังยากขึ้นตามด่าน
+    const levelsFrom = (start) => [1, 2, 3, 4, 5, 9].map((l) => aiLib.levelConfig(l, start).difficulty);
+    check("เริ่ม easy: ไล่ easy → medium → hard", levelsFrom("easy"), ["easy", "easy", "medium", "medium", "hard", "hard"]);
+    check("เริ่ม medium: ด่าน 1-2 medium แล้ว hard", levelsFrom("medium"), ["medium", "medium", "hard", "hard", "hard", "hard"]);
+    check("เริ่ม hard: hard ทุกด่าน", levelsFrom("hard"), Array(6).fill("hard"));
+    check("ระดับเริ่มต้นเป็น null/ค่าแปลก = เริ่ม easy", [levelsFrom(null), levelsFrom("banana")], Array(2).fill(levelsFrom("easy")));
+    check("เลือกระดับเริ่มต้นแล้วเวลายัง 60 วิ ทุกด่าน", [1, 3, 5].map((l) => aiLib.levelConfig(l, "medium").time), [60, 60, 60]);
 
     const words = readWordFile();
     const bank = Object.fromEntries(["easy", "medium", "hard"].map((l) => [l, words[l]]));
@@ -1955,6 +1962,9 @@ async function main() {
     check("กลับมาสมดุล 2 ต่อ 2", [teamOf(H, H.socket.id), teamOf(H, P2.socket.id), teamOf(H, P3.socket.id), teamOf(H, P4.socket.id)], ["A", "B", "A", "B"]);
 
     // ---------- เริ่มเกม: คำเดียวกัน คนวาดคนละทีม ----------
+    // ข้อนี้ทดสอบกำแพงกั้นทีมด้วยเส้นมือเปล่า จึงปิดการ์ด shapes_only (ตานั้นรับแต่รูปทรง · กติกาของมันเทสในข้อ 34)
+    H.socket.emit("set_challenges", { challenges: ["none", "colour_fix", "dont_lift_pen"] });
+    await H.wait("room_update", (r) => r.settings.challenges.length === 3, 2000);
     clearAll(H, P2, P3, P4);
     H.socket.emit("start_game");
     const ch = await H.wait("choose_word");
@@ -2112,6 +2122,8 @@ async function main() {
     const [b1, a3, b2, a5] = members;
     await wait(200);
     check("จัดทีม 3 ต่อ 2 (A: H2,a3,a5 · B: b1,b2)", last(H2, "room_update").players.map((p) => p.team), ["A", "B", "A", "B", "A"]);
+    H2.socket.emit("set_challenges", { challenges: ["none", "colour_fix", "dont_lift_pen"] }); // เหตุผลเดียวกับห้องแรก: ข้อนี้วาดเส้นมือเปล่า
+    await H2.wait("room_update", (r) => r.settings.challenges.length === 3, 2000);
     H2.socket.emit("start_game");
     const o = await b1.wait("choose_word");
     const w3 = o.options[0];
@@ -2136,7 +2148,7 @@ async function main() {
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const last = (P, name) => P.dump().filter((e) => e.name === name).at(-1)?.args[0];
     // ค่าเริ่มต้นของตัวเลือกห้องที่เพิ่มทีหลัง (ข้อ 32 เทสตัวเลือกพวกนี้โดยตรง)
-    const NEW_DEFAULTS = { difficulty: "easy", visibility: "private", challenges: ["none", "colour_fix", "dont_lift_pen"] };
+    const NEW_DEFAULTS = { difficulty: "easy", visibility: "private", challenges: ["none", "colour_fix", "dont_lift_pen", "shapes_only"] };
     const socks = [];
     const make = async (data) => {
       const P = track(await connect()); socks.push(P);
@@ -2214,9 +2226,15 @@ async function main() {
           checkOk(`intro_end มาหลังเริ่มตาราว 2 วิ (ได้ ${waited} ms)`, waited >= 1700 && waited <= 3200);
           const tm = await guesser.wait("timer", null, 3000);
           check("เวลาวาดเท่าเดิม: tick แรกหลังป้ายหายเหลือ 29 จาก 30", tm.timeLeft, 29);
-          drawer.socket.emit("stroke_start", { x: 0.2, y: 0.2, color: out.rs.challenge.type === "colour_fix" ? out.rs.challenge.color : "#000000", size: 5, tool: "pen" });
-          checkOk("หลังป้ายหาย: คนวาดวาดได้ ส่งถึงคนทาย", (await guesser.tryWait("stroke_start", null, 2000)) !== null);
-          drawer.socket.emit("stroke_end");
+          // shapes_only รับแค่รูปทรง (เส้นมือเปล่าถูกทิ้ง) จึงลองวาดด้วย draw_shape แทน
+          if (out.rs.challenge.type === "shapes_only") {
+            drawer.socket.emit("draw_shape", { shape: "rect", x1: 0.2, y1: 0.2, x2: 0.4, y2: 0.4, color: "#000000", size: 5 });
+            checkOk("หลังป้ายหาย: คนวาดวาดได้ ส่งถึงคนทาย", (await guesser.tryWait("draw_shape", null, 2000)) !== null);
+          } else {
+            drawer.socket.emit("stroke_start", { x: 0.2, y: 0.2, color: out.rs.challenge.type === "colour_fix" ? out.rs.challenge.color : "#000000", size: 5, tool: "pen" });
+            checkOk("หลังป้ายหาย: คนวาดวาดได้ ส่งถึงคนทาย", (await guesser.tryWait("stroke_start", null, 2000)) !== null);
+            drawer.socket.emit("stroke_end");
+          }
         }
         if (!checkIntro && rs.intro) await guesser.wait("intro_end", null, 4000); // ตาที่มีป้ายใหญ่ ต้องรอป้ายหายก่อนทายถึงจะนับ
         guesser.socket.emit("guess", { text: word });
@@ -2322,10 +2340,14 @@ async function main() {
       check("ทีม ช่วงป้ายใหญ่: ทั้งสองเลนวาดไม่ติด", (await T1.quiet("stroke_start", 300)).length + (await T2.quiet("stroke_start", 1)).length, 0);
       await T1.wait("intro_end", null, 3000);
       checkOk("ทีม intro_end ถึงทุกคน", (await T2.tryWait("intro_end", null, 1000)) !== null && (await T4.tryWait("intro_end", null, 1000)) !== null);
-      T4.socket.emit("stroke_start", { x: 0.2, y: 0.2, color: col, size: 5, tool: "pen" });
-      checkOk("ทีม หลังป้ายหาย: เลน B วาดได้ ถึงเพื่อนในทีม B", (await T2.tryWait("stroke_start", null, 2000)) !== null);
-      check("ทีม หลังป้ายหาย: ภาพเลน B ไม่รั่วไปทีม A", (await T1.quiet("stroke_start", 300)).length, 0);
-      T4.socket.emit("stroke_end");
+      // shapes_only รับแค่รูปทรง (เส้นมือเปล่าถูกทิ้ง) จึงลองวาดด้วย draw_shape แทน
+      const shapesOnly = c2a.challenge.type === "shapes_only";
+      const drawEv = shapesOnly ? "draw_shape" : "stroke_start";
+      if (shapesOnly) T4.socket.emit("draw_shape", { shape: "rect", x1: 0.2, y1: 0.2, x2: 0.4, y2: 0.4, color: col, size: 5 });
+      else T4.socket.emit("stroke_start", { x: 0.2, y: 0.2, color: col, size: 5, tool: "pen" });
+      checkOk("ทีม หลังป้ายหาย: เลน B วาดได้ ถึงเพื่อนในทีม B", (await T2.tryWait(drawEv, null, 2000)) !== null);
+      check("ทีม หลังป้ายหาย: ภาพเลน B ไม่รั่วไปทีม A", (await T1.quiet(drawEv, 300)).length, 0);
+      if (!shapesOnly) T4.socket.emit("stroke_end");
       const w2 = (await T3.wait("your_word", null, 3000)).word;
       T1.socket.emit("guess", { text: w2 }); T2.socket.emit("guess", { text: w2 });
       await T1.wait("game_end", null, 9000);
@@ -2768,16 +2790,16 @@ async function main() {
       checkOk("leave_room: ถูกลบทันที", !!left);
       check("ออกเองแล้ว rejoin ไม่ได้", await emitAck(G2.socket, "rejoin", { code: made.code }), { ok: false, error: "NOT_IN_ROOM" });
 
-      // ---------- Solo: ระดับความยากของชุดคำ ----------
+      // ---------- Solo: ระดับความยากของชุดคำ (ที่เลือก = ระดับเริ่มต้น · การไล่ระดับตามด่านเทสในข้อ 22) ----------
       const aiBank = JSON.parse(fs.readFileSync(path.join(SERVER_DIR, "data", "ai-words.json"), "utf8"));
       G2.socket.emit("ai_start", { name: "Solo32", difficulty: "hard" });
       let ars = await G2.wait("ai_round_start");
-      checkOk("Solo เลือก hard: ด่าน 1 ได้คำระดับ hard (เวลายังเป็นของด่าน 1)",
+      checkOk("Solo เลือก hard: ด่าน 1 เริ่มที่คำระดับ hard (เวลา 60 วิ)",
         ars.difficulty === "hard" && ars.level === 1 && ars.time === 60 && aiBank.hard.some((w) => w.word === ars.word));
       clearAll(G2);
       G2.socket.emit("ai_start", { name: "Solo32", difficulty: "banana" });
       ars = await G2.wait("ai_round_start");
-      check("Solo ไม่เลือก/ค่าแปลก: ไล่ตามด่านแบบเดิม (ด่าน 1 = easy)", ars.difficulty, "easy");
+      check("Solo ไม่เลือก/ค่าแปลก: เริ่มที่ easy (ด่าน 1 = easy)", ars.difficulty, "easy");
       G2.socket.emit("leave_room");
     } finally {
       for (const P of socks) P.socket.disconnect();
@@ -2840,20 +2862,20 @@ async function main() {
     let G = track(await connect());
     await emitAck(G.socket, "join_room", { code: made.code, name: "ChalG", avatar: 1 });
     await wait(150);
-    check("ค่าเริ่มต้น challenges = Standard + colour_fix + dont_lift_pen", last(H, "room_update").settings.challenges, ["none", "colour_fix", "dont_lift_pen"]);
+    check("ค่าเริ่มต้น challenges = เปิดครบ 4 ใบ (รวม shapes_only)", last(H, "room_update").settings.challenges, ["none", "colour_fix", "dont_lift_pen", "shapes_only"]);
 
     // คนที่ไม่ใช่หัวห้องเปลี่ยนไม่ได้
     G.clear();
     G.socket.emit("set_challenges", { challenges: ["none"] });
     const err = await G.wait("game_error", null, 1500);
-    check("คนที่ไม่ใช่หัวห้องกดแล้วได้ NOT_HOST และค่าไม่เปลี่ยน", [err?.code, last(H, "room_update").settings.challenges], ["NOT_HOST", ["none", "colour_fix", "dont_lift_pen"]]);
+    check("คนที่ไม่ใช่หัวห้องกดแล้วได้ NOT_HOST และค่าไม่เปลี่ยน", [err?.code, last(H, "room_update").settings.challenges], ["NOT_HOST", ["none", "colour_fix", "dont_lift_pen", "shapes_only"]]);
 
     // ค่าเพี้ยน/ว่างถูกเมิน (ต้องเหลืออย่างน้อย 1 ใบ)
     H.socket.emit("set_challenges", { challenges: [] });
     H.socket.emit("set_challenges", { challenges: ["banana"] });
     H.socket.emit("set_challenges", { challenges: "x" });
     await wait(150);
-    check("ลิสต์ว่าง/ค่าเพี้ยนถูกเมิน (คงค่าเดิม)", last(H, "room_update").settings.challenges, ["none", "colour_fix", "dont_lift_pen"]);
+    check("ลิสต์ว่าง/ค่าเพี้ยนถูกเมิน (คงค่าเดิม)", last(H, "room_update").settings.challenges, ["none", "colour_fix", "dont_lift_pen", "shapes_only"]);
 
     // หัวห้องเปิดการ์ด shapes_only กลับมา (เปิดใบเดียว)
     H.clear();

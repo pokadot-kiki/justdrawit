@@ -62,7 +62,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
   // watch = ช่วง 2 ดูภาพที่เล่นซ้ำแล้วพิมพ์ทาย · rest = พักระหว่างช่วง · over = จบเกม
   const [phase, setPhase] = useState("intro");
   const [name, setName] = useState(initialName);
-  // ระดับความยากของ "ชุดคำ" ทั้งเกม (เวลายังสั้นลงตามด่านเหมือนเดิม) — server เป็นคนสุ่มคำตามระดับนี้
+  // ระดับ "เริ่มต้น" ของชุดคำ — server ไล่คำให้ยากขึ้นตามด่านจากระดับนี้เอง (เวลาเท่ากันทุกด่าน)
   // มาจากหน้า SET UP (boot) ถ้าเข้าทางนั้น ไม่งั้นเริ่มที่ง่าย
   const [difficulty, setDifficulty] = useState(boot?.difficulty ?? "easy");
   const [round, setRound] = useState(null); // { level, word, time, lives, aiMode, drawNext }
@@ -423,7 +423,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
             autoFocus
           />
           <span className="field__label" id="solo-diff-label">
-            ระดับความยากของคำ
+            ระดับคำเริ่มต้น (ยากขึ้นตามด่าน)
           </span>
           <div className="segmented" role="group" aria-labelledby="solo-diff-label">
             {DIFFICULTIES.map(([value, label]) => (
