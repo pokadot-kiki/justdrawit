@@ -3350,6 +3350,111 @@ async function main() {
     }
   });
 
+  // ══════════════════════════════════════════════════════════════════
+  // ข้อ 41 — Solo รีเฟรชแล้วกลับเข้าเกมเดิม (ai_resume) ทั้งช่วงเราวาดและช่วง AI วาด · เกินเวลารอ/ไม่มีตัวตนถาวร = กลับหน้าเริ่มเกม
+  // ══════════════════════════════════════════════════════════════════
+  await runPart("41. Solo กลับเข้าเกมหลังรีเฟรช — ช่วงเราวาด · ช่วง AI วาด (เส้นที่ส่งไปแล้วกลับมา คำตอบไม่หลุด) · เกินเวลารอเสียเกม", async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const URL2 = "http://localhost:3001";
+    // เวลาด่าน 4 วิ · รอ 2.5 วิก่อนเลิกเกมที่ไม่มีคนกลับมา · ใช้ไฟล์ภาพจริง (ช่วง AI วาดมีจริง)
+    const env = { ...process.env, SCORES_FILE, PORT: "3001", AI_MODE: "mock", AI_MOCK_CHANCE: "1", AI_TIME_OVERRIDE: "4", AI_NEXT_DELAY_MS: "300", REJOIN_GRACE_MS: "2500" };
+    delete env.AI_DRAWINGS_FILE;
+    const srv = spawn(process.execPath, ["index.js"], { cwd: SERVER_DIR, stdio: "ignore", env });
+    const socks = [];
+    const connectAs = (key) => new Promise((resolve, reject) => {
+      const sk = io(URL2, { transports: ["websocket"], auth: key ? { playerKey: key } : undefined });
+      const t = setTimeout(() => reject(new Error("ต่อ server ไม่ติด")), 8000);
+      sk.on("connect", () => { clearTimeout(t); const r = track(sk); socks.push(r); resolve(r); });
+      sk.on("connect_error", (e) => { clearTimeout(t); reject(e); });
+    });
+    const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    try {
+      let up = false;
+      for (let i = 0; i < 100 && !up; i++) { up = await fetch(`${URL2}/test.html`).then((r) => r.ok).catch(() => false); if (!up) await wait(100); }
+      checkOk("server ตัวที่สอง (Solo + รอ 2.5 วิ) เปิดได้", up);
+      const rid = Math.random().toString(36).slice(2, 8);
+
+      // ---------- ช่วงเราวาด ----------
+      const key = `solo41-${rid}-aaaa-key-a`;
+      const S1 = await connectAs(key);
+      S1.socket.emit("ai_start", { name: "Solo41", difficulty: "easy" });
+      const rs = await S1.wait("ai_round_start", null, 5000);
+      S1.socket.disconnect();
+      await wait(300);
+      const S2 = await connectAs(key);
+      const r1 = await emitAck(S2.socket, "ai_resume", {});
+      check("กลับเข้าเกมช่วงเราวาด: ok · ช่วง draw · ด่าน/ชีวิต/คำเดิม", [r1?.ok, r1?.state?.phase, r1?.state?.level, r1?.state?.lives, r1?.state?.round?.word], [true, "draw", 1, 3, rs.word]);
+      checkOk("มีเวลาที่เหลือ (0–4 วิ) และชื่อเดิม", r1?.state?.timeLeft >= 0 && r1.state.timeLeft <= 4 && r1.state.name === "Solo41");
+      // ส่งภาพผ่าน socket ตัวใหม่ → AI ตอบถึง socket ตัวใหม่ (เกมผูกกับผู้เล่น ไม่ใช่ socket เก่า)
+      S2.socket.emit("ai_snapshot", { image: PNG });
+      const g = await S2.tryWait("ai_guess", null, 4000);
+      checkOk("socket ใหม่ส่งภาพแล้วได้ ai_guess ถึงตัวเอง", !!g);
+      const re = await S2.tryWait("ai_round_end", null, 3000);
+      checkOk("ผลด่านถึง socket ใหม่ (ไม่ตกที่ socket เก่า)", !!re && re.correct === true);
+
+      // ---------- ช่วง AI วาด ----------
+      const dstart = await S2.tryWait("ai_draw_start", null, 3000);
+      checkOk("ช่วง 2 เริ่ม (มีภาพจริงให้เล่นซ้ำ)", !!dstart);
+      if (dstart) {
+        await wait(900); // ให้ server ส่งเส้นไปบ้างแล้ว
+        const sentBefore = S2.dump().filter((e) => e.name === "ai_draw_stroke").length;
+        S2.socket.disconnect();
+        await wait(250);
+        const S3 = await connectAs(key);
+        const r2 = await emitAck(S3.socket, "ai_resume", {});
+        check("กลับเข้าเกมช่วง AI วาด: ok · ช่วง watch", [r2?.ok, r2?.state?.phase], [true, "watch"]);
+        checkOk("ได้เส้นที่ส่งไปแล้วคืนทั้งหมด", Array.isArray(r2?.state?.strokes) && r2.state.strokes.length >= Math.max(1, sentBefore));
+        const dump = JSON.stringify(r2?.state ?? {});
+        checkOk("คำตอบของช่อง 2 ไม่หลุดใน state (มีแค่หมวดหมู่ ไม่มีช่อง word)", !("word" in (r2.state)) && !("guessWord" in (r2.state)) && typeof r2.state.watch?.category === "string" && !dump.includes('"word"'));
+        // ผลช่วง 2 (หมดเวลา) ถึง socket ใหม่ พร้อมเฉลย
+        const de = await S3.tryWait("ai_draw_end", null, 8000);
+        checkOk("ช่วง 2 จบแล้วผลถึง socket ใหม่", !!de && typeof de.word === "string");
+        S3.socket.emit("leave_room");
+        await wait(200);
+        const S4chk = await connectAs(key);
+        check("หลังออกจากเกม (leave_room) กลับเข้าไม่ได้", (await emitAck(S4chk.socket, "ai_resume", {}))?.ok, false);
+      }
+
+      // ---------- เกินเวลารอ → เสียเกม ----------
+      const key2 = `solo41-${rid}-bbbb-key-b`;
+      const L1 = await connectAs(key2);
+      L1.socket.emit("ai_start", { name: "Solo41b", difficulty: "easy" });
+      await L1.wait("ai_round_start", null, 5000);
+      L1.socket.disconnect();
+      await wait(3200); // เกิน REJOIN_GRACE_MS (2.5 วิ)
+      const L2 = await connectAs(key2);
+      check("เกินเวลารอแล้ว ai_resume ไม่ได้ (กลับหน้าเริ่มเกม)", (await emitAck(L2.socket, "ai_resume", {}))?.ok, false);
+
+      // ---------- ไม่มีตัวตนถาวร (ไม่ส่ง playerKey) = เลิกเกมทันทีเหมือนเดิม และกลับไม่ได้ ----------
+      const N1 = await connectAs(null);
+      N1.socket.emit("ai_start", { name: "Solo41c", difficulty: "easy" });
+      await N1.wait("ai_round_start", null, 5000);
+      N1.socket.disconnect();
+      await wait(300);
+      const N2 = await connectAs(null);
+      check("ไม่มี playerKey: กลับเข้าเกมไม่ได้", (await emitAck(N2.socket, "ai_resume", {}))?.ok, false);
+      // เริ่ม Solo ใหม่ทับเกมที่ค้าง: เกมเก่าถูกทิ้ง (ไม่มีสองเกมซ้อน)
+      const key3 = `solo41-${rid}-cccc-key-c`;
+      const M1 = await connectAs(key3);
+      M1.socket.emit("ai_start", { name: "Solo41d", difficulty: "easy" });
+      await M1.wait("ai_round_start", null, 5000);
+      M1.socket.disconnect(); await wait(200);
+      const M2 = await connectAs(key3);
+      M2.socket.emit("ai_start", { name: "Solo41d2", difficulty: "easy" });
+      await M2.wait("ai_round_start", null, 5000);
+      const rm = await emitAck(M2.socket, "ai_resume", {});
+      check("เริ่มเกมใหม่ทับเกมเก่า: resume ได้เกมใหม่ (ชื่อใหม่ ด่าน 1)", [rm?.ok, rm?.state?.name, rm?.state?.level], [true, "Solo41d2", 1]);
+      // ไม่ส่ง callback = server ไม่ล่ม
+      M2.socket.emit("ai_resume");
+      await wait(200);
+      checkOk("ai_resume ไม่มี callback แล้ว server ไม่ล่ม", await fetch(`${URL2}/test.html`).then((r) => r.ok).catch(() => false));
+    } finally {
+      socks.forEach((x) => x.socket.disconnect());
+      srv.kill();
+      await wait(200);
+    }
+  });
+
   // ปิดทุก socket เพื่อให้โปรเซสจบได้
   for (const rec of [A, B, C, ...others]) rec.socket.disconnect();
 }

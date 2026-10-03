@@ -34,6 +34,17 @@ const MODE_TEXT = {
 const MAX_GUESS_CHARS = 40; // ตรงกับเพดานที่ server รับ
 const NEXT_DELAY_S = 4; // server พัก 4 วิก่อนด่านถัดไป (ใช้แสดงนับถอยหลังเฉยๆ)
 
+// รีเฟรชหน้าระหว่างเล่น Solo แล้วกลับเข้าเกมเดิมได้ (server เก็บเกมไว้ตาม playerId ราว 30 วิ · ขอด้วย ai_resume)
+// ACTIVE_KEY = จำว่าแท็บนี้กำลังเล่น Solo อยู่ · CANVAS_KEY = ภาพที่เราวาดในช่วง 1 (server ไม่เก็บภาพของเรา จึงเก็บไว้ในแท็บนี้เอง)
+// เก็บใน sessionStorage (ของแท็บนี้ ไม่ปนกับแท็บอื่น) ครอบ try เสมอเพราะบางเบราว์เซอร์ปิด storage
+const ACTIVE_KEY = "jdi.soloActive";
+const CANVAS_KEY = "jdi.soloCanvas";
+const store = {
+  get(k) { try { return sessionStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { sessionStorage.setItem(k, v); } catch { /* เต็ม/ปิด: ไม่เป็นไร แค่กลับมาแล้วภาพไม่ครบ */ } },
+  del(k) { try { sessionStorage.removeItem(k); } catch { /* ไม่เป็นไร */ } },
+};
+
 // การกระทำที่ "ย้อนได้ทีละหนึ่งอัน" — หนึ่งเส้น (start..end) หนึ่งครั้งเทสี หนึ่งครั้งล้างจอ
 const OP_START = new Set(["stroke_start", "fill", "draw_shape", "clear_canvas"]);
 function lastOpIndex(actions) {
@@ -97,6 +108,11 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
   const anims = useRef([]); // เส้นของช่วง 2 ที่กำลังถูกไล่จุดอยู่ (เคลียร์ตอนจบช่วง/ออกจากหน้า)
   const rafRef = useRef(0);
   const redoRef = useRef([]); // กองทำซ้ำ (เก็บฝั่งเครื่องเรา ไม่มี server เก็บให้เหมือนห้องปกติ)
+  // กลับเข้าเกมหลังรีเฟรช: ของที่ต้องวาดลงกระดานหลังกระดานเกิด (ภาพช่วง 1 ที่เก็บไว้ · เส้นของช่วง 2 ที่ server ส่งไปแล้ว)
+  const restoreRef = useRef(null);
+  const pendingStrokes = useRef([]); // เส้นช่วง 2 ที่มาถึงตอนกระดานยังไม่เกิด
+  const resumeAsked = useRef(false); // ขอกลับเข้าเกมแล้วหรือยัง (กัน effect รันซ้ำ)
+  const resumingRef = useRef(false); // กำลังขอกลับเข้าเกม: อย่าส่ง leave_room ตอน cleanup (กันเกมที่เพิ่งกู้คืนถูกปิด)
 
   function setThink(on) {
     thinkingRef.current = on;
@@ -168,6 +184,8 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
       setThink(false);
       setRoundId((n) => n + 1);
       setPhase("playing");
+      store.set(ACTIVE_KEY, "1");
+      store.del(CANVAS_KEY);
       play("roundStart");
     };
     const onGuess = (d) => {
@@ -198,10 +216,14 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
       redoRef.current = [];
       setHist({ undo: false, redo: false });
       setPhase("watch");
+      store.set(ACTIVE_KEY, "1");
+      store.del(CANVAS_KEY);
       play("roundStart");
     };
     const onDrawStroke = (d) => {
-      if (watchRef.current) playStroke(d); // ใช้ ref ที่ตั้งทันทีตอน ai_draw_start (phaseRef ยังไม่ทันอัปเดตตอนเส้นแรกมาถึง)
+      if (!watchRef.current) return; // ใช้ ref ที่ตั้งทันทีตอน ai_draw_start (phaseRef ยังไม่ทันอัปเดตตอนเส้นแรกมาถึง)
+      if (canvasRef.current) playStroke(d);
+      else pendingStrokes.current.push(d); // กระดานยังไม่เกิด (กลับเข้าเกมหลังรีเฟรช) เก็บไว้วาดทีหลัง
     };
     const onDrawHint = (d) => {
       if (watchRef.current && Array.isArray(d?.hint)) setDrawHint(d.hint);
@@ -225,6 +247,8 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
       setScore(d.totalScore);
       setFinal(d);
       setPhase("over");
+      store.del(ACTIVE_KEY);
+      store.del(CANVAS_KEY);
       play("gameOver");
     };
     const onError = (err) => {
@@ -257,8 +281,10 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
       socket.off("game_error", onError);
       clearTimeout(thinkTimer.current);
       // ออกจากหน้ากลางเกม = เลิกเล่น (server ไม่บันทึกคะแนน)
-      if (phaseRef.current === "starting" || phaseRef.current === "playing" || phaseRef.current === "watch" || phaseRef.current === "rest") {
+      if (!resumingRef.current && (phaseRef.current === "starting" || phaseRef.current === "playing" || phaseRef.current === "watch" || phaseRef.current === "rest")) {
         socket.emit("leave_room");
+        store.del(ACTIVE_KEY);
+        store.del(CANVAS_KEY);
       }
     };
   }, []);
@@ -277,6 +303,74 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // รีเฟรชหน้า /solo ระหว่างเล่น: ขอกลับเข้าเกมเดิมจาก server (ได้ด่าน ชีวิต คะแนน ช่วง เวลาที่เหลือ) แล้ววาดหน้าจอต่อ
+  // server ไม่มีเกมให้ต่อ (เกิน 30 วิ / เกมจบแล้ว / server รีสตาร์ท) → กลับหน้าเริ่มเกมตามเดิม
+  useEffect(() => {
+    if (boot || resumeAsked.current || store.get(ACTIVE_KEY) !== "1") return undefined;
+    resumeAsked.current = true;
+    resumingRef.current = true;
+    setPhase("starting"); // ระหว่างรอ server ตอบ โชว์หน้า "กำลังเริ่มเกม..." (resumeAsked กัน effect รันซ้ำตอน StrictMode)
+    // รอจนต่อ server ติดก่อนค่อยส่ง (ต่อช้า/เน็ตสะดุดหลังรีเฟรช ไม่ให้ตัวจับเวลารอคำตอบหมดก่อนต่อติด)
+    const ask = () =>
+      socket.timeout(6000).emit("ai_resume", {}, (err, res) => {
+        resumingRef.current = false;
+        if (err || !res?.ok || !res.state) {
+          store.del(ACTIVE_KEY);
+          store.del(CANVAS_KEY);
+          setPhase("intro");
+          return;
+        }
+        applyResume(res.state);
+      });
+    if (socket.connected) ask();
+    else socket.once("connect", ask);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function applyResume(st) {
+    onName?.(st.name);
+    setName(st.name);
+    setScore(st.totalScore);
+    setLives(st.lives);
+    setFinal(null);
+    setResult(null);
+    setThink(false);
+    setAnswer("");
+    if (st.phase === "draw") {
+      roundRef.current = st.round;
+      watchRef.current = null;
+      setRound({ ...st.round, resumeLeft: st.timeLeft });
+      setTimeLeft(st.timeLeft);
+      setGuesses((st.guesses || []).map((text) => ({ text: String(text), correct: false })));
+      // ภาพที่เราวาดไว้ในช่วงนี้ (เก็บในแท็บ) — ใช้เฉพาะถ้าเป็นด่าน/คำเดียวกับที่ server บอก
+      try {
+        const saved = JSON.parse(store.get(CANVAS_KEY) || "null");
+        if (saved && saved.word === st.round.word && saved.level === st.round.level && Array.isArray(saved.actions)) {
+          restoreRef.current = { actions: saved.actions };
+        }
+      } catch {
+        /* ภาพที่เก็บไว้เสีย: เริ่มกระดานว่าง */
+      }
+      setRoundId((n) => n + 1);
+      setPhase("playing");
+    } else if (st.phase === "watch") {
+      const d = { ...st.watch, resumeLeft: st.timeLeft };
+      setRound({ level: st.level, lives: st.lives }); // แถบบนแสดงเลขด่านจาก round (ตอนเล่นปกติ round ค้างจากช่วง 1 อยู่แล้ว)
+      watchRef.current = d;
+      setWatch(d);
+      setTimeLeft(st.timeLeft);
+      setWrongAnswers((st.wrong || []).map(String));
+      setDrawHint(Array.isArray(st.hint) ? st.hint : null);
+      restoreRef.current = { strokes: Array.isArray(st.strokes) ? st.strokes : [] };
+      redoRef.current = [];
+      setHist({ undo: false, redo: false });
+      setPhase("watch");
+    } else {
+      // พักระหว่างช่วง: ช่วงถัดไปจะเริ่มเอง (ได้ event ai_round_start / ai_draw_start จาก server)
+      setPhase("starting");
+    }
+  }
+
   // ขึ้นด่านใหม่ = ล้างกระดานและประวัติย้อนกลับ
   useEffect(() => {
     if (roundId === 0) return;
@@ -285,12 +379,34 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
     setHist({ undo: false, redo: false });
   }, [roundId]);
 
+  // กลับเข้าเกมหลังรีเฟรช: วาดของที่เก็บไว้ลงกระดาน (ประกาศหลัง effect ล้างกระดานข้างบน จึงวาดทับหลังล้างเสมอ)
+  useEffect(() => {
+    const r = restoreRef.current;
+    const board = canvasRef.current;
+    if (!r || !board) return;
+    restoreRef.current = null;
+    if (r.actions) {
+      board.applyHistory(r.actions);
+      syncHist();
+    }
+    if (r.strokes) {
+      board.resetBoard();
+      for (const st of r.strokes) {
+        board.applyRemote(beginStroke({ x: st.points[0].x, y: st.points[0].y, color: st.color, size: st.size, tool: TOOLS.PEN }));
+        board.applyRemote(extendStroke(st.points.slice(1)));
+        board.applyRemote(endStroke());
+      }
+      for (const st of pendingStrokes.current) playStroke(st);
+      pendingStrokes.current = [];
+    }
+  }, [phase, roundId]);
+
   // นับเวลาถอยหลังไว้โชว์ (server เป็นคนตัดสินว่าหมดเวลาจริง)
   const live = phase === "playing" || phase === "watch";
   const stage = phase === "watch" ? watch : round; // ช่วงที่กำลังเล่นอยู่ (ใช้ดูเวลาเต็ม)
   useEffect(() => {
     if (!live || !stage) return undefined;
-    const deadline = Date.now() + stage.time * 1000;
+    const deadline = Date.now() + (stage.resumeLeft ?? stage.time) * 1000; // resumeLeft = เวลาที่เหลือจริงตอนกลับเข้าเกมหลังรีเฟรช
     const id = setInterval(() => {
       setTimeLeft(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
     }, 250);
@@ -347,6 +463,8 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
   function handleLeave() {
     // ปิดเกมที่ server ด้วย (จบเกมแล้วไม่มีอะไรค้าง ส่งไปก็ไม่เป็นไร)
     socket.emit("leave_room");
+    store.del(ACTIVE_KEY);
+    store.del(CANVAS_KEY);
     phaseRef.current = "over"; // กัน cleanup ส่งซ้ำ
     onBack();
   }
@@ -356,7 +474,18 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
     const b = canvasRef.current;
     setHist({ undo: !!b && lastOpIndex(b.getActions()) >= 0, redo: redoRef.current.length > 0 });
   }
+  // เก็บภาพช่วง 1 ไว้ในแท็บ (หลังจบแต่ละเส้น/เทสี/รูปทรง/ล้างจอ) เผื่อรีเฟรชหน้า — server ไม่ได้เก็บภาพของเรา
+  function saveCanvas() {
+    const b = canvasRef.current;
+    const r = roundRef.current;
+    if (!b || !r || phaseRef.current !== "playing") return;
+    store.set(CANVAS_KEY, JSON.stringify({ word: r.word, level: r.level, actions: b.getActions() }));
+  }
   function handleAction(action) {
+    if (action.type === "stroke_end" || action.type === "fill" || action.type === "draw_shape" || action.type === "clear_canvas") {
+      // Canvas เก็บ action ลงลิสต์ก่อนเรียก onAction (ดู dispatch) จึงอ่านลิสต์ล่าสุดได้เลย
+      setTimeout(saveCanvas, 0);
+    }
     if (!OP_START.has(action.type)) return;
     redoRef.current = []; // วาดใหม่หลังย้อน = ทิ้งกองทำซ้ำ (เหมือนโหมดห้อง)
     syncHist();
@@ -370,6 +499,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
     redoRef.current.push(all.slice(i));
     b.applyHistory(all.slice(0, i));
     syncHist();
+    saveCanvas();
   }
   function redo() {
     const b = canvasRef.current;
@@ -377,6 +507,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
     if (!b || !op) return;
     b.applyHistory([...b.getActions(), ...op]);
     syncHist();
+    saveCanvas();
   }
 
   const canDraw = phase === "playing" && (timeLeft ?? 1) > 0;

@@ -969,6 +969,15 @@ server แยกฟังก์ชัน `applySettings(room, data)` ใช้�
 - ทดสอบ: `npm test` 704/704 (ข้อ 40) · เบราว์เซอร์: มือถือ 390×844 และ 375×667 (ตา Mini Challenge ทุกตา/ไม่มี) 41/41 ต่อชุด · ทีม 15/15 ที่ 390 และ 375 · รีเฟรชห้องเกม เดี่ยว/ทีม 18/18 · ภาพ `screenshots-mobile/` (ไม่เข้า git)
 - **ข้อจำกัดที่ยังอยู่**: Solo รีเฟรชแล้วกลับหน้าเริ่มเกม (server ไม่เก็บสถานะ Solo — รอผู้ใช้ตัดสินใจทางแก้) · รีเฟรชระหว่างหน้าสรุปตา (3 วิ) ไม่เห็นหน้าต่างสรุปตาที่ผ่านไปแล้ว แต่ยังอยู่หน้าเกมและเกมเดินต่อ
 
+### เสร็จแล้ว (Solo รีเฟรชแล้วกลับเข้าเกมเดิม — branch `mobile-lobby-return` · แตะ client + `server/index.js` + `events.md`)
+**สัญญากลางถูกแก้** (`events.md` §6 หัวข้อ Solo + `ai_resume` + 1 บรรทัดในตาราง) · ไม่เพิ่ม library
+- **ปัญหาเดิม**: เกม Solo ผูกกับ `socket.data.solo` และ `disconnect` เรียก `stopSolo` ทันที → รีเฟรชแล้ว socket ใหม่ไม่มีเกมให้ต่อ (หน้ากลับไปกรอกชื่อ)
+- **server**: เกมผูกกับ playerId (`soloSessions` Map) · `makeSoloPort(solo)` = "ท่อส่ง" ที่ `emit` ผ่านห้องส่วนตัวชื่อ playerId ฟังก์ชัน `startSoloRound`/`endSoloRound`/`startDrawRound` ฯลฯ ได้ท่อนี้แทน socket จึงส่งถึง socket ตัวใหม่ได้ (timer ที่สร้างไว้ยังส่งหาผู้เล่นถูกคน) · `suspendSolo` ตอน `disconnect`: มี playerKey → รอ `REJOIN_GRACE_MS` (30 วิ) แล้วค่อย `stopSolo` (ไม่บันทึกคะแนน) · ไม่มี playerKey = เลิกทันทีเหมือนเดิม · `ai_resume` (ack) คืน `soloSnapshot` ของช่วง draw/watch/rest · ช่วง watch เก็บ `sentStrokes` `hintSent` `replies` `category` (ห้ามส่งคำตอบ `word` — มีเทสตรวจ) · `dropSoloSession` ตอนเริ่ม Solo ใหม่/สร้าง-เข้า-rejoin ห้อง (ไม่ให้สองเกมซ้อน) · handler ที่รับจาก socket (`ai_snapshot` `ai_draw_guess`) ใช้ `solo.port` ต่อทันทีที่รับ
+- **client** (`SoloAI.jsx`): `sessionStorage` `jdi.soloActive` (กำลังเล่น) + `jdi.soloCanvas` (ภาพช่วง 1 เก็บทุกครั้งที่จบเส้น/เทสี/รูปทรง/ล้างจอ/ย้อน/ทำซ้ำ — server ไม่เก็บภาพของเรา) · เปิดหน้าแล้วมี ACTIVE_KEY → รอต่อ server ติดก่อน (`socket.once("connect")`) แล้วส่ง `ai_resume` → `applyResume`: draw = ด่าน/คำ/ชีวิต/เวลาที่เหลือ (`resumeLeft`) + วาดภาพที่เก็บไว้คืน · watch = วาดเส้นที่ server ส่งไปแล้วคืนทันที (เส้นที่มาก่อนกระดานเกิดพักใน `pendingStrokes`) + คำใบ้/คำที่ทายผิด · rest = "กำลังเริ่ม" แล้ว event ถัดไปมาเอง · `ok:false` → ล้างกุญแจแล้วกลับหน้ากรอกชื่อ · `resumingRef` กัน cleanup ส่ง `leave_room` ตอนกำลังกู้เกม
+- ข้อจำกัด: เส้นที่กำลังลากค้างตอนรีเฟรชหาย · เวลาด่านเดินต่อระหว่างรีเฟรช (ปกติ 1–3 วิ) · ถ้าปิดแท็บแล้วเปิดใหม่ = playerKey ใหม่ เกมเดิมกลับไม่ได้ (sessionStorage เป็นของแท็บ) · ภาพช่วง 1 เก็บใน sessionStorage (เพดานราว 5 MB ถ้าเต็มก็แค่ภาพไม่กลับ)
+- บทเรียน: เทสที่จำลอง "ผู้เล่นหายเกิน 30 วิ" ด้วยการ navigate ออกใน Chrome headless ใช้ไม่ได้ — หน้าเก่าเข้า bfcache แล้ว socket ค้าง server จึงเห็นว่ายังออนไลน์ → ปิด bfcache ใน Chrome ทดสอบ (`--disable-features=BackForwardCache`) และบล็อก `*socket.io*` ผ่าน CDP แทน
+- ทดสอบ: `npm test` ผ่าน (ข้อ 41: กลับเข้าเกมช่วงเราวาด/AI วาด · เกมจบแล้วส่งผลถึง socket ใหม่ · คำตอบไม่หลุด · เกินเวลารอ · ไม่มี playerKey · เริ่มใหม่ทับเกมเก่า) · เบราว์เซอร์ `tests/browser/refresh-solo.mjs` 21/21
+
 ### ยังไม่ได้ทำ (ตามลำดับใน PROMPTS.md)
 - (ไม่มีแล้ว — ข้อ 8 เสร็จ)
 
