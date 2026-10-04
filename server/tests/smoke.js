@@ -2267,14 +2267,32 @@ async function main() {
       check("เล่นอีกรอบ: ตาแรกไม่มี Mini Challenge อีกครั้ง", r1.challenge.type, "none");
       for (const P of [H, G]) P.socket.disconnect();
 
-      // ---------- จังหวะใช้กับชุดที่หัวห้องเปิดเสมอ (ไม่ว่าจะเปิด Standard หรือไม่) ----------
+      // ---------- กติกาตามชุดที่หัวห้องเปิด: ปิด Standard = ทุกตามี challenge · ห้ามปิดหมด ----------
       {
         const X = await mk();
         const xc = await emitAck(X.socket, "create_room", { name: "PaceX", avatar: 0, rounds: 2, drawTime: 30 });
         const Y = await mk();
         await emitAck(Y.socket, "join_room", { code: xc.code, name: "PaceY", avatar: 1 });
         await wait(200);
-        // เปิดแค่ shapes_only (ปิด Standard): ตาแรกต้องไม่มี · ตา 2 มี (ODDS=1) · ตา 3 ไม่ติดกันจึงไม่มี · ตา 4 มี และเป็น shapes_only ทุกครั้งที่มี
+        const chOf = (P) => P.dump().filter((e) => e.name === "room_update").at(-1).args[0].settings.challenges;
+        // ห้ามปิดหมด: ค่าว่าง/ค่าเพี้ยน/ชนิดผิดถูกทิ้ง คงค่าเดิม (ทั้ง set_challenges และ update_settings และ create_room)
+        const before = JSON.stringify(chOf(X));
+        for (const bad of [[], ["bogus"], "none", null, [1, 2], { none: true }]) X.socket.emit("set_challenges", { challenges: bad });
+        X.socket.emit("update_settings", { ...X.dump().filter((e) => e.name === "room_update").at(-1).args[0].settings, challenges: [] });
+        await wait(300);
+        check("ปิดหมดไม่ได้: set_challenges/update_settings ค่าว่างหรือเพี้ยน → คงค่าเดิม (อย่างน้อย 1 แบบ)", [JSON.stringify(chOf(X)), chOf(X).length >= 1], [before, true]);
+        const E = await mk();
+        const ec = await emitAck(E.socket, "create_room", { name: "PaceE", avatar: 0, challenges: [] });
+        await wait(200);
+        check("create_room ส่ง challenges ว่าง → ได้ชุดเริ่มต้น (ไม่ใช่ว่าง)", chOf(E).length, 4);
+        E.socket.disconnect();
+        void ec;
+        // คนที่ไม่ใช่หัวห้องปิดไม่ได้
+        Y.socket.emit("set_challenges", { challenges: ["none"] });
+        await wait(250);
+        check("ลูกห้องเปลี่ยนชุด Mini Challenge ไม่ได้", chOf(X).length, 4);
+
+        // ปิด Standard เหลือแค่ shapes_only: ทุกตามี (ตาแรกด้วย) ติดกันได้
         X.socket.emit("set_challenges", { challenges: ["shapes_only"] });
         await Y.wait("room_update", (r) => r.settings.challenges.length === 1 && r.settings.challenges[0] === "shapes_only", 2000);
         X.clear(); Y.clear();
@@ -2283,11 +2301,28 @@ async function main() {
         const p2 = await turn(Y, X);
         const p3 = await turn(X, Y);
         const p4 = await turn(Y, X);
-        check("เปิดแค่ shapes_only: ตาแรกไม่มี (จังหวะยังใช้แม้ปิด Standard)", p1.cw.challenge.type, "none");
-        check("เปิดแค่ shapes_only: ตา 2 เป็น shapes_only", p2.cw.challenge.type, "shapes_only");
-        check("เปิดแค่ shapes_only: ตา 3 ไม่ติดกัน → ไม่มี", p3.cw.challenge.type, "none");
-        check("เปิดแค่ shapes_only: ตา 4 เป็น shapes_only", p4.cw.challenge.type, "shapes_only");
+        check("ปิด Standard (เหลือ shapes_only): ทั้ง 4 ตามี Mini Challenge ตั้งแต่ตาแรก (ติดกันได้)", [p1, p2, p3, p4].map((t) => t.cw.challenge.type), ["shapes_only", "shapes_only", "shapes_only", "shapes_only"]);
+        check("ปิด Standard: round_start ตรงกับที่บอกตอนเลือกคำ และมีป้ายใหญ่ทุกตา", [p1, p2, p3, p4].map((t) => [t.rs.challenge.type, t.rs.intro]), Array(4).fill(["shapes_only", true]));
+        await X.wait("game_end", null, 6000);
         for (const P of [X, Y]) P.socket.disconnect();
+
+        // ปิด Standard เปิดสองแบบ: ทุกตามี และไม่ซ้ำแบบเดิมสองตาติดกัน
+        const M = await mk();
+        const mc = await emitAck(M.socket, "create_room", { name: "PaceM", avatar: 0, rounds: 3, drawTime: 30 });
+        const N = await mk();
+        await emitAck(N.socket, "join_room", { code: mc.code, name: "PaceN", avatar: 1 });
+        await wait(200);
+        M.socket.emit("set_challenges", { challenges: ["colour_fix", "dont_lift_pen"] });
+        await N.wait("room_update", (r) => r.settings.challenges.length === 2 && !r.settings.challenges.includes("none"), 2000);
+        M.clear(); N.clear();
+        M.socket.emit("start_game");
+        const mt = [];
+        for (let i = 0; i < 6; i++) mt.push(await (i % 2 === 0 ? turn(M, N) : turn(N, M)));
+        const mtypes = mt.map((t) => t.cw.challenge.type);
+        checkOk("ปิด Standard (สองแบบ): ทั้ง 6 ตามี challenge จากสองแบบที่เปิดเท่านั้น", mtypes.every((x) => x === "colour_fix" || x === "dont_lift_pen"));
+        checkOk("ปิด Standard (สองแบบ): ไม่ซ้ำแบบเดิมสองตาติดกัน (สลับกันทุกตา)", mtypes.every((x, i) => i === 0 || x !== mtypes[i - 1]));
+        await M.wait("game_end", null, 6000);
+        for (const P of [M, N]) P.socket.disconnect();
 
         // เปิดแค่ Standard: ไม่มีกติกาพิเศษเลยทุกตา
         const Z = await mk();
@@ -2302,6 +2337,25 @@ async function main() {
         const q = [await turn(Z, W), await turn(W, Z), await turn(Z, W), await turn(W, Z)];
         check("เปิดแค่ Standard: ทั้ง 4 ตาไม่มี Mini Challenge", q.map((t) => t.cw.challenge.type), ["none", "none", "none", "none"]);
         for (const P of [Z, W]) P.socket.disconnect();
+
+        // โหมดทีม + ปิด Standard: ตาแรกก็มี Mini Challenge เดียวกันทั้งสองทีม
+        const TT = [];
+        for (let i = 0; i < 4; i++) TT.push(await mk());
+        const ttc = await emitAck(TT[0].socket, "create_room", { name: "PaceT1", avatar: 0, mode: "team", rounds: 1, drawTime: 30 });
+        for (let i = 1; i < 4; i++) await emitAck(TT[i].socket, "join_room", { code: ttc.code, name: `PaceT${i + 1}`, avatar: i });
+        await wait(250);
+        TT[0].socket.emit("set_challenges", { challenges: ["dont_lift_pen", "colour_fix"] });
+        await TT[3].wait("room_update", (r) => r.settings.challenges.length === 2 && !r.settings.challenges.includes("none"), 2000);
+        TT.forEach((P) => P.clear());
+        TT[0].socket.emit("start_game");
+        const tca = await TT[0].wait("choose_word", null, 5000);
+        const tcb = await TT[1].wait("choose_word", null, 5000);
+        checkOk("ทีม + ปิด Standard: ตาแรกมี Mini Challenge (จากสองแบบที่เปิด) เดียวกันทั้งสองทีม", ["dont_lift_pen", "colour_fix"].includes(tca.challenge.type) && JSON.stringify(tca.challenge) === JSON.stringify(tcb.challenge));
+        TT[0].socket.emit("word_chosen", { word: tca.options[0] });
+        const rta = await TT[2].wait("round_start", null, 3000);
+        const rtb = await TT[3].wait("round_start", null, 3000);
+        check("ทีม + ปิด Standard: round_start ตรงกับที่บอก และมีป้ายใหญ่ทั้งสองทีม", [rta.challenge, rtb.challenge, rta.intro, rtb.intro], [tca.challenge, tca.challenge, true, true]);
+        TT.forEach((P) => P.socket.disconnect());
       }
 
       // ---------- โหมดทีม: 4 คน (ทีมละ 2) 1 รอบ = 2 ตา ----------

@@ -563,19 +563,26 @@ function makeChallenge(type) {
 const pickFrom = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 // สุ่ม Mini Challenge ของตาที่กำลังจะเริ่ม → room.nextChallenge (ใช้ทั้งบอกคนวาดตอนเลือกคำ และตอนเริ่มวาดจริง)
-// สุ่ม "จากใบที่หัวห้องเปิดไว้เท่านั้น" (settings.challenges) · challengeHistory = ชนิดของทุกตา (ล้างตอน start_game) ไว้ดูตาแรก/ตาที่แล้ว
-//   - เปิดแค่ Standard → ทุกตา none
-//   - ปิด Standard → ทุกตาต้องเป็นกติกาพิเศษ (ไม่มีจังหวะตาแรก/ไม่ติดกัน เพราะไม่มีตาปกติให้คั่น)
-//   - เปิดทั้ง Standard และกติกาพิเศษ → ใช้จังหวะเดิม: ตาแรกไม่มี · ~1/3 · ไม่ติดกันสองตา
+// สุ่ม "จากใบที่หัวห้องเปิดไว้เท่านั้น" (settings.challenges) · challengeHistory = ชนิดของทุกตา (ล้างตอน start_game) ไว้ดูตาที่แล้ว
+// กติกา (ใช้กับทั้งโหมดแข่งเดี่ยวและทีม):
+//   1) เปิด Standard + กติกาพิเศษ → จังหวะเดิม: ตาแรกเป็นตาธรรมดา · ตาถัดไปโอกาส ~1/3 จากแบบพิเศษที่เปิด · ไม่ติดกันสองตา
+//   2) ปิด Standard → ทุกตามี Mini Challenge ตั้งแต่ตาแรก สุ่มจากแบบที่เปิด ติดกันได้ · เปิดหลายแบบพยายามไม่ซ้ำแบบเดิมสองตาติดกัน
+//   3) เปิดแค่ Standard → ไม่มี Mini Challenge เลย
+//   (4 ห้ามปิดหมด: sanitizeChallenges ให้เหลืออย่างน้อย 1 แบบเสมอ — เปิดไม่ถึง 1 แบบ = ไม่รับค่านั้น)
 function rollChallenge(room) {
   const history = room.challengeHistory ?? (room.challengeHistory = []);
   const enabled = room.settings.challenges ?? DEFAULT_CHALLENGES;
   const specials = SPECIAL_CHALLENGES.filter((t) => enabled.includes(t));
+  const standardOn = enabled.includes("none");
 
-  // กติกาจังหวะ (ผู้ใช้ตกลงไว้): ตาแรกไม่มีเสมอ · ตาถัดไปโอกาส ~1/3 · ไม่ติดกันสองตา
-  // สุ่มจากชุดที่หัวห้องเปิดไว้เท่านั้น · ไม่ได้เปิดกติกาพิเศษสักแบบ = ไม่มีเลย (ไม่ว่าจะเปิด Standard หรือไม่)
   let type = "none";
-  if (specials.length > 0) {
+  if (specials.length > 0 && !standardOn) {
+    // ปิด Standard: ทุกตามีกติกาพิเศษ · มีให้เลือกหลายแบบ → เลี่ยงแบบเดียวกับตาที่แล้ว
+    const last = history[history.length - 1];
+    const pool = specials.length > 1 ? specials.filter((t) => t !== last) : specials;
+    type = pickFrom(pool);
+  } else if (specials.length > 0) {
+    // เปิด Standard ด้วย: จังหวะเดิม (ตาแรกไม่มี · ~1/3 · ไม่ติดกัน)
     const allowed = CHALLENGE_NO_PACING || (history.length > 0 && history[history.length - 1] === "none");
     if (allowed && Math.random() < CHALLENGE_CHANCE) type = pickFrom(specials);
   }
