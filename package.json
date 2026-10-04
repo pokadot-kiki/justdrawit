@@ -8,7 +8,7 @@
     "start": "node server/index.js",
     "share": "node scripts/share.js",
     "test": "npm --prefix server test",
-    "test:browser": "node tests/browser/mobile.mjs 390x844 1 && node tests/browser/mobile.mjs 375x667 0 && node tests/browser/mobile-team.mjs 390x844 && node tests/browser/refresh.mjs 1440x900 classic && node tests/browser/refresh.mjs 1440x900 team && node tests/browser/refresh-solo.mjs 1440x900 && node tests/browser/solo-wordbar.mjs 1440x900 && node tests/browser/cursor.mjs 1440x900"
+    "test:browser": "node tests/browser/mobile.mjs 390x844 1 && node tests/browser/mobile.mjs 375x667 0 && node tests/browser/mobile-team.mjs 390x844 && node tests/browser/refresh.mjs 1440x900 classic && node tests/browser/refresh.mjs 1440x900 team && node tests/browser/refresh-solo.mjs 1440x900 && node tests/browser/solo-wordbar.mjs 1440x900 && node tests/browser/cursor.mjs 1440x900 && node tests/browser/balance.mjs"
   },
   "engines": {
     "node": ">=20"

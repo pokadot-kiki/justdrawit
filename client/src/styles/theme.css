@@ -4992,3 +4992,157 @@ select[class] {
     justify-content: flex-start;
   }
 }
+
+/* ==========================================================================
+   ปรับความสมดุลหน้าแรกและหน้าเกม (ธีมหลักเดิม)
+   ========================================================================== */
+
+/* ── หน้าเกมจอคอม/ไอแพดแนวนอน: สามคอลัมน์เริ่มบรรทัดเดียวกัน (แถบคำ) และจบบรรทัดเดียวกัน (ล่างแถบเวลา) ──
+   เดิมแผงผู้เล่นเริ่มใต้แถบคำ (แถว 2) และแผงขวายาวลงไปถึงแถว 4 เลยเกินกระดาน · ตอนนี้ทั้งสองคร่อมแถว 1–3
+   (contain: size เดิมทำให้เนื้อข้างในไม่ดันความสูงแถว) · ที่ว่างแนวตั้งที่เหลือแบ่งเท่าๆ กันบน/ล่าง (align-content: center) ไม่กองอยู่ใต้จอข้างเดียว */
+@media (min-width: 1001px) {
+  .game:not(.game--solo) {
+    grid-template-rows: auto auto auto;
+    align-content: center;
+  }
+
+  .game:not(.game--solo) .game__players {
+    grid-row: 1 / 4;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
+  }
+
+  .game:not(.game--solo) .game__side {
+    grid-row: 1 / 4;
+  }
+}
+
+/* รายชื่อเลื่อนในกรอบของมันเอง · กล่องข้อมูลห้องอยู่ท้ายแผงเสมอ */
+.game__players {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.game__players-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.room-info {
+  flex: none;
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-ctl);
+  background: var(--tab-idle);
+}
+
+.room-info__title {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.room-info__list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.room-info__list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.room-info__list dt {
+  color: var(--muted);
+}
+
+.room-info__list dd {
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+}
+
+.room-info__code {
+  letter-spacing: 2px;
+}
+
+.room-info__rule {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--white);
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.room-info__rule--on {
+  background: var(--purple);
+  border-color: var(--ink);
+  color: var(--white);
+}
+
+.room-info__rule-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.room-info__rule-desc {
+  font-size: 13px;
+}
+
+/* จอเตี้ย: ย่อกล่องข้อมูลห้องเหลือบรรทัดสำคัญ (รหัสห้อง/รอบ + ชื่อกติกา) ให้รายชื่อมีที่ */
+@media (min-width: 1001px) and (max-height: 820px) {
+  .room-info__list > div:nth-child(2),
+  .room-info__list > div:nth-child(4),
+  .room-info__rule--on .room-info__rule-desc {
+    display: none;
+  }
+}
+
+/* ── หน้าแรก: แผง Leaderboard สูงเท่าแผงซ้ายพอดี (ขอบบน/ล่างเสมอกัน) · ตารางเลื่อนในกรอบของตัวเอง ──
+   contain: size = เนื้อข้างในไม่ดันความสูงแถว แผงซ้ายเป็นตัวกำหนด · หัว/เดือน/แท็บอยู่กับที่ มีแค่รายชื่อที่เลื่อน
+   (จอแคบ ≤ 760px เรียงบนลงล่างแล้ว ไม่ใช้กฎนี้) */
+@media (min-width: 761px) {
+  .lobby__board {
+    contain: size;
+  }
+
+  .lobby__board .board-panel__scroll {
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
+/* หัวตารางค้างตอนเลื่อน: .rank-table เดิมมี overflow: hidden (ตัดมุมโค้ง) ซึ่งสร้างกรอบเลื่อนของตัวเอง ทำให้ position: sticky ของหัวตาราง
+   ผูกกับตารางแทนกรอบเลื่อน (หัวเลื่อนหายไปกับแถว) → overflow: clip ตัดมุมได้เหมือนกันแต่ไม่สร้างกรอบเลื่อน */
+.lobby__board .rank-table {
+  overflow: clip;
+}
+
+/* แผงซ้าย: ปุ่มใหญ่แบ่งความสูงที่เหลือเท่าๆ กัน ไม่มีที่ว่างโหว่ข้างล่าง */
+.home__buttons {
+  flex: 1 1 auto;
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+.home__buttons .big-btn {
+  height: 100%;
+}

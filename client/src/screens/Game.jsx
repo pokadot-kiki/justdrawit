@@ -10,6 +10,7 @@ import Canvas from "../components/Canvas";
 import Toolbar from "../components/Toolbar";
 import WordChoiceModal from "../components/WordChoiceModal";
 import ChallengeIntro from "../components/ChallengeIntro";
+import RoomInfo from "../components/RoomInfo";
 import RoundSummaryModal from "../components/RoundSummaryModal";
 import GameOverModal from "../components/GameOverModal";
 import { TopIcons, InfoModal, ExitModal } from "../components/TopIcons";
@@ -228,6 +229,7 @@ export default function Game({
           มือขวาเอื้อมถึงเครื่องมือได้ถนัด (คนส่วนใหญ่ถนัดขวา) และกระดานได้ที่กว้างที่สุด */}
       <main className={`game${isDrawer ? "" : " game--no-tools"}`}>
         <aside className="game__players">
+          <div className="game__players-list">
           <Scoreboard
             players={players}
             drawerId={game.drawerId}
@@ -238,6 +240,14 @@ export default function Game({
             drawing={drawing}
             guessed={game.guessed}
             meId={meId}
+          />
+          </div>
+          <RoomInfo
+            code={room.code}
+            settings={room.settings}
+            roundNo={game.roundNo}
+            totalRounds={game.totalRounds}
+            challenge={game.round?.challenge ?? null}
           />
         </aside>
 
