@@ -2463,7 +2463,8 @@ async function main() {
     }
 
     // ---------- ไม่พิมพ์คำตอบลง log ของ server เลย (เช็คกับ server หลักที่เล่นมาทั้งชุดเทส) ----------
-    const logText = serverLog.join("\n");
+    // ตัดบรรทัดตอนสตาร์ทที่ "ตั้งใจ" พิมพ์รายชื่อคำยาวเกิน 12 ตัวอักษรเตือนคนดูแลคลังคำ (ไม่ใช่การรั่วของคำตอบในตา) · คลังคำใหญ่ขึ้นแล้วคำที่ถูกสุ่มมาเล่นอาจอยู่ในรายการเตือนนั้นได้
+    const logText = serverLog.join("\n").split("\n").filter((l) => !l.includes("คำยาวเกิน") && !l.startsWith("คลังคำ:")).join("\n");
     check("log ไม่มีบรรทัด \"คำตานี้\" (ทั้งโหมดปกติและทีม)", logText.includes("คำตานี้"), false);
     const leaked = [word, ...drawnOptions].filter((w) => w && logText.includes(w));
     check("log ไม่มีคำที่ใช้เป็นคำตอบในตาที่เล่นจริง", leaked, []);

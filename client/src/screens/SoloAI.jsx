@@ -114,6 +114,21 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
   const resumeAsked = useRef(false); // ขอกลับเข้าเกมแล้วหรือยัง (กัน effect รันซ้ำ)
   const resumingRef = useRef(false); // กำลังขอกลับเข้าเกม: อย่าส่ง leave_room ตอน cleanup (กันเกมที่เพิ่งกู้คืนถูกปิด)
 
+  // ล้างของที่ผูกกับช่วง/ด่านก่อนหน้าทิ้งทั้งหมด (คำ หมวด คำใบ้ คำที่ AI เดา คำที่เราทายผิด) — เรียกทุกครั้งที่เริ่มช่วง/ด่านใหม่
+  // กฎ: แถบคำช่วง 1 โชว์คำที่ต้องวาด · ช่วง 2 โชว์หมวด/คำใบ้เท่านั้น ห้ามมีคำของอีกช่วงค้างอยู่
+  function clearStageState() {
+    roundRef.current = null;
+    watchRef.current = null;
+    setRound(null);
+    setWatch(null);
+    setGuesses([]);
+    setDrawHint(null);
+    setWrongAnswers([]);
+    setAnswer("");
+    setResult(null);
+    setThink(false);
+  }
+
   function setThink(on) {
     thinkingRef.current = on;
     setThinking(on);
@@ -176,6 +191,10 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
     const onRoundStart = (d) => {
       roundRef.current = d;
       watchRef.current = null;
+      setWatch(null); // ล้างหมวด/คำใบ้ของช่วง 2 ด่านก่อน
+      setDrawHint(null);
+      setWrongAnswers([]);
+      setAnswer("");
       setRound(d);
       setLives(d.lives);
       setTimeLeft(d.time);
@@ -205,6 +224,8 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
     const onDrawStart = (d) => {
       clearStrokes();
       watchRef.current = d;
+      setGuesses([]); // คำที่ AI เดาในช่วง 1 ไม่เกี่ยวกับช่วง 2
+      setThink(false);
       setWatch(d);
       setLives(d.lives);
       setTimeLeft(d.time);
@@ -295,6 +316,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
   useEffect(() => {
     if (!boot || phaseRef.current !== "intro") return;
     onName?.(initialName.trim());
+    clearStageState();
     setScore(0);
     setLives(3);
     setFinal(null);
@@ -333,9 +355,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
     setScore(st.totalScore);
     setLives(st.lives);
     setFinal(null);
-    setResult(null);
-    setThink(false);
-    setAnswer("");
+    clearStageState(); // แล้วค่อยตั้งเฉพาะของช่วงที่ server บอกด้านล่าง
     if (st.phase === "draw") {
       roundRef.current = st.round;
       watchRef.current = null;
@@ -444,6 +464,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
     e?.preventDefault();
     if (!name.trim()) return;
     onName?.(name.trim()); // จำชื่อที่ใช้ไว้ (ชื่อเดียวกับหน้าแรก)
+    clearStageState();
     setScore(0);
     setLives(3);
     setFinal(null);
@@ -590,6 +611,9 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
     </span>
   );
   const lastGuess = guesses[guesses.length - 1];
+  // "มุมมอง" ที่หน้าจอต้องโชว์: ช่วง 2 (ดูภาพแล้วทาย) รวมตอนพักหลังจบช่วง 2 ที่หน้าต่างเฉลยยังเปิดอยู่ · นอกนั้นเป็นช่วง 1 (เราวาด)
+  // ใช้ตัวเดียวกันตัดสินทั้งแถบคำ กล่องขวา และเครื่องมือ จึงไม่มีทางที่ส่วนหนึ่งโชว์ช่วงใหม่แต่อีกส่วนค้างช่วงเก่า
+  const view = phase === "watch" || (phase === "rest" && result?.kind === "guess") ? "watch" : "draw";
 
   return (
     <div className="screen screen--game">
@@ -627,14 +651,14 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
           <div className="wordbar">
             <div className="wordbar__side">
               {/* ป้ายบอกช่วง: ช่วง 1 ขึ้นเฉพาะด่านที่มีช่วง 2 ต่อท้าย */}
-          {phase === "watch" ? (
+          {view === "watch" ? (
             <div className="solo-stage solo-stage--watch">ช่วง 2/2 · ดูภาพแล้วพิมพ์ทาย</div>
           ) : (phase === "playing" || (phase === "rest" && result?.kind === "draw")) && round?.drawNext ? (
             <div className="solo-stage">ช่วง 1/2 · คุณวาด AI ทาย</div>
           ) : null}
             </div>
           <div className="wordbar__word">
-            {phase === "watch" && watch ? (
+            {view === "watch" && watch ? (
               <span className="solo-watch" title="หมวดหมู่และคำใบ้ของภาพ">
                 {watch.category && <span className="topbar__idle">หมวด: <b>{watch.category}</b></span>}
                 {drawHint ? (
@@ -643,7 +667,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
                   <span className="topbar__idle">คำใบ้จะขึ้นเมื่อเหลือ {watch.hintAt ?? "?"} วิ</span>
                 )}
               </span>
-            ) : round && phase !== "starting" ? (
+            ) : view === "draw" && round && phase !== "starting" ? (
               <span className="topbar__real-word" title="คำที่คุณต้องวาด">
                 {round.word}
               </span>
@@ -676,7 +700,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
             ใช้ flex order ให้เครื่องมืออยู่บน แม้กล่องคำตอบมาก่อนใน DOM · บนมือถือ side ลงไปอยู่ใต้กระดาน */}
         <aside className="game__side">
           <div className="game__answers game__answers--solo">
-            {phase === "watch" ? (
+            {view === "watch" ? (
               <section className="panel ai-box" aria-live="polite">
                 <h2 className="panel__title">พิมพ์คำตอบ</h2>
                 <div className="ai-box__body">
@@ -739,7 +763,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
           </div>
 
           {/* ช่วง 2 (AI วาด เราทาย) ไม่ต้องวาด → ซ่อนเครื่องมือทั้งแถบ เหลือแต่กล่องพิมพ์คำตอบเต็มคอลัมน์ */}
-          {phase !== "watch" && (
+          {view !== "watch" && (
           <div className="game__tools">
             <Toolbar
               tool={tool}
