@@ -5146,3 +5146,33 @@ select[class] {
 .home__buttons .big-btn {
   height: 100%;
 }
+
+/* ==========================================================================
+   SET UP — โหมด "แข่งกับ AI": กล่องเล็กบอกกติกา Solo แทนที่ช่องรอบ/เวลา/ประเภทห้อง
+   ความสูงใกล้เคียงของเดิม (4 บล็อก .setup__opt) ไม่ให้การ์ดกระโดดตอนสลับโหมด
+   ========================================================================== */
+.setup__opt-note {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.setup__ai-facts {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 20px 18px;
+  list-style: none;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-ctl);
+  background: var(--tab-idle);
+}
+
+.setup__ai-facts li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-head);
+  font-weight: 600;
+  font-size: 17px;
+}

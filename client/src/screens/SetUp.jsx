@@ -12,11 +12,19 @@ import { DIFFICULTY_CHOICES, ROOM_DIFFICULTY_CHOICES, VISIBILITY_CHOICES } from 
 const ROUND_CHOICES = [1, 2, 3, 4, 5];
 const TIME_CHOICES = [30, 45, 60, 90];
 
+// ตัวเลขของโหมด Solo ที่โชว์ในกล่องข้อมูล — คัดลอกมาจากค่าจริงที่ server ใช้ ห้ามเดา/คิดเอง
+// SOLO_LIVES (server/index.js) และ LEVEL_TIME + "ยากขึ้นทุก 2 ด่าน" (server/ai.js levelConfig) ถ้าแก้ตัวเลขฝั่ง server ต้องแก้ที่นี่ด้วย
+const SOLO_LIVES = 3;
+const SOLO_LEVEL_TIME = 60;
+
 export default function SetUp({ connected, profile, onBack, onEntered, onError, onStartSolo }) {
   const [mode, setMode] = useState("classic"); // classic | team | ai (ai = Solo แข่งกับ AI ไม่สร้างห้อง)
   const [rounds, setRounds] = useState(3);
   const [drawTime, setDrawTime] = useState(60);
-  const [difficulty, setDifficulty] = useState("mixed"); // ชุดคำ (ไม่เกี่ยวกับเวลา) · mixed ใช้ได้เฉพาะห้อง
+  const [difficulty, setDifficulty] = useState("mixed"); // ชุดคำของห้อง (ไม่เกี่ยวกับเวลา) · mixed ใช้ได้เฉพาะห้อง
+  // ระดับเริ่มต้นของ Solo แยกจาก difficulty ของห้องโดยเจตนา (คนละความหมาย: ห้องคือ "ชุดคำทั้งเกม"
+  // ส่วน Solo คือ "จุดเริ่มต้น" แล้วยากขึ้นเอง) สลับไปมาระหว่างโหมดจึงจำค่าของแต่ละฝั่งไว้คนละตัว ไม่ทับกัน
+  const [soloLevel, setSoloLevel] = useState("easy");
   const [visibility, setVisibility] = useState("private");
   // Challenge เลือกเปิด/ปิดทีละใบในห้องรอ (การ์ด 4 ใบ) ไม่ตั้งที่นี่แล้ว — ห้องเริ่มด้วยชุดเริ่มต้นของ server
   const { busy, enter } = useEnterRoom({ connected, onEntered, onError });
@@ -26,8 +34,8 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
 
   function submit() {
     if (isAI) {
-      // โหมดแข่งกับ AI: ไม่สร้างห้อง เข้าเกม Solo ทันทีด้วยความยากที่เลือก
-      onStartSolo(difficulty === "mixed" ? "easy" : difficulty); // Solo ไม่มีผสม เริ่มที่ง่าย
+      // โหมดแข่งกับ AI: ไม่สร้างห้อง เข้าเกม Solo ทันทีด้วยระดับเริ่มต้นที่เลือก
+      onStartSolo(soloLevel);
       return;
     }
     const who = name.trim() || randomName(); // กันกรณีชื่อว่าง
@@ -49,49 +57,64 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
         <section className="panel setup__opts deco-host" aria-label="ตั้งค่าห้อง">
           <Critter name="cat" className="crit crit--top-left" />
           <h2 className="panel__title setup__title">ตั้งค่า</h2>
-          <div className="setup__opt">
-            <h3 className="setup__head">
-              <Icon name="flag" size={22} /> จำนวนรอบ
-            </h3>
-            <div className="segmented" role="group" aria-label="จำนวนรอบ">
-              {ROUND_CHOICES.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  className={rounds === n ? "seg seg--active" : "seg"}
-                  aria-pressed={rounds === n}
-                  onClick={() => setRounds(n)}
-                >
-                  {n}
-                </button>
-              ))}
+          {/* โหมดแข่งกับ AI ไม่มีรอบ ไม่มีเวลาวาดแบบห้อง (Solo ตายตัว 60 วิ/ด่าน) จึงซ่อนสองช่องนี้ */}
+          {!isAI && (
+            <div className="setup__opt">
+              <h3 className="setup__head">
+                <Icon name="flag" size={22} /> จำนวนรอบ
+              </h3>
+              <div className="segmented" role="group" aria-label="จำนวนรอบ">
+                {ROUND_CHOICES.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={rounds === n ? "seg seg--active" : "seg"}
+                    aria-pressed={rounds === n}
+                    onClick={() => setRounds(n)}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="setup__opt">
-            <h3 className="setup__head">
-              <Icon name="clock" size={22} /> เวลาวาด <small>(วินาที)</small>
-            </h3>
-            <div className="segmented" role="group" aria-label="เวลาวาดต่อตา">
-              {TIME_CHOICES.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  className={drawTime === n ? "seg seg--active" : "seg"}
-                  aria-pressed={drawTime === n}
-                  onClick={() => setDrawTime(n)}
-                >
-                  {n}
-                </button>
-              ))}
+          )}
+          {!isAI && (
+            <div className="setup__opt">
+              <h3 className="setup__head">
+                <Icon name="clock" size={22} /> เวลาวาด <small>(วินาที)</small>
+              </h3>
+              <div className="segmented" role="group" aria-label="เวลาวาดต่อตา">
+                {TIME_CHOICES.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={drawTime === n ? "seg seg--active" : "seg"}
+                    aria-pressed={drawTime === n}
+                    onClick={() => setDrawTime(n)}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="setup__opt">
-            <h3 className="setup__head">
-              <Icon name="star" size={22} /> ความยากของคำ
-            </h3>
-            <OptionRow label="ระดับความยากของคำ" choices={isAI ? DIFFICULTY_CHOICES : ROOM_DIFFICULTY_CHOICES} value={isAI && difficulty === "mixed" ? "easy" : difficulty} onChange={setDifficulty} />
-          </div>
-          {/* โหมดแข่งกับ AI ไม่ต้องมีห้อง จึงซ่อนตัวเลือกประเภทห้อง */}
+          )}
+          {isAI ? (
+            <div className="setup__opt">
+              <h3 className="setup__head">
+                <Icon name="star" size={22} /> เริ่มที่ระดับ
+              </h3>
+              <OptionRow label="เริ่มที่ระดับ" choices={DIFFICULTY_CHOICES} value={soloLevel} onChange={setSoloLevel} />
+              <small className="setup__opt-note">คำยากขึ้นเองทุก 2 ด่าน</small>
+            </div>
+          ) : (
+            <div className="setup__opt">
+              <h3 className="setup__head">
+                <Icon name="star" size={22} /> ความยากของคำ
+              </h3>
+              <OptionRow label="ระดับความยากของคำ" choices={ROOM_DIFFICULTY_CHOICES} value={difficulty} onChange={setDifficulty} />
+            </div>
+          )}
+          {/* โหมดแข่งกับ AI ไม่ต้องมีห้อง จึงซ่อนตัวเลือกประเภทห้อง แทนด้วยกล่องสรุปกติกา Solo สั้นๆ */}
           {!isAI && (
             <div className="setup__opt">
               <h3 className="setup__head">
@@ -99,6 +122,22 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
               </h3>
               <OptionRow label="ประเภทห้อง" choices={VISIBILITY_CHOICES} value={visibility} onChange={setVisibility} />
             </div>
+          )}
+          {isAI && (
+            <ul className="setup__ai-facts" aria-label="กติกาโหมด Solo">
+              <li>
+                <Icon name="heart" size={20} /> {SOLO_LIVES} ชีวิต
+              </li>
+              <li>
+                <Icon name="clock" size={20} /> ด่านละ {SOLO_LEVEL_TIME} วินาที
+              </li>
+              <li>
+                <Icon name="robot" size={20} /> ผลัดกันวาดกับ AI
+              </li>
+              <li>
+                <Icon name="trophy" size={20} /> คะแนนขึ้น Leaderboard
+              </li>
+            </ul>
           )}
           <p className="setup__note">
             {isAI
