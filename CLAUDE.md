@@ -23,7 +23,7 @@ Just Drawit (ชื่อทีม TATA.IO) เป็นเว็บเกมว
 
 1. เกมพื้นฐาน เล่นได้หลายห้องพร้อมกัน ห้องไม่ปนกัน
 2. ถังสีสำหรับระบายสี (อาจารย์ขอ)
-3. Leaderboard ชื่อเล่น คะแนน อันดับรายเดือน (อาจารย์ขอ) เก็บเป็นไฟล์ JSON
+3. Leaderboard ชื่อเล่น คะแนน อันดับรายเดือน (อาจารย์ขอ) เก็บใน Upstash Redis (ไฟล์ JSON เป็นทางสำรองตอนไม่ได้ตั้ง env — ดูหัวข้อ "เก็บคะแนน" ด้านล่าง)
 4. Solo แข่งกับ AI สุ่มคำ ผู้เล่นวาด AI ทาย ยากขึ้นเรื่อยๆ (อาจารย์ขอ)
 5. Mini Challenge สามแบบ คือ Colour Fix (ใช้ได้สีเดียว) · Don't Lift Pen (ห้ามยกปากกา) · Shapes Only (วาดได้แต่รูปทรง) · หัวห้องเปิด/ปิดทีละใบได้ในห้องรอ
 
@@ -36,7 +36,7 @@ Just Drawit (ชื่อทีม TATA.IO) เป็นเว็บเกมว
 |---|---|
 | server | Node.js + Express + Socket.IO (CommonJS, `require`) พอร์ต 3000 |
 | client | React + Vite, `react-router-dom` (URL ต่อหน้า), CSS ธรรมดา (ไม่ใช้ Tailwind), HTML5 Canvas, `socket.io-client` |
-| เก็บคะแนน | ไฟล์ `server/data/scores.json` (ไม่ใช้ database เพื่อให้ทันเวลา) |
+| เก็บคะแนน | **Upstash Redis** (คีย์เดียว `jdi:scores:v1` เก็บ JSON ทั้งก้อน) เป็นหลัก — ต้องตั้ง env `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` (ใช้งานจริงบน Render ตั้งไว้แล้ว ดู `DEPLOY.md`) · ไม่ได้ตั้ง env หรือต่อไม่ได้ = ถอยไปใช้ไฟล์ `server/data/scores.json` แทนอัตโนมัติ ไม่ล่ม (`server/leaderboard.js`) |
 | AI ทายภาพ | ลำดับ **โมเดลในเครื่อง** (Quick, Draw! MobileViT ผ่าน `onnxruntime-node` + `sharp` แปลงภาพ) → Claude (vision) เรียกจาก server เท่านั้น ผ่าน `fetch` ของ Node (ไม่ใช้ SDK) key อยู่ใน `server/.env` → โหมดจำลอง |
 
 ห้ามเพิ่ม library ใหม่โดยไม่บอกผู้ใช้ก่อนว่าคืออะไร ทำไมต้องใช้
@@ -47,29 +47,33 @@ Just Drawit (ชื่อทีม TATA.IO) เป็นเว็บเกมว
 
 ```
 justdrawit/
-├─ CLAUDE.md  DESIGN.md  PROMPTS.md  events.md  README.md  .gitignore
+├─ CLAUDE.md  DESIGN.md  PROMPTS.md  events.md  README.md  DEPLOY.md  AI-FACTS.md  AI_USAGE.md  .gitignore
+│  (DEPLOY.md = ขั้นตอน deploy ขึ้น Render + Upstash ทีละขั้น · AI-FACTS.md = สรุปเรื่อง AI ในเกมไว้ตอบอาจารย์ · AI_USAGE.md = เอกสารการใช้ AI ช่วยทำโครงงาน)
 ├─ package.json  scripts/   ← คำสั่งระดับบนสุด: npm run setup / start / share / test (setup.js, share.js)
+├─ tests/browser/       ← เทสเบราว์เซอร์จริงผ่าน CDP (รวมด้วย `npm run test:browser`) ดู README ในโฟลเดอร์
 ├─ server/
 │  ├─ ai-model.js       ← รันโมเดลทายภาพในเครื่อง (ONNX) เตรียมภาพ 28×28 · ไม่ผูกกับ socket
 │  ├─ ai-drawings.js    ← ภาพวาดจริงสำหรับช่วง "ดูภาพแล้วทาย" (โหลด สุ่ม จัดจังหวะเส้น) · ไม่ผูกกับ socket
 │  ├─ ai.js             ← AI ทายภาพ (โมเดล/Claude/จำลอง) · กติกาด่าน · สุ่มคำ · คิดคะแนน Solo ไม่ผูกกับ socket
-│  ├─ .env.example      ← ตัวอย่างไฟล์ .env (คัดลอกเป็น .env แล้วใส่ ANTHROPIC_API_KEY)
+│  ├─ .env.example      ← ตัวอย่างไฟล์ .env (คัดลอกเป็น .env แล้วใส่ ANTHROPIC_API_KEY และ/หรือ UPSTASH_REDIS_REST_URL/TOKEN)
 │  ├─ index.js          ← server หลัก (ทำไว้แล้ว ดู "สถานะงาน")
-│  ├─ leaderboard.js    ← อ่าน/บันทึก scores.json (`saveScore` `getLeaderboard`) ไม่ผูกกับ socket
+│  ├─ leaderboard.js    ← คะแนนบน Upstash Redis เป็นหลัก ไฟล์ scores.json เป็นทางสำรอง (`saveScore` `getLeaderboard`) ไม่ผูกกับ socket
 │  ├─ clean.js          ← `cleanName` ใช้ร่วมกันระหว่าง index.js กับ leaderboard.js
 │  ├─ scripts/seed-scores.js ← ใส่คะแนนตัวอย่าง (`npm run seed`)
-│  ├─ public/test.html  ← หน้าทดสอบผ่าน Console (มีคำสั่ง create join start pick say)
-│  ├─ data/             ← words.json (คลังคำโหมดห้อง) · ai-words.json (คำของ Solo จับคู่อังกฤษ↔ไทย) · scores.json (คะแนน)
+│  ├─ public/test.html  ← หน้าทดสอบผ่าน Console (มีคำสั่ง create join start pick say) ⚠️ เปิดอยู่เสมอแม้บน production ยังไม่ได้ซ่อน (พบตอนตรวจความปลอดภัยข้อ 9 ความเสี่ยงต่ำ ไม่มีความลับหลุด)
+│  ├─ data/             ← words.json (คลังคำโหมดห้อง 320 คำ) · ai-words.json (คำของ Solo จับคู่อังกฤษ↔ไทย) · ai-drawings.json (ภาพ Quick, Draw! ของช่วง AI วาด) · scores.json (คะแนนสำรองตอนไม่มี Upstash)
 │  ├─ models/            ← ไฟล์โมเดล ONNX (ไม่ commit · `npm run get-model`)
 │  ├─ scripts/get-model.js ← ดาวน์โหลดโมเดล + เช็คสัญญาอนุญาต MIT
 │  ├─ scripts/get-drawings.js ← ดึงภาพ Quick, Draw! (สตรีม) กรองด้วยโมเดล → data/ai-drawings.json
-│  └─ .env              ← API key (ห้าม commit)
+│  ├─ demo-attacks/     ← สคริปต์สาธิตโจมตี (guess flood, room scan) ไว้โชว์ว่า rate limit กันได้จริง รันกับ localhost เท่านั้น
+│  └─ .env              ← API key / Upstash token (ห้าม commit)
 └─ client/              ← React + Vite
    └─ src/
-      ├─ socket.js      ← สร้าง socket ตัวเดียวใช้ทั้งแอป
-      ├─ screens/       ← Lobby, WaitingRoom, Game, Leaderboard, SoloAI (ยังไม่มี)
-      ├─ components/    ← Canvas, Toolbar, Chat, Scoreboard, HintSlots, Timer, Modal, RankTable
-      └─ styles/        ← theme.css (ตัวแปรสีและฟอนต์ตาม DESIGN.md)
+      ├─ socket.js      ← สร้าง socket ตัวเดียวใช้ทั้งแอป (ส่ง playerKey ถาวรใน handshake.auth)
+      ├─ canvas/cursor.js ← เคอร์เซอร์วาดของเราเอง (วงกลมตามขนาดแปรง/ถังสี/รูปทรง) แก้ปัญหา crosshair มองไม่เห็นบน Windows
+      ├─ screens/       ← Lobby, SetUp, WaitingRoom, Game, Leaderboard, SoloAI
+      ├─ components/    ← Canvas, Toolbar, Chat, Scoreboard, HintSlots, Timer, Modal, RankTable, LobbyChat, RoomInfo
+      └─ styles/        ← theme.css (ตัวแปรสีและฟอนต์ตาม DESIGN.md) + arcade.css (ธีม Neo-Arcade ทับบน) + lobby.css
 ```
 
 ถ้า `server/index.js` ยาวเกินจัดการ แยกไฟล์ได้ เช่น `server/rules.js` `server/leaderboard.js` `server/ai.js` แต่บอกผู้ใช้ก่อน
@@ -151,7 +155,7 @@ justdrawit/
 **4 จุดที่ทำต่างจาก DESIGN.md เดิม ผู้ใช้ตกลงแล้ว และแก้ DESIGN.md ให้ตรงแล้ว**
 ปุ่ม "ออกจากห้อง" ในห้องรอ · แท็บที่เลือกใช้พื้นครีมไม่ใช่ขาว · ปุ่มหลักเป็น `START`/`JOIN` ตามแท็บ · เพิ่ม `NOT_YOUR_TURN` กับ `CONNECT_FAILED` ในตาราง error
 
-ลิงก์ 🏆 Leaderboard ในหน้า Lobby ทำแล้วในข้อ 6 · ลิงก์ 🤖 Solo **ยังไม่ได้ทำ** จะทำตอนข้อ 7
+ลิงก์ 🏆 Leaderboard ในหน้า Lobby ทำแล้วในข้อ 6 · ~~ลิงก์ 🤖 Solo ยังไม่ได้ทำ จะทำตอนข้อ 7~~ **ถูกแทนที่แล้ว** — ทำเสร็จในข้อ 7 ส่วนที่ 2 (ปุ่มอยู่ในหน้า SET UP ไม่ใช่หน้า Lobby แล้ว ดูหัวข้อ "รอบ 3A")
 
 ### เสร็จแล้ว (client ข้อ 2 — หน้าเกม ยังไม่มีกระดานวาดจริง)
 - `src/hooks/useGame.js` **หัวใจของข้อนี้** ผูก socket ของเกมไว้ที่ `App` ไม่ใช่ที่หน้า `Game`
@@ -544,7 +548,7 @@ selector ระดับเดียวกัน ตัวที่อยู่�
 2. **`colour_fix` ตัด "สีขาว" ออกจากกองที่สุ่ม เหลือ 7 สีจาก 8 สีหลัก** ← เปลี่ยนความหมายของข้อมูล ไม่ใช่แค่รูปร่าง
 
 **ฝั่ง server**
-- สุ่มใหม่**ทุกตา** (ไม่ใช่ทุกรอบ) ใน `startDrawing` ติดไปกับ `round_start`: `none` 40 · `colour_fix` 30 · ที่เหลือ 30 = `dont_lift_pen`
+- สุ่มใหม่**ทุกตา** (ไม่ใช่ทุกรอบ) ใน `startDrawing` ติดไปกับ `round_start`: ~~`none` 40 · `colour_fix` 30 · ที่เหลือ 30 = `dont_lift_pen`~~ **จังหวะนี้ถูกแทนที่แล้ว** — ดูหัวข้อ "Mini Challenge แบบมีจังหวะ" และ "ปิด Standard แล้วยังมีตาธรรมดา" ด้านล่างสำหรับกติกาปัจจุบัน
 - `COLOUR_FIX_COLORS = CHALLENGE_COLORS.filter(c => c !== BOARD_COLOR)` — เก็บ 8 สีหลักไว้เป็นพาเลตตามเดิม
   แต่กองที่ใช้สุ่มตัดขาวออก **เหตุผลมาจากเทส ไม่ใช่จากทฤษฎี**: เทสเบราว์เซอร์เจอตาที่ล็อกสีขาว แล้วกระดานว่างเปล่า
   ทั้งที่ผู้เล่นลากเส้นไปแล้วจริง ๆ (วาดสีขาวบนกระดานขาว = มองไม่เห็น) ภารกิจทำไม่ได้เลยทั้งตา
@@ -647,7 +651,7 @@ selector ระดับเดียวกัน ตัวที่อยู่�
 
 - **Leaderboard เป็นหนึ่งชื่อหนึ่งแถว** (`bestPerName` ใน `leaderboard.js`) เอาเกมดีสุดของแต่ละชื่อ รายเดือนเอาเกมดีสุดในเดือนนั้น
   ไฟล์ยังเก็บทุกเกม · เพิ่ม `rankOf` ไว้บอกอันดับตอนจบเกม (**ข้อสรุปเดิมของข้อ 6 "หนึ่งเกมหนึ่งแถว" ถูกแทนที่แล้ว**)
-- `server/ai.js` · `levelConfig` (ด่าน 1–2 60 วิ easy · 3–4 45 วิ medium · 5+ 30 วิ hard) · `pickWord` ไม่ซ้ำในเกมเดียว · `scoreFor` 100–500
+- `server/ai.js` · `levelConfig` (~~ด่าน 1–2 60 วิ easy · 3–4 45 วิ medium · 5+ 30 วิ hard~~ **เวลาถูกแทนที่แล้ว** — ดูหัวข้อ "ตั้งค่า/ความยาก" ด้านล่าง: เวลาคงที่ 60 วิทุกด่านแล้ว ความยากขึ้นกับคำอย่างเดียว) · `pickWord` ไม่ซ้ำในเกมเดียว · `scoreFor` 100–500
 - AI สองโหมด: มี `ANTHROPIC_API_KEY` → Claude ดูภาพจริง (รุ่นตั้งได้ด้วย `AI_MODEL` ค่าเริ่มต้น Haiku 4.5) **ไม่ส่งคำตอบไปให้ Claude** · ไม่มี key → โหมดจำลอง · `ai_round_start.aiMode` บอก client
 - event: `ai_start` → `ai_round_start` · `ai_snapshot` → `ai_guess` · `ai_round_end` · `ai_game_end` สถานะอยู่ที่ `socket.data.solo` ไม่ปนกับห้อง
 - ด่านที่ทายไม่ออกเสียชีวิตแต่อยู่ด่านเดิม · server ขึ้นด่านถัดไปเองหลังพัก 4 วิ · ออกกลางเกม (`leave_room`/หลุด) ไม่บันทึกคะแนน
@@ -827,7 +831,7 @@ server แยกฟังก์ชัน `applySettings(room, data)` ใช้�
 - **server**: handler `draw_shape` + `challengeAllowsShape` ใน `server/index.js` · `DRAW_BUDGET_RATIO` 1/2 → 1/3 (ช่อง AI วาดของ Solo)
 - **เพลง/เสียง**: `sound/music.js` ใหม่ (แยกจาก `sfx.js`) 3 เพลง · `AudioDock` ทุกหน้า · `?music=1` หน้าทดสอบฟังทีละเพลง · เพลงเปิดเป็นค่าเริ่มต้นหลังคลิกครั้งแรก
 - **Solo AI วาด**: client ไล่จุดเองด้วย requestAnimationFrame (วัดแล้ว 1/3 ของเวลา: เวลา 15 วิ → เส้นสุดท้ายจบที่ ~5 วิ)
-- **เครื่องมือ**: ไอคอนถังใหม่ · รูปทรง 3 แบบ (เงาตัวอย่างบนชั้น `.board__preview`) · แถวเครื่องมือเป็นกริด 4 คอลัมน์ 2 แถว
+- **เครื่องมือ**: ไอคอนถังใหม่ · ~~รูปทรง 3 แบบ~~ (เงาตัวอย่างบนชั้น `.board__preview`) — ตอนนั้นตัด triangle ออก **ถูกแทนที่แล้ว** เพิ่มสามเหลี่ยมกลับมาเป็น 4 แบบ ดูหัวข้อ "ตั้งค่า/ความยาก" ด้านล่าง · แถวเครื่องมือเป็นกริด 4 คอลัมน์ 2 แถว
 - **ฟอนต์**: ระบบคู่เดียวทั้งเกม (`--font-en` + `--font-th`) มี 3 คู่ให้เลือกผ่าน `?font=a|b|c` · **รอผู้ใช้เลือก** (ภาพเทียบอยู่ `screenshots-3c/`)
 - **ตกแต่ง**: ดู DESIGN.md หัวข้อ "รอบ 3C"
 - **ข้อจำกัด**: **ยังไม่ได้ฟังเพลงด้วยหู** (ตรวจแค่ว่าเล่นได้ ทำนองครบ 32 ห้อง ไม่มี exception) · ถังสียังไม่เอียงจริง (เป็นถังตั้งมีสีหยดข้าง) · ไม่ได้ลองรูปทรงด้วยนิ้ว/Apple Pencil จริง (ทดสอบด้วยเมาส์จริงผ่าน CDP) · เทสรูปทรงในเบราว์เซอร์ทดสอบเฉพาะตาที่ไม่มี challenge; challenge ทดสอบที่ server · ยังไม่ได้ลองบนไอแพดจริง · ลบ `?music=1` กับ `?font=` เมื่อเลือกเสร็จ
@@ -1011,6 +1015,14 @@ server แยกฟังก์ชัน `applySettings(room, data)` ใช้�
 - ทดสอบ: `tests/browser/setup-solo.mjs` 25/25 (classic มีครบ 4 ช่อง → สลับ AI ซ่อนรอบ/เวลา/ประเภทห้องถูกช่อง ตัวเลขตรงกับ server จริง → สลับกลับ classic ค่ารอบ/เวลา/ความยากที่เคยตั้งไว้ก่อนหน้ากลับมาครบ → ทีมมีครบเหมือน classic → ไม่เลื่อนหน้าที่ 1440×900/1366×768/1024×768 ทั้งสามโหมด) · ยืนยันซ้ำว่าของเดิมไม่พัง: มือถือ 390×844/375×667 41/41 · `balance.mjs` 45/45 · `cursor.mjs` 12/12 · `refresh-solo.mjs` 21/21 (ทุกตัวแตะหน้า `/setup`) · `npm test` 732/732 (ไม่แตะ server)
 - ภาพ 3 โหมด × 3 ขนาดจอ อยู่ใน scratchpad ชั่วคราว (ไม่ได้เก็บเข้า repo)
 
+### เสร็จแล้ว (อัปเดต CLAUDE.md ให้ตรงสถานะจริง — แก้แค่เอกสาร ไม่แตะโค้ด · branch `docs-update-claude`)
+- **Tech stack / "สิ่งที่ต้องมี" ข้อ 3**: แก้ให้บอกว่าเก็บคะแนนใน **Upstash Redis** (คีย์ `jdi:scores:v1`) เป็นหลัก ไฟล์ `scores.json` เป็นทางสำรองเมื่อไม่ได้ตั้ง env — ของเดิมเขียนไว้ว่าเป็นไฟล์ JSON ล้วนซึ่งเป็นสถานะก่อน deploy ขึ้น Render
+- **โครงสร้างโฟลเดอร์**: เพิ่มไฟล์/โฟลเดอร์ที่มีจริงตอนนี้แต่ไม่เคยอยู่ในผัง (`SetUp.jsx` `RoomInfo.jsx` `LobbyChat.jsx` `canvas/cursor.js` `styles/lobby.css` `tests/browser/` `server/demo-attacks/` `DEPLOY.md` `AI-FACTS.md` `AI_USAGE.md`) ลบคำว่า "ยังไม่มี" ออกจาก SoloAI เพราะทำเสร็จนานแล้ว
+- **ขีดฆ่าของเก่าที่ถูกทับแล้ว** (ห้ามลบประวัติ แค่ทำเครื่องหมายว่าไม่ใช่ความจริงปัจจุบัน): เวลา Solo 60/45/30 ต่อด่าน (ตอนนี้ 60 วิคงที่ทุกด่าน) · ลิงก์ 🤖 Solo "ยังไม่ได้ทำ" (ทำเสร็จแล้ว ย้ายไปอยู่หน้า SET UP) · จังหวะ Mini Challenge แบบเก่า `none 40 / colour_fix 30 / dont_lift_pen 30` (ถูกแทนที่ด้วยกติกาจังหวะ แล้วแทนที่อีกทีตอนปิด Standard) · รูปทรง "3 แบบ" ตอนตัด triangle ออก (กลับมาเป็น 4 แบบแล้ว)
+- **หัวข้อที่ทีมต้องอธิบายได้**: เปลี่ยน "ทำไมเลือก JSON" เป็น "ทำไมเก็บคะแนนใน Upstash Redis" และเพิ่ม TLS/wss (`FORCE_HTTPS` บน Render) · การกลับเข้าห้องด้วย playerKey · rate limit กันไล่เดารหัสห้อง/แชทรัว
+- **ตรวจตัวเลขกับโค้ดจริง**: `LEVEL_TIME` (60, `server/ai.js`) `SOLO_LIVES` (3, `server/index.js`) rate limit (`guess` 10/5วิ · `join_room`+`rejoin` 15/10วิ) คลังคำ (`words.json` 320 คำ, `ai-words.json` 194 คำ) ตรงกับโค้ดอยู่แล้ว ไม่ต้องแก้ · ที่ผิดและแก้แล้ว: "`npm test` ใช้เวลาประมาณ 20 วินาที" ซึ่งเก่ามาก — รันจริงรอบนี้ (730/730 ผ่านหมด) ใช้เวลา **4–5 นาที** ไม่ใช่ 20 วินาที เพราะชุดเทสโตขึ้นมากตามจำนวนข้อที่เพิ่มมาเรื่อยๆ
+- ไม่ได้แก้ตัวเลข `npm test` ในบันทึกเก่าๆ (เช่น 732/732, 719/719 ฯลฯ) เพราะเป็นบันทึกว่า "ตอนนั้นรันได้ผลแบบนี้จริง" ไม่ใช่ค่าคงที่ที่ต้องตรงกับปัจจุบันเป๊ะ — จำนวนข้อที่ผ่านขยับได้เองไม่กี่ข้อระหว่างรันเพราะมีเทสสุ่ม Mini Challenge
+
 ### ยังไม่ได้ทำ (ตามลำดับใน PROMPTS.md)
 - (ไม่มีแล้ว — ข้อ 8 เสร็จ)
 
@@ -1027,7 +1039,8 @@ cd server && npm run seed      # ใส่คะแนนตัวอย่า�
 cd client && npm run dev       # รัน client ตอนพัฒนา
 ```
 
-**`npm test`** สตาร์ท server เอง ปิดเองตอนจบ ใช้เวลาประมาณ 20 วินาที
+**`npm test`** สตาร์ท server เอง ปิดเองตอนจบ ~~ใช้เวลาประมาณ 20 วินาที~~ **ตัวเลขนี้เก่าแล้ว** ชุดเทสโตขึ้นมากตามจำนวนข้อ (ตอนนี้ราว 730 ข้อ) ปัจจุบันใช้เวลาจริงประมาณ **4–5 นาที** (วัดจริงล่าสุด: เริ่ม 11:57 จบ 12:01)
+จำนวนข้อที่ผ่านอาจขยับ ±1–2 ข้อระหว่างรัน เพราะบางเทสสุ่ม Mini Challenge แล้วข้ามเช็คบางอย่างถ้าสุ่มได้ชนิดที่ไม่เกี่ยว (เช่น `dont_lift_pen` ข้ามเช็ค `undo`) **ไม่ใช่อาการเทสพัง**
 ต้องไม่มีอะไรรันอยู่บนพอร์ต 3000 ก่อน ถ้ามีมันจะฟ้องให้ปิดก่อน
 (ตั้งใจให้เป็นแบบนี้ เพื่อให้เทสโค้ดล่าสุดเสมอ ไม่เผลอไปเทส server ตัวเก่าที่เปิดค้างไว้)
 โค้ดเทสอยู่ที่ `server/tests/smoke.js` — **แก้ server ทุกครั้งต้องรันให้ผ่าน**
@@ -1038,4 +1051,5 @@ cd client && npm run dev       # รัน client ตอนพัฒนา
 
 เวลาอธิบายโค้ด ให้โยงกับหัวข้อเหล่านี้
 WebSocket ต่างจาก HTTP ยังไง · การแยกห้องด้วย Socket.IO room · ภาพวาดเดินทางจากคนวาดไปถึงทุกคนยังไง ·
-server-authoritative และการกันโกง · ทำไม API key ต้องอยู่ที่ server · leaderboard เก็บข้อมูลที่ไหน ทำไมเลือก JSON
+server-authoritative และการกันโกง · ทำไม API key ต้องอยู่ที่ server · ทำไมเก็บคะแนนใน Upstash Redis (ไฟล์ JSON เป็นทางสำรอง เหตุผลคือ Render ไม่มีดิสก์ถาวรข้ามการ deploy) ·
+ทำไมต้องใช้ TLS/wss (`FORCE_HTTPS` บน Render, origin ที่อนุญาตต้องเป็น https) · การกลับเข้าห้องเดิมด้วย playerKey (sessionStorage → SHA-256 → playerId ถาวร ไม่ใช้ socket.id เพราะเปลี่ยนทุกครั้งที่ต่อใหม่) · จำกัดความถี่ (rate limit) กันไล่เดารหัสห้อง/ยิงแชทรัว
