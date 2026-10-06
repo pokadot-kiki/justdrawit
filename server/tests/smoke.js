@@ -1289,53 +1289,83 @@ async function main() {
     check("ล้างจอแล้วก็ยังวาดต่อไม่ได้", (await guesser.quiet("stroke_start", 600)).length, 0);
   });
 
-  await runPart("19. Leaderboard API — รูปแบบ · เรียง · กรองเดือน · month ผิด · ไฟล์หาย/เสีย", async () => {
-    // ไฟล์ยังไม่มี → ได้รายการว่าง ไม่ล่ม
+  await runPart("19. Leaderboard API — รูปแบบ · เรียง · กรองเดือน (แค่ปีปัจจุบัน) · month ผิด/ปีอื่น · ไฟล์หาย/เสีย", async () => {
+    // ใช้วันที่จริง ณ ตอนรันเทส ไม่ hardcode ปี เพราะ server คำนวณ "เดือนปัจจุบัน" จากนาฬิกาเครื่องจริง
+    const now = new Date();
+    const CUR_YEAR = now.getFullYear();
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const CUR_MONTH = `${CUR_YEAR}-${pad2(now.getMonth() + 1)}`;
+    // เดือนก่อนหน้า (ถอยข้ามปีได้ถ้าตอนนี้คือมกราคม) — ใช้เป็น "เดือนอื่นของปีนี้"
+    const prevD = new Date(CUR_YEAR, now.getMonth() - 1, 1);
+    const PREV_MONTH = `${prevD.getFullYear()}-${pad2(prevD.getMonth() + 1)}`;
+    const PREV_YEAR = prevD.getFullYear();
+    // เดือนเดียวกันแต่ "ปีที่แล้ว" — รูปแบบถูกต้องแต่คนละปี ต้องถูกเมินแล้วใช้เดือนปัจจุบันแทน
+    const SAME_MONTH_LAST_YEAR = `${CUR_YEAR - 1}-${pad2(now.getMonth() + 1)}`;
+
+    // ไฟล์ยังไม่มี → ได้รายการว่าง ไม่ล่ม · month ต้องเป็นเดือนปัจจุบันเสมอ (ไม่มี null อีกแล้ว)
     fs.rmSync(SCORES_FILE, { force: true });
     let r = await getBoard();
-    check("ไฟล์ยังไม่มี → 200 และรายการว่าง", [r.status, r.body], [200, { month: null, board: "solo", top: [] }]);
+    check("ไฟล์ยังไม่มี → 200 รายการว่าง และ month = เดือนปัจจุบัน (ไม่ใช่ null)", [r.status, r.body], [200, { month: CUR_MONTH, board: "solo", top: [] }]);
 
-    // 25 แถวเดือน 2026-09 (เกิน 20 เพื่อเทสการตัด) + 3 แถวเดือนอื่น + แถวหน้าตาเพี้ยน 2 แถว
+    // 25 แถวเดือนก่อนหน้า (เกิน 20 เพื่อเทสการตัด) + แถวเดือนปัจจุบัน + แถวปีที่แล้ว (ต้องไม่โผล่เลย) + แถวหน้าตาเพี้ยน 2 แถว
     const rows = [];
     for (let i = 0; i < 25; i++) {
-      rows.push({ id: i + 1, name: `P${i}`, score: (i * 37) % 500, levelReached: 1 + (i % 9), playedAt: `2026-09-${String(1 + i).padStart(2, "0")} 20:00` });
+      rows.push({ id: i + 1, name: `P${i}`, score: (i * 37) % 500, levelReached: 1 + (i % 9), playedAt: `${PREV_MONTH}-${pad2(1 + (i % 25))} 20:00` });
     }
-    rows.push({ id: 26, name: "Tar", score: 9999, levelReached: 9, playedAt: "2026-10-02 10:00" });
-    rows.push({ id: 27, name: "เสมอด่านน้อย", score: 800, levelReached: 3, playedAt: "2026-08-01 10:00" });
-    rows.push({ id: 28, name: "เสมอด่านมาก", score: 800, levelReached: 5, playedAt: "2026-08-02 10:00" });
-    rows.push({ id: 29, name: 123, score: "x" }); // แถวเสีย ต้องถูกทิ้ง
+    rows.push({ id: 26, name: "Tar", score: 9999, levelReached: 9, playedAt: `${CUR_MONTH}-02 10:00` });
+    rows.push({ id: 27, name: "เสมอด่านน้อย", score: 800, levelReached: 3, playedAt: `${CUR_MONTH}-03 10:00` });
+    rows.push({ id: 28, name: "เสมอด่านมาก", score: 800, levelReached: 5, playedAt: `${CUR_MONTH}-04 10:00` });
+    rows.push({ id: 29, name: "ปีที่แล้วห้ามโผล่", score: 7777, levelReached: 9, playedAt: `${SAME_MONTH_LAST_YEAR}-01 10:00` });
+    rows.push({ id: 30, name: 123, score: "x" }); // แถวเสีย ต้องถูกทิ้ง
     rows.push(null);
     fs.writeFileSync(SCORES_FILE, JSON.stringify(rows));
 
+    // ── ไม่ใส่ month เลย → ใช้เดือนปัจจุบัน (ไม่ใช่ "ตลอดกาล" อีกต่อไป) ──
     r = await getBoard();
-    check("ตลอดกาล → 200 และ month เป็น null", [r.status, r.body?.month], [200, null]);
-    check("ตลอดกาล ส่งแค่ 20 อันดับ", r.body.top.length, 20);
+    check("ไม่ใส่ month → ได้ month = เดือนปัจจุบัน", [r.status, r.body?.month], [200, CUR_MONTH]);
+    checkOk("ไม่ใส่ month: เห็นเฉพาะคนที่เล่นเดือนปัจจุบัน (ไม่มี P.. ของเดือนก่อน ไม่มีคนปีที่แล้ว)",
+      r.body.top.every((t) => !/^P\d+$/.test(t.name) && t.name !== "ปีที่แล้วห้ามโผล่"));
     check("แต่ละแถวมีแค่ rank name score levelReached",
       r.body.top.every((t) => JSON.stringify(Object.keys(t)) === '["rank","name","score","levelReached"]'), true);
-    check("rank เรียง 1..20", r.body.top.map((t) => t.rank), Array.from({ length: 20 }, (_, i) => i + 1));
     checkOk("คะแนนเรียงจากมากไปน้อย", r.body.top.every((t, i, a) => i === 0 || a[i - 1].score >= t.score));
-    check("อันดับ 1 คือคะแนนสูงสุด", r.body.top[0].name, "Tar");
+    check("อันดับ 1 คือคะแนนสูงสุด (Tar เดือนปัจจุบัน)", r.body.top[0].name, "Tar");
     check("คะแนนเท่ากัน ด่านไกลกว่าได้อันดับดีกว่า", r.body.top.slice(1, 3).map((t) => t.name), ["เสมอด่านมาก", "เสมอด่านน้อย"]);
     checkOk("แถวที่หน้าตาเพี้ยนไม่โผล่", r.body.top.every((t) => typeof t.name === "string"));
 
-    r = await getBoard("?month=2026-09");
-    check("เดือน 2026-09 → month ตรงกับที่ขอ", [r.status, r.body?.month], [200, "2026-09"]);
-    check("เดือน 2026-09 ตัดเหลือ 20 จาก 25", r.body.top.length, 20);
-    checkOk("เดือน 2026-09 ไม่มีคนของเดือนอื่น", r.body.top.every((t) => /^P\d+$/.test(t.name)));
-    r = await getBoard("?month=2026-08");
-    check("เดือน 2026-08 ได้สองคนที่เล่นเดือนนั้น", r.body.top.map((t) => [t.rank, t.name]), [[1, "เสมอด่านมาก"], [2, "เสมอด่านน้อย"]]);
-    r = await getBoard("?month=2025-01");
-    check("เดือนที่ไม่มีใครเล่น → รายการว่าง", [r.status, r.body], [200, { month: "2025-01", board: "solo", top: [] }]);
+    // ── ใส่ ?month=เดือนปัจจุบัน ตรงๆ ก็ได้ผลเดียวกับไม่ใส่ ──
+    r = await getBoard(`?month=${CUR_MONTH}`);
+    check("ใส่เดือนปัจจุบันตรงๆ → month ตรงกับที่ขอ ผลเหมือนไม่ใส่", [r.status, r.body?.month], [200, CUR_MONTH]);
 
+    // ── เดือนอื่นของปีนี้ → กรองได้ตามปกติ และตัดเหลือ 20 จาก 25 ──
+    r = await getBoard(`?month=${PREV_MONTH}`);
+    check(`เดือนก่อนหน้า (${PREV_MONTH}) → month ตรงกับที่ขอ`, [r.status, r.body?.month], [200, PREV_MONTH]);
+    check("เดือนก่อนหน้า ตัดเหลือ 20 จาก 25", r.body.top.length, 20);
+    checkOk("เดือนก่อนหน้า ไม่มีคนของเดือนอื่น", r.body.top.every((t) => /^P\d+$/.test(t.name)));
+
+    // ── เดือน/ปีที่ไม่มีใครเล่นในปีนี้ → รายการว่าง (ไม่ error) ──
+    const emptyMonthThisYear = PREV_MONTH === CUR_MONTH ? `${CUR_YEAR}-01` : CUR_MONTH; // เดือนในปีนี้ที่ไม่มีข้อมูล (กันชนกับ PREV_MONTH เผื่อข้ามปี)
+    if (emptyMonthThisYear !== CUR_MONTH && emptyMonthThisYear !== PREV_MONTH) {
+      r = await getBoard(`?month=${emptyMonthThisYear}`);
+      check("เดือนที่ไม่มีใครเล่น (แต่ปีนี้) → รายการว่าง ไม่ error", [r.status, r.body], [200, { month: emptyMonthThisYear, board: "solo", top: [] }]);
+    }
+
+    // ── หัวใจของงานนี้: ใส่เดือนรูปแบบถูกแต่ "คนละปี" → ไม่ error เงียบๆ ใช้เดือนปัจจุบันแทน ──
+    r = await getBoard(`?month=${SAME_MONTH_LAST_YEAR}`);
+    check("ส่ง month ปีที่แล้ว (รูปแบบถูก) → ไม่ 400 ใช้เดือนปัจจุบันแทนเงียบๆ", [r.status, r.body?.month], [200, CUR_MONTH]);
+    checkOk("month ปีที่แล้ว: ไม่เห็นคนของปีที่แล้วเลย (ถูกแทนด้วยเดือนปัจจุบัน)", !r.body.top.some((t) => t.name === "ปีที่แล้วห้ามโผล่"));
+    r = await getBoard(`?month=1999-05`);
+    check("ส่ง month ปีไกลมาก (1999) → ไม่ 400 ใช้เดือนปัจจุบันแทน", [r.status, r.body?.month], [200, CUR_MONTH]);
+
+    // ── รูปแบบผิดจริงๆ ยังตอบ 400 เหมือนเดิม ไม่เปลี่ยน ──
     for (const bad of ["2026-13", "2026-00", "2026-9", "26-09", "2026-09-01", "abc", "", "2026-09&month=2026-08", "%3Cscript%3E"]) {
       r = await getBoard(`?month=${bad}`);
       check(`month=${bad || "(ว่าง)"} → 400`, [r.status, r.body], [400, { error: "INVALID_MONTH" }]);
     }
 
-    // ไฟล์เสียระหว่างที่ server เปิดอยู่ → ไม่ล่ม ได้รายการว่าง
+    // ไฟล์เสียระหว่างที่ server เปิดอยู่ → ไม่ล่ม ได้รายการว่าง (month ยังเป็นเดือนปัจจุบัน)
     fs.writeFileSync(SCORES_FILE, "{ นี่ไม่ใช่ JSON");
     r = await getBoard();
-    check("ไฟล์ JSON เสีย → 200 และรายการว่าง", [r.status, r.body], [200, { month: null, board: "solo", top: [] }]);
+    check("ไฟล์ JSON เสีย → 200 รายการว่าง month = เดือนปัจจุบัน", [r.status, r.body], [200, { month: CUR_MONTH, board: "solo", top: [] }]);
     fs.writeFileSync(SCORES_FILE, JSON.stringify({ not: "array" }));
     r = await getBoard();
     check("ไฟล์เป็น JSON แต่ไม่ใช่ array → รายการว่าง", r.body?.top, []);
@@ -1380,21 +1410,28 @@ async function main() {
 
   await runPart("21. Leaderboard หนึ่งชื่อหนึ่งแถว · rankOf", async () => {
     const { rankOf } = require("../leaderboard");
-    const at = (d) => `2026-10-${d} 10:00`;
+    const now = new Date();
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const CUR_MONTH = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
+    const prevD = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const PREV_MONTH = `${prevD.getFullYear()}-${pad2(prevD.getMonth() + 1)}`;
+    const at = (d) => `${CUR_MONTH}-${d} 10:00`;
     fs.writeFileSync(SCORES_FILE, JSON.stringify([
       { id: 1, name: "Mew", score: 500, levelReached: 3, playedAt: at("01") },
       { id: 2, name: "Mew", score: 1300, levelReached: 6, playedAt: at("02") },
       { id: 3, name: "Mew", score: 900, levelReached: 5, playedAt: at("03") },
       { id: 4, name: "Tar", score: 1300, levelReached: 7, playedAt: at("04") },
-      { id: 5, name: "Joy", score: 700, levelReached: 4, playedAt: "2026-09-10 10:00" },
+      { id: 5, name: "Joy", score: 700, levelReached: 4, playedAt: `${PREV_MONTH}-10 10:00` },
       { id: 6, name: "Joy", score: 100, levelReached: 1, playedAt: at("05") },
     ]));
+    // ไม่ใส่ month = เดือนปัจจุบัน (ไม่ใช่ "ตลอดกาล" อีกแล้ว) — Joy เดือนก่อนหน้าไม่ถูกนับ เหลือแค่ 100 ของเดือนนี้
     let r = await getBoard();
-    check("ตลอดกาล: Mew โผล่แถวเดียวด้วยเกมที่ดีที่สุด",
-      r.body.top.map((t) => [t.rank, t.name, t.score]), [[1, "Tar", 1300], [2, "Mew", 1300], [3, "Joy", 700]]);
-    r = await getBoard("?month=2026-10");
-    check("รายเดือน: เลือกเกมที่ดีที่สุด 'ในเดือนนั้น' (Joy เดือนนี้เหลือ 100)",
+    check("ไม่ใส่ month → เท่ากับเดือนปัจจุบัน: เลือกเกมที่ดีที่สุด 'ในเดือนนั้น' (Joy เดือนนี้เหลือ 100)",
+      r.body.top.map((t) => [t.rank, t.name, t.score]), [[1, "Tar", 1300], [2, "Mew", 1300], [3, "Joy", 100]]);
+    r = await getBoard(`?month=${CUR_MONTH}`);
+    check("ใส่เดือนปัจจุบันตรงๆ ได้ผลเหมือนกัน",
       r.body.top.map((t) => [t.name, t.score]), [["Tar", 1300], ["Mew", 1300], ["Joy", 100]]);
+    // rankOf เป็นฟังก์ชันคนละตัว (ไม่ผ่าน HTTP) ยังเป็น "ตลอดกาล" จริงๆ ไม่ถูกจำกัดปีด้วยงานนี้ (ใช้แสดงผลหลังจบเกม Solo คนละจุด)
     check("rankOf: เกม 1500 คะแนนของคนใหม่ได้อันดับ 1", rankOf({ name: "New", score: 1500, levelReached: 1 }), 1);
     check("rankOf: 1000 คะแนนตามหลัง Tar กับ Mew = อันดับ 3", rankOf({ name: "New", score: 1000, levelReached: 1 }), 3);
     check("rankOf: คะแนนเท่ากันแต่ด่านน้อยกว่า ตามหลังคนเดิม", rankOf({ name: "New", score: 1300, levelReached: 5 }), 3);
@@ -2585,6 +2622,32 @@ async function main() {
       check("รีสตาร์ทแล้วคะแนนไม่หาย เรียงถูก", lb.getLeaderboard().top.map((r) => [r.rank, r.name, r.score]), [[1, "หมีพุงกลม", 900], [2, "แมวขี้เซา", 700]]);
       check("rankOf ทำงานกับข้อมูลที่โหลดมา", lb.rankOf({ name: "ใหม่", score: 800, levelReached: 3 }), 2);
 
+      // ---- 2.5) purgeOldYears ตอน init(): ลบคะแนนปีก่อนออกจากที่เก็บ ไม่แตะของปีปัจจุบัน (ทั้งโหมด Upstash และไฟล์) ----
+      {
+        const thisYear = new Date().getFullYear();
+        const lastYear = thisYear - 1;
+        const upRows = JSON.parse(store.get("jdi:scores:v1"));
+        upRows.push({ id: 99, name: "ของปีก่อนใน Upstash", score: 111, levelReached: 1, playedAt: `${lastYear}-06-01 10:00` });
+        store.set("jdi:scores:v1", JSON.stringify(upRows));
+        let lb2 = loadFresh({ UPSTASH_REDIS_REST_URL: stubUrl, UPSTASH_REDIS_REST_TOKEN: TOKEN });
+        await quiet(() => lb2.init()); // init() รอ flush() ของการลบให้เสร็จก่อนคืนค่าอยู่แล้ว
+        const afterPurgeUp = JSON.parse(store.get("jdi:scores:v1"));
+        check("Upstash: purge ตอน init() ลบแถวปีก่อนออกจาก Upstash จริง", afterPurgeUp.some((r) => r.name === "ของปีก่อนใน Upstash"), false);
+        checkOk("Upstash: แถวของปีปัจจุบันยังอยู่ครบหลัง purge", afterPurgeUp.some((r) => r.name === "แมวขี้เซา") && afterPurgeUp.some((r) => r.name === "หมีพุงกลม"));
+
+        // โหมดไฟล์ (ไม่ตั้ง Upstash env เลย) ก็ต้อง purge เหมือนกัน
+        const fileRows = [
+          { id: 1, name: "ไฟล์ปีนี้", score: 50, levelReached: 1, playedAt: `${thisYear}-01-01 10:00` },
+          { id: 2, name: "ไฟล์ปีก่อน", score: 60, levelReached: 1, playedAt: `${lastYear}-01-01 10:00` },
+          { id: 3, name: "ไฟล์ปีก่อนมาก", score: 70, levelReached: 1, playedAt: `${lastYear - 5}-01-01 10:00` },
+        ];
+        fs.writeFileSync(tmpFile, JSON.stringify(fileRows));
+        const lb3 = loadFresh({}); // ไม่มี env Upstash เลย = โหมดไฟล์
+        await quiet(() => lb3.init());
+        const afterPurgeFile = JSON.parse(fs.readFileSync(tmpFile, "utf8"));
+        check("โหมดไฟล์: purge ตอน init() เหลือแค่ปีปัจจุบัน 1 แถว", afterPurgeFile.map((r) => r.name), ["ไฟล์ปีนี้"]);
+      }
+
       // ---- 3) เขียนล้มเหลวชั่วคราว → ลองใหม่เองจนสำเร็จ ไม่เสียคะแนน ----
       failSets = 1;
       lb.saveScore({ name: "เพนกวินซ่า", score: 1000, levelReached: 5 });
@@ -2626,10 +2689,12 @@ async function main() {
     }
 
     // ---- 6) ตัว server จริง (พอร์ต 3001): โหลดคะแนนจาก Upstash ตอนสตาร์ท · /healthz · FORCE_HTTPS · HOST · origin ของ Render ----
+    const liveNow = new Date();
+    const month = `${liveNow.getFullYear()}-${String(liveNow.getMonth() + 1).padStart(2, "0")}`;
     store.set("jdi:scores:v1", JSON.stringify([
-      { id: 1, name: "จาก-Upstash", score: 4321, levelReached: 6, playedAt: "2026-10-05 20:14" },
+      { id: 1, name: "จาก-Upstash", score: 4321, levelReached: 6, playedAt: `${month}-05 20:14` },
+      { id: 2, name: "จาก-Upstash-ปีก่อน", score: 999, levelReached: 9, playedAt: `${liveNow.getFullYear() - 1}-06-05 20:14` },
     ]));
-    const month = "2026-10";
     const env = { ...process.env, PORT: "3001", HOST: "127.0.0.1", AI_MODE: "mock", FORCE_HTTPS: "1",
       UPSTASH_REDIS_REST_URL: stubUrl, UPSTASH_REDIS_REST_TOKEN: TOKEN, RENDER_EXTERNAL_URL: "https://jdi-demo.onrender.com",
       SCORES_FILE: path.join(os.tmpdir(), `jdi-unused-${process.pid}.json`) };
@@ -2654,7 +2719,8 @@ async function main() {
       checkOk("server เปิดได้พร้อม env ของ Upstash + HOST=127.0.0.1 (ฟังเฉพาะที่ HOST ที่ตั้ง)", up);
       check("/healthz ตอบ ok", (await rawGet("/healthz")).body, "ok");
       const lbRes = await rawGet("/api/leaderboard");
-      check("server โหลดคะแนนจาก Upstash ตอนสตาร์ท → /api/leaderboard เห็น", JSON.parse(lbRes.body).top.map((r) => [r.name, r.score]), [["จาก-Upstash", 4321]]);
+      check("server โหลดคะแนนจาก Upstash ตอนสตาร์ท → /api/leaderboard เห็น (และแถวปีก่อนถูก purge ไปแล้ว ไม่โผล่)", JSON.parse(lbRes.body).top.map((r) => [r.name, r.score]), [["จาก-Upstash", 4321]]);
+      checkOk("server เขียน purge กลับไปที่ Upstash จริง (ไม่ใช่แค่กรองตอนแสดงผล)", !JSON.parse(store.get("jdi:scores:v1")).some((r) => r.name === "จาก-Upstash-ปีก่อน"));
       checkOk("log บอกว่าเก็บใน Upstash", out.includes("Upstash"));
       check("token ของ Upstash ไม่โผล่ใน log ของ server เลย", out.includes(TOKEN), false);
       check("token ไม่โผล่ในคำตอบ /api/leaderboard", lbRes.body.includes(TOKEN), false);

@@ -96,7 +96,9 @@ app.get("/healthz", (req, res) => res.type("text").send("ok"));
 app.use(express.static(__dirname + "/public"));
 
 // ---------- Leaderboard (HTTP ธรรมดา ไม่ใช่ Socket.IO เพราะขอดูครั้งเดียว ไม่ต้องสด) ----------
-// ไม่ใส่ month = ตลอดกาล · ใส่แล้วต้องเป็น YYYY-MM ไม่งั้นตอบ 400
+// แสดงได้แค่ "ปีปัจจุบัน" เท่านั้น (ข้อมูลปีก่อนถูกลบออกจากที่เก็บไปแล้วตอนสตาร์ท — ดู purgeOldYears ใน leaderboard.js)
+// ไม่ใส่ month, หรือใส่ month ปีอื่น (รูปแบบถูกแต่คนละปี) = เงียบๆ ใช้เดือนปัจจุบันแทน (resolveMonth)
+// ใส่ month แต่รูปแบบผิด (ไม่ใช่ YYYY-MM 01-12) ยังตอบ 400 เหมือนเดิม
 // (ถ้าส่ง month มาสองครั้ง จะได้เป็น array ซึ่งก็ไม่ผ่าน isValidMonth → 400 เหมือนกัน)
 app.get("/api/leaderboard", (req, res) => {
   const month = req.query.month;
@@ -107,7 +109,7 @@ app.get("/api/leaderboard", (req, res) => {
   const board = req.query.board ?? "solo";
   if (!leaderboard.isValidBoard(board)) return res.status(400).json({ error: "INVALID_BOARD" });
   try {
-    res.json(leaderboard.getLeaderboard(month ?? null, board));
+    res.json(leaderboard.getLeaderboard(leaderboard.resolveMonth(month), board));
   } catch (err) {
     console.warn("ดึง leaderboard ไม่สำเร็จ:", err.message);
     res.status(500).json({ error: "SERVER_ERROR" });

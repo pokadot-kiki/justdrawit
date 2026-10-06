@@ -6,7 +6,8 @@ import { Icon } from "./Icons";
 // เนื้อในของ Leaderboard — ใช้ร่วมกันทั้งการ์ดในหน้าแรกและหน้า /leaderboard เต็ม (ไม่เขียนซ้ำ)
 // ประกอบด้วย: หัว (ชื่อ + dropdown เลือกเดือน) · แท็บ เล่นกับเพื่อน/แข่งกับ AI · ตารางอันดับ
 // หน้าแรกส่ง scroll เพื่อให้ตารางเลื่อนภายในการ์ด (ไม่ดันการ์ดสูงจนล้น)
-const ALL_TIME = "";
+// แสดงได้แค่ "ปีปัจจุบัน" เท่านั้น (ไม่มีตัวเลือก "ตลอดกาล" แล้ว) — server ก็ลบคะแนนปีก่อนออกจากที่เก็บไปแล้วตอนสตาร์ท
+// ดู server/leaderboard.js purgeOldYears/resolveMonth
 
 // สองกระดานแยกกัน (server เก็บแยกด้วยช่อง board) — แท็บแค่เปลี่ยนว่าขอกระดานไหนจาก API
 const BOARDS = [
@@ -20,19 +21,20 @@ function monthLabel(key) {
   return new Date(y, m - 1, 1).toLocaleDateString("th-TH", { month: "long", year: "numeric" });
 }
 
-function recentMonths(count = 12) {
+// มกราคมถึงเดือนปัจจุบันของปีนี้ เรียงเดือนปัจจุบันไว้แรกสุด (ตัวเลือกแรก = ค่าเริ่มต้น)
+function monthsThisYear() {
   const now = new Date();
-  return Array.from({ length: count }, (_, i) => monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
+  return Array.from({ length: now.getMonth() + 1 }, (_, i) => monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
 }
 
 export default function LeaderboardPanel({ limit = 20, scroll = false, meName = "" }) {
-  const [months] = useState(recentMonths);
-  const [month, setMonth] = useState(months[0]); // เปิดมาเห็นเดือนนี้ก่อน
+  const [months] = useState(monthsThisYear);
+  const [month, setMonth] = useState(months[0]); // เปิดมาเห็นเดือนปัจจุบันก่อน
   const [tab, setTab] = useState("multi");
   // เปิดหน้า เปลี่ยนแท็บ หรือเปลี่ยนเดือน = ขอ API ใหม่ทุกครั้ง (ไม่เก็บคะแนนไว้ในเครื่อง)
   const board = useLeaderboard(month, tab);
   const info = BOARDS.find((b) => b.id === tab);
-  const periodText = month === ALL_TIME ? "ตลอดกาล" : `เดือน${monthLabel(month)}`;
+  const periodText = `เดือน${monthLabel(month)}`;
 
   const table = (
     <RankTable
@@ -67,7 +69,6 @@ export default function LeaderboardPanel({ limit = 20, scroll = false, meName = 
                 {monthLabel(key)}
               </option>
             ))}
-            <option value={ALL_TIME}>ตลอดกาล</option>
           </select>
         </div>
       </div>
