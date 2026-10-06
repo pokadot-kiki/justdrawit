@@ -274,11 +274,12 @@ function getLeaderboard(month = null, board = "solo") {
   };
 }
 
-// อันดับตลอดกาลของเกมหนึ่งเกม = 1 + จำนวน "คนอื่น" ที่เกมดีที่สุดของเขาดีกว่าหรือเท่าเกมนี้
-// (เท่ากันทุกอย่าง คนที่ทำได้ก่อนอยู่เหนือ) ใช้ตอนจบเกม Solo หลัง saveScore แล้ว
+// อันดับของเกมหนึ่งเกม "ในกระดานเดือนปัจจุบัน" (ตรงกับที่หน้า Leaderboard โชว์ได้จริง ไม่ใช่ตลอดกาลอีกต่อไป)
+// = 1 + จำนวน "คนอื่น" ที่เกมดีที่สุดของเขาในเดือนนี้ดีกว่าหรือเท่าเกมนี้ (เท่ากันทุกอย่าง คนที่ทำได้ก่อนอยู่เหนือ)
+// ใช้ตอนจบเกม Solo หลัง saveScore แล้ว (กระดาน "solo" เท่านั้น)
 function rankOf({ name, score, levelReached }) {
   const me = { name: cleanName(name), score: cleanCount(score), levelReached: cleanCount(levelReached) };
-  const ahead = bestPerName(null).filter(
+  const ahead = bestPerName(resolveMonth(), "solo").filter(
     (r) => r.name !== me.name && (r.score > me.score || (r.score === me.score && r.levelReached >= me.levelReached))
   );
   return ahead.length + 1;

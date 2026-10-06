@@ -1423,6 +1423,7 @@ async function main() {
       { id: 4, name: "Tar", score: 1300, levelReached: 7, playedAt: at("04") },
       { id: 5, name: "Joy", score: 700, levelReached: 4, playedAt: `${PREV_MONTH}-10 10:00` },
       { id: 6, name: "Joy", score: 100, levelReached: 1, playedAt: at("05") },
+      { id: 7, name: "OldChamp", score: 2000, levelReached: 9, playedAt: `${PREV_MONTH}-11 10:00` }, // คะแนนสูงสุดแต่อยู่เดือนก่อน ต้องไม่ถูกนับใน rankOf
     ]));
     // ไม่ใส่ month = เดือนปัจจุบัน (ไม่ใช่ "ตลอดกาล" อีกแล้ว) — Joy เดือนก่อนหน้าไม่ถูกนับ เหลือแค่ 100 ของเดือนนี้
     let r = await getBoard();
@@ -1431,11 +1432,13 @@ async function main() {
     r = await getBoard(`?month=${CUR_MONTH}`);
     check("ใส่เดือนปัจจุบันตรงๆ ได้ผลเหมือนกัน",
       r.body.top.map((t) => [t.name, t.score]), [["Tar", 1300], ["Mew", 1300], ["Joy", 100]]);
-    // rankOf เป็นฟังก์ชันคนละตัว (ไม่ผ่าน HTTP) ยังเป็น "ตลอดกาล" จริงๆ ไม่ถูกจำกัดปีด้วยงานนี้ (ใช้แสดงผลหลังจบเกม Solo คนละจุด)
+    // rankOf คำนวณจากกระดาน "เดือนปัจจุบัน" เท่านั้นแล้ว (ตรงกับหน้า Leaderboard ที่โชว์ได้) ไม่ใช่ตลอดกาลอีกต่อไป
     check("rankOf: เกม 1500 คะแนนของคนใหม่ได้อันดับ 1", rankOf({ name: "New", score: 1500, levelReached: 1 }), 1);
     check("rankOf: 1000 คะแนนตามหลัง Tar กับ Mew = อันดับ 3", rankOf({ name: "New", score: 1000, levelReached: 1 }), 3);
     check("rankOf: คะแนนเท่ากันแต่ด่านน้อยกว่า ตามหลังคนเดิม", rankOf({ name: "New", score: 1300, levelReached: 5 }), 3);
     check("rankOf: ไม่นับตัวเอง (Mew 1300/6 ได้อันดับ 2 ไม่ใช่ 3)", rankOf({ name: "Mew", score: 1300, levelReached: 6 }), 2);
+    check("rankOf: ไม่นับ OldChamp (2000 คะแนน) เพราะอยู่เดือนก่อน — 1600 เดือนนี้ชนะทุกคนจึงได้อันดับ 1",
+      rankOf({ name: "New", score: 1600, levelReached: 1 }), 1);
     check("rankOf: ไฟล์ว่างได้อันดับ 1", (fs.rmSync(SCORES_FILE, { force: true }), rankOf({ name: "A", score: 0, levelReached: 1 })), 1);
   });
 

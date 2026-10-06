@@ -7,6 +7,10 @@
  *
  * วันที่เล่นคิดย้อนจาก "วันนี้" เสมอ (เดือนนี้ · เดือนก่อน · สองเดือนก่อน)
  * วันนำเสนอจึงมีคะแนนของเดือนปัจจุบันให้โชว์แน่นอน ไม่ว่าจะรันวันไหน
+ *
+ * Leaderboard แสดงได้แค่ "ปีปัจจุบัน" เท่านั้นแล้ว (ดู purgeOldYears ใน server/leaderboard.js)
+ * ถ้ารันตอนเดือนมกราคม/กุมภาพันธ์ "เดือนก่อน"/"สองเดือนก่อน" จะเลยไปเป็นเดือนของปีที่แล้ว —
+ * กรณีนั้นใช้เดือนปัจจุบันแทน (ไม่งั้นแถวนั้นจะไม่โผล่เลยและถูกลบทิ้งตอน server รีสตาร์ทครั้งถัดไป)
  */
 const fs = require("fs");
 const { SCORES_FILE, loadScores, writeScores, formatPlayedAt } = require("../leaderboard");
@@ -35,10 +39,12 @@ if (reset && fs.existsSync(SCORES_FILE)) {
 
 const now = new Date();
 const rows = SAMPLES.map(([name, score, levelReached, monthsAgo], i) => {
+  // ย้อนไปแล้วจะข้ามไปปีก่อน (เช่นรันตอน ม.ค./ก.พ.) → ใช้เดือนปัจจุบันแทน (monthsAgo มีค่าสูงสุด 2 ในชุดตัวอย่างนี้)
+  const safeMonthsAgo = monthsAgo <= now.getMonth() ? monthsAgo : 0;
   // วันที่ 1-25 ของเดือนนั้น (เดือนนี้ใช้ไม่เกินวันนี้ จะได้ไม่มีคะแนนจากอนาคต)
-  const maxDay = monthsAgo === 0 ? now.getDate() : 25;
+  const maxDay = safeMonthsAgo === 0 ? now.getDate() : 25;
   const day = 1 + (i % maxDay);
-  const playedAt = new Date(now.getFullYear(), now.getMonth() - monthsAgo, day, 19 + (i % 4), (i * 7) % 60);
+  const playedAt = new Date(now.getFullYear(), now.getMonth() - safeMonthsAgo, day, 19 + (i % 4), (i * 7) % 60);
   return { id: i + 1, name, score, levelReached, playedAt: formatPlayedAt(playedAt) };
 });
 
