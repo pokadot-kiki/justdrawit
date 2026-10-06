@@ -60,10 +60,17 @@ function emptyGame() {
  * App อยู่ตลอดตั้งแต่เปิดหน้าเว็บ จึงไม่มี event ไหนหลุด
  * (บทเรียนเดียวกับบั๊ก StrictMode ในข้อ 1: event ที่พลาดไปแล้วจะไม่ยิงซ้ำ)
  */
-export function useGame() {
+export function useGame(teamNames = {}) {
   const [game, setGame] = useState(emptyGame);
   const [chooseLeft, setChooseLeft] = useState(0);
   const playersRef = useRef(null); // รายชื่อผู้เล่นรอบก่อน ไว้เทียบว่าใครเข้าออก
+  // ชื่อทีม (จาก room.settings.teamNames ที่ App ส่งมา) ใช้ ref เพราะ effect ผูก socket ครั้งเดียวตอน mount
+  // แต่ชื่อทีมอาจเปลี่ยนทีหลัง (ห้องรอ) จึงต้องอ่านค่าล่าสุดเสมอตอนสร้างข้อความแชท ไม่ใช่ค่า ณ ตอน mount
+  const teamNamesRef = useRef(teamNames);
+  useEffect(() => {
+    teamNamesRef.current = teamNames;
+  }, [teamNames]);
+  const teamNameOf = (t) => teamNamesRef.current?.[t] || `ทีม ${t}`;
   // ปลายทางของ action ที่มาจากคนอื่น — หน้า Game เป็นคนตั้งให้ เพราะมันถือ ref ของกระดานอยู่
   // (กระดานอยู่ลึกกว่านี้ เจ้านี้จึงไม่ถือ ref เอง เหมือนที่หน้านี้ไม่ถือ socket ของหน้า Game)
   const canvasApiRef = useRef(null);
@@ -244,8 +251,8 @@ export function useGame() {
             note(
               "team",
               isFirst
-                ? `ทีม ${data.team} ทายถูกก่อน! ทุกคนที่ทายถูกในทีมได้โบนัส +100`
-                : `ทีม ${data.team} ทายถูกแล้ว (ทีมที่สองไม่ได้โบนัส)`
+                ? `${teamNameOf(data.team)} ทายถูกก่อน! ทุกคนที่ทายถูกในทีมได้โบนัส +100`
+                : `${teamNameOf(data.team)} ทายถูกแล้ว (ทีมที่สองไม่ได้โบนัส)`
             )
           );
         }

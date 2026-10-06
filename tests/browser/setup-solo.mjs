@@ -91,11 +91,15 @@ try {
   ck("สลับกลับ classic: ความสูงการ์ดกลับมาเท่าเดิม", Math.abs(hBack - hClassic) <= 10, `${hClassic} → ${hBack}`);
 
   // ── โหมดทีม: มีครบรอบ/เวลา/ความยาก(มีผสม)/ประเภทห้อง เหมือนกัน ──
-  await click(C, ".mode-card", "ทีม A vs B"); await sleep(200);
+  await click(C, ".mode-card", "แข่งทีม"); await sleep(200);
   txt = await C.ev(`document.querySelector(".setup__opts").innerText`);
   ck("ทีม: มีจำนวนรอบ/เวลาวาด/ความยาก/ประเภทห้องครบ เหมือน classic", /จำนวนรอบ/.test(txt) && /เวลาวาด/.test(txt) && /ความยากของคำ/.test(txt) && /ประเภทห้อง/.test(txt) && /ผสม/.test(txt), txt.slice(0, 160));
+  // ป้าย "จำนวนทีม" เป็น aria-label ล้วน (ไม่ใช่ข้อความที่มองเห็น กันไม่ให้กินที่อีกบรรทัด) จึงเช็คจาก aria-label + ปุ่มที่มองเห็นแทน innerText
+  const hasTeamCountGroup = await C.ev(`!![...document.querySelectorAll('[role="group"]')].find(e=>e.getAttribute("aria-label")?.includes("จำนวนทีม"))`);
+  ck("ทีม: มีช่องจำนวนทีม (2/3/4 ทีม) เพิ่มมาในกล่องความยากของคำ", hasTeamCountGroup && /2 ทีม/.test(txt) && /3 ทีม/.test(txt) && /4 ทีม/.test(txt), txt.slice(0, 200));
+  // โหมดทีมมีช่องเพิ่มมา (จำนวนทีม) ความสูงจึงต่างจาก classic ได้ตามจริง — แค่ต้องไม่ล้นจอ (เช็คแยกด้านล่างที่ 3 ขนาดจอ) ไม่ใช่เท่ากันเป๊ะ
   const hTeam = await panelH(C);
-  ck("ทีม: ความสูงการ์ดเท่ากับ classic", Math.abs(hTeam - hClassic) <= 10, `${hClassic} → ${hTeam}`);
+  ck("ทีม: ความสูงการ์ดยังอยู่ในช่วงที่สมเหตุสมผล (ไม่พุ่งจนล้นจนต้องพึ่งแค่การเลื่อน)", hTeam > 0 && hTeam < hClassic + 200, `${hClassic} → ${hTeam}`);
 
   // ── สลับ classic → AI → team → classic อีกรอบ เพื่อความชัวร์ (ไม่มี exception) ──
   for (const label of [".mode-card--ai", ".mode-card", ".mode-card--ai"]) await (label === ".mode-card" ? click(C, label, "แข่งเดี่ยว") : click(C, label));
@@ -112,7 +116,7 @@ try {
     const pa = await page(C);
     ck(`AI ${w}×${h}: ไม่เลื่อนหน้า`, pa.sv <= 0 && pa.sh <= 0, JSON.stringify(pa));
     await shot(C, `ai-${w}x${h}`);
-    await click(C, ".mode-card", "ทีม A vs B"); await sleep(250);
+    await click(C, ".mode-card", "แข่งทีม"); await sleep(250);
     const pt = await page(C);
     ck(`team ${w}×${h}: ไม่เลื่อนหน้า`, pt.sv <= 0 && pt.sh <= 0, JSON.stringify(pt));
     await shot(C, `team-${w}x${h}`);

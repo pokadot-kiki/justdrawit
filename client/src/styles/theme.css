@@ -2315,13 +2315,17 @@ select[class] {
 
 
 /* ============================ โหมดทีม (ส่วนที่ 2) ============================
-   ทีม A = แดง · ทีม B = ฟ้า  ทุกที่ที่ใช้สีบอกทีม มีตัวอักษร "ทีม A/B" กำกับด้วยเสมอ (ไม่พึ่งสีอย่างเดียว) */
+   รองรับ 2-4 ทีม: A = แดง · B = ฟ้า · C = เขียว · D = เหลือง · ทุกที่ที่ใช้สีบอกทีม มีชื่อทีม (ไม่พึ่งสีอย่างเดียว) */
 
 :root {
   --team-a: #d9363e;
   --team-a-soft: #fde3e1;
   --team-b: #1e6fe8;
   --team-b-soft: #dce9fc;
+  --team-c: #1f9d55;
+  --team-c-soft: #def7e5;
+  --team-d: #a16207;
+  --team-d-soft: #fef9c3;
 }
 
 /* ห้องรอ: สองคอลัมน์ข้างกัน (มือถือเรียงลง) */
@@ -2349,6 +2353,16 @@ select[class] {
 .team-col--B {
   background: var(--team-b-soft);
   border-color: var(--team-b);
+}
+
+.team-col--C {
+  background: var(--team-c-soft);
+  border-color: var(--team-c);
+}
+
+.team-col--D {
+  background: var(--team-d-soft);
+  border-color: var(--team-d);
 }
 
 .team-col .player-list {
@@ -2384,9 +2398,59 @@ select[class] {
   color: var(--team-b);
 }
 
+.team-col--C .team-col__title {
+  color: var(--team-c);
+}
+
+.team-col--D .team-col__title {
+  color: var(--team-d);
+}
+
 .team-col__count {
   font-size: 14px;
   color: var(--muted);
+}
+
+/* ชื่อทีม (กดดินสอเปลี่ยนชื่อได้ — หัวห้องเปลี่ยนได้ทุกทีม สมาชิกเปลี่ยนได้แค่ทีมตัวเอง) */
+.team-col__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-col__rename {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.team-col__rename:hover {
+  opacity: 1;
+}
+
+.team-col__name-input {
+  min-width: 0;
+  width: 100%;
+  max-width: 140px;
+  padding: 2px 6px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-ctl);
+  font-family: var(--font-head);
+  font-weight: 600;
+  font-size: 16px;
+  background: var(--white);
+  color: var(--ink);
 }
 
 .team-col__empty {
@@ -2442,6 +2506,16 @@ select[class] {
   margin-left: 4px;
 }
 
+/* ชื่อทีม (2-4 ทีมแปลว่าชิปแคบลง) ตัด ... ถ้ายาวเกิน แทนที่จะดันจนล้นจอ — ดู title เต็มได้ตอนชี้เมาส์ */
+.team-vs__name {
+  display: inline-block;
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
 .team-vs__chip--A {
   background: var(--team-a-soft);
   border-color: var(--team-a);
@@ -2450,6 +2524,16 @@ select[class] {
 .team-vs__chip--B {
   background: var(--team-b-soft);
   border-color: var(--team-b);
+}
+
+.team-vs__chip--C {
+  background: var(--team-c-soft);
+  border-color: var(--team-c);
+}
+
+.team-vs__chip--D {
+  background: var(--team-d-soft);
+  border-color: var(--team-d);
 }
 
 /* ทีมของเรา ขอบหนากว่า + เงา */
@@ -2492,6 +2576,18 @@ select[class] {
   background: var(--team-b-soft);
   border-color: var(--team-b);
   color: var(--team-b);
+}
+
+.score-team--C .score-team__head {
+  background: var(--team-c-soft);
+  border-color: var(--team-c);
+  color: var(--team-c);
+}
+
+.score-team--D .score-team__head {
+  background: var(--team-d-soft);
+  border-color: var(--team-d);
+  color: var(--team-d);
 }
 
 .score-team__total {
@@ -2545,6 +2641,16 @@ select[class] {
   border-color: var(--team-b);
 }
 
+.team-winner--C {
+  background: var(--team-c-soft);
+  border-color: var(--team-c);
+}
+
+.team-winner--D {
+  background: var(--team-d-soft);
+  border-color: var(--team-d);
+}
+
 .team-winner__title {
   margin: 0;
   font-family: var(--font-head);
@@ -2553,11 +2659,11 @@ select[class] {
 }
 
 /* ไอแพดแนวนอน/จอแคบ: คะแนนทีมในแถบบนลงบรรทัดเดียวกับคำใบ้ได้ แถวคะแนนทีมเรียงข้างกัน */
-/* ไอแพดแนวนอน/โน้ตบุ๊กเล็ก: แถบบนแน่น ตัดคำว่า "ทีม" ในชิปแถบบนออก เหลือ "A 120 vs B 80" (สีกับตัวอักษร A/B ยังบอกทีมครบ)
+/* ไอแพดแนวนอน/โน้ตบุ๊กเล็ก: แถบบนแน่น ย่อความกว้างชื่อทีมในชิปแถบบนลง (สียังบอกทีมครบ ชื่อเต็มดูได้จาก title ตอนชี้เมาส์)
    ไม่งั้นแถบบนขึ้นสองบรรทัด สูงขึ้น 15px แล้วดันกล่องใต้กระดานตกจอที่ 1024×768 */
 @media (max-width: 1400px) {
-  .topbar .team-vs__word {
-    display: none;
+  .topbar .team-vs__name {
+    max-width: 44px;
   }
 
   .topbar .team-vs__chip {
@@ -2573,6 +2679,10 @@ select[class] {
   .team-vs__chip {
     font-size: 14px;
     padding: 3px 8px;
+  }
+
+  .team-vs__name {
+    max-width: 36px;
   }
 }
 
@@ -2679,6 +2789,14 @@ select[class] {
   background: var(--team-b);
 }
 
+.team-me--C {
+  background: var(--team-c);
+}
+
+.team-me--D {
+  background: var(--team-d);
+}
+
 .team-me-banner {
   margin: 12px 0 0;
   padding: 8px 12px;
@@ -2694,6 +2812,14 @@ select[class] {
 
 .team-me-banner--B {
   background: var(--team-b);
+}
+
+.team-me-banner--C {
+  background: var(--team-c);
+}
+
+.team-me-banner--D {
+  background: var(--team-d);
 }
 
 /* ==========================================================================
@@ -3541,6 +3667,21 @@ select[class] {
 .setup__opts .seg:active {
   transform: translate(2px, 2px);
   box-shadow: none;
+}
+
+/* แข่งทีม: กล่อง "ความยากของคำ" มีแถวจำนวนทีมเพิ่มมา (รวมในกล่องเดียวกัน ไม่เพิ่มกล่องใหม่)
+   ยังทำให้สูงขึ้นอยู่ดี — ย่อช่องไฟ/ปุ่มทุกกล่องลงนิดหน่อยเพื่อให้ยังไม่ต้องเลื่อนหน้าที่ 1024×768/1366×768 */
+.setup__opts--team {
+  gap: 10px;
+}
+
+.setup__opts--team .setup__opt {
+  gap: 5px;
+}
+
+.setup__opts--team .seg {
+  height: 40px;
+  font-size: 17px;
 }
 
 /* ---- จอเล็ก ---- */

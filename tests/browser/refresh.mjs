@@ -112,7 +112,7 @@ try {
   for (let i = 0; i < N; i++) { const c = await newTab(`${base}/`); await c.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false }); await c.ev(`localStorage.setItem("jdi.rulesSeen","1");localStorage.setItem("jdi.teamRulesSeen","1");localStorage.setItem("jdi.music","0")`); T.push(c); }
   const H = T[0];
   await H.send("Page.navigate", { url: `${base}/setup` }); await sleep(1000);
-  if (which === "team") { await click(H, ".mode-card", "ทีม A vs B"); await sleep(200); }
+  if (which === "team") { await click(H, ".mode-card", "แข่งทีม"); await sleep(200); }
   await click(H, ".setup__create");
   await waitFor(H, `document.querySelector(".screen--lb")`);
   const code = await H.ev(`document.querySelector(".lb-codechip b")?.textContent`);

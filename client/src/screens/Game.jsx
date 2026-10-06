@@ -50,6 +50,8 @@ export default function Game({
   // โหมดทีม: drawerId/hint/✅ ที่ได้รับเป็นของ "ทีมเรา" เสมอ (server ส่งแยกทีม)
   const teamMode = room.settings.mode === "team";
   const myTeam = teamMode ? players.find((p) => p.id === meId)?.team ?? null : null;
+  const teamNames = room.settings.teamNames || {};
+  const teamName = (t) => teamNames[t] || `ทีม ${t}`;
   const teamSkipped = teamMode && game.teamSkipped && drawing; // ตานี้ทีมเราไม่มีคนวาด
   const drawerName =
     players.find((p) => p.id === game.drawerId)?.name ?? (teamSkipped ? "ไม่มีคนวาด" : "—");
@@ -185,8 +187,8 @@ export default function Game({
       <header className="topbar">
         <div className="topbar__who">
           {teamMode && myTeam ? (
-            // บอกตลอดว่าเราอยู่ทีมไหน ด้วยสีของทีม (และตัวอักษร ไม่พึ่งสีอย่างเดียว)
-            <span className={`team-me team-me--${myTeam}`}>คุณอยู่ทีม {myTeam}</span>
+            // บอกตลอดว่าเราอยู่ทีมไหน ด้วยสีของทีม (และชื่อทีม ไม่พึ่งสีอย่างเดียว)
+            <span className={`team-me team-me--${myTeam}`}>คุณอยู่{teamName(myTeam)}</span>
           ) : (
             <span className="topbar__label">คนวาด</span>
           )}
@@ -195,15 +197,17 @@ export default function Game({
           </span>
         </div>
 
-        {/* โหมดทีม: คะแนนทีม A vs B (ผลรวมสมาชิก จาก room.teamScores) ทีมเราขอบหนากว่า */}
+        {/* โหมดทีม: คะแนนทีม (2-4 ทีม ผลรวมสมาชิก จาก room.teamScores) ทีมเราขอบหนากว่า */}
         {teamMode && (
           <div className="team-vs" aria-label="คะแนนทีม">
-            {["A", "B"].map((t, i) => (
+            {Object.keys(room.teamScores ?? {}).map((t, i) => (
               <span key={t} className="team-vs__item">
-                {i === 1 && <span className="team-vs__sep">vs</span>}
-                <span className={`team-vs__chip team-vs__chip--${t}${myTeam === t ? " team-vs__chip--mine" : ""}`}>
-                  <span className="team-vs__word">ทีม </span>
-                  {t} <b>{room.teamScores?.[t] ?? 0}</b>
+                {i > 0 && <span className="team-vs__sep">vs</span>}
+                <span
+                  className={`team-vs__chip team-vs__chip--${t}${myTeam === t ? " team-vs__chip--mine" : ""}`}
+                  title={teamName(t)}
+                >
+                  <span className="team-vs__name">{teamName(t)}</span> <b>{room.teamScores?.[t] ?? 0}</b>
                 </span>
               </span>
             ))}
@@ -234,7 +238,8 @@ export default function Game({
             players={players}
             drawerId={game.drawerId}
             drawerIds={game.round?.drawerIds ?? null}
-            teamScores={teamMode ? room.teamScores ?? { A: 0, B: 0 } : null}
+            teamScores={teamMode ? room.teamScores ?? {} : null}
+            teamNames={teamNames}
             myTeam={myTeam}
             nextDrawerId={game.round?.nextDrawerId ?? null}
             drawing={drawing}
@@ -364,13 +369,14 @@ export default function Game({
       {game.options && (
         <WordChoiceModal options={game.options} secondsLeft={chooseLeft} onChoose={chooseWord} challenge={game.chooseChallenge} />
       )}
-      {game.summary && <RoundSummaryModal summary={game.summary} players={players} myTeam={myTeam} meId={meId} />}
+      {game.summary && <RoundSummaryModal summary={game.summary} players={players} myTeam={myTeam} meId={meId} teamNames={teamNames} />}
       {game.ranking && (
         <GameOverModal
           ranking={game.ranking}
           teamRanking={teamMode ? game.teamRanking : null}
           winner={game.winner}
           myTeam={myTeam}
+          teamNames={teamNames}
           meId={meId}
           isHost={room.hostId === meId}
           onPlayAgain={startGame}

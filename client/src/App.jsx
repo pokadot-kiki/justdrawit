@@ -77,7 +77,7 @@ export default function App() {
     askRedo,
     askHint,
     bindCanvas,
-  } = useGame();
+  } = useGame(room?.settings?.teamNames);
 
   function showToast(text) {
     setToast({ text, id: Date.now() });

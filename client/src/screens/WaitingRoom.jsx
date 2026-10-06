@@ -16,19 +16,38 @@ import { ROOM_DIFFICULTY_CHOICES, MAX_PLAYER_CHOICES, DEFAULT_MAX_PLAYERS, VISIB
 // ค่าที่ server ยอมรับ ตาม events.md (ค่าอื่น server จะเมิน)
 const ROUND_CHOICES = [1, 2, 3, 4, 5];
 const TIME_CHOICES = [30, 45, 60, 90];
-const TEAMS = ["A", "B"];
+const TEAM_CODES = ["A", "B", "C", "D"]; // รหัสทีมข้างใน คงที่เสมอ — ชื่อที่โชว์มาจาก room.settings.teamNames
+const TEAM_COUNT_CHOICES = [2, 3, 4];
 const TEAM_MIN = 2; // โหมดทีมต้องมีทีมละอย่างน้อย 2 คน (server เช็คซ้ำ)
+const TEAM_NAME_MAX = 16;
 
 export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }) {
   const [linkCopied, setLinkCopied] = useState(false);
   // กล่องกติกาโชว์เองครั้งแรกที่เข้าห้อง (จำไว้ในเบราว์เซอร์) ครั้งต่อไปกดดูเองได้จากปุ่ม ℹ️ ในหน้าเกม
   const [showRules, setShowRules] = useState(() => !rulesSeen());
   const [showTeamRules, setShowTeamRules] = useState(false); // กติกาโหมดทีม (เดิมเป็นกล่องยาวกินที่ ตอนนี้เปิดจากปุ่ม)
+  const [editingTeam, setEditingTeam] = useState(null); // รหัสทีมที่กำลังแก้ชื่ออยู่ (null = ไม่มี)
+  const [editValue, setEditValue] = useState("");
   const isHost = room.hostId === me?.playerId;
   const teamMode = room.settings.mode === "team";
+  const teams = TEAM_CODES.slice(0, room.settings.teamCount ?? 2);
+  const teamNames = room.settings.teamNames || {};
+  const teamLabel = (t) => teamNames[t] || `ทีม ${t}`;
   const teamSize = (t) => room.players.filter((p) => p.team === t).length;
-  const teamsReady = TEAMS.every((t) => teamSize(t) >= TEAM_MIN);
+  const teamsReady = teams.every((t) => teamSize(t) >= TEAM_MIN);
   const myTeam = room.players.find((p) => p.id === me?.playerId)?.team ?? null;
+
+  // แก้ชื่อทีม: สมาชิกแก้ได้แค่ทีมตัวเอง หัวห้องแก้ได้ทุกทีม · server ตรวจซ้ำอีกชั้นเสมอ (ยาว 1-16 ไม่ซ้ำ ไม่มีอักขระควบคุม)
+  const canRenameTeam = (t) => isHost || myTeam === t;
+  function startEditTeam(t) {
+    setEditingTeam(t);
+    setEditValue(teamNames[t] || `ทีม ${t}`);
+  }
+  function submitEditTeam(t) {
+    const name = editValue.trim();
+    if (name && name !== teamNames[t]) socket.emit("set_team_name", { team: t, name });
+    setEditingTeam(null);
+  }
   const myReady = room.players.find((p) => p.id === me?.playerId)?.ready ?? false;
   // ผู้เล่นคนอื่น (ไม่ใช่หัวห้อง) ต้องกด Ready ครบทุกคน หัวห้องจึงเริ่มได้ (หัวห้องไม่ต้องกด)
   const others = room.players.filter((p) => p.id !== room.hostId);
@@ -47,7 +66,7 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }
 
   const modeChoices = [
     ["classic", "แข่งเดี่ยว"],
-    ["team", "ทีม A vs B"],
+    ["team", "แข่งทีม"],
   ];
 
   // แก้ตั้งค่าได้เฉพาะหัวห้อง — server เช็คซ้ำอีกชั้นเสมอ
@@ -126,7 +145,7 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }
   const note = isHost
     ? !enoughPlayers
       ? teamMode
-        ? `ต้องมีทีมละอย่างน้อย ${TEAM_MIN} คน (ตอนนี้ A ${teamSize("A")} · B ${teamSize("B")})`
+        ? `ต้องมีทีมละอย่างน้อย ${TEAM_MIN} คน (ตอนนี้ ${teams.map((t) => `${teamLabel(t)} ${teamSize(t)}`).join(" · ")})`
         : "ต้องมีผู้เล่นอย่างน้อย 2 คนจึงเริ่มได้"
       : !allReady
         ? 'รอผู้เล่นคนอื่นกด "พร้อม" ให้ครบ'
@@ -177,7 +196,42 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }
                 {!isHost && <span className="lb-count">ดูอย่างเดียว</span>}
               </div>
               <div className="lb-settings__grid">
-                <Choice no="1" title="โหมด" label="โหมดเกม" choices={modeChoices} value={s.mode} onChange={(mode) => changeSetting({ mode })} />
+                <div className="lb-set">
+                  <span className="lb-set__label">
+                    <b>1</b> โหมด
+                  </span>
+                  <div className="lb-seg" role="group" aria-label="โหมดเกม">
+                    {modeChoices.map(([v, text]) => (
+                      <button
+                        key={v}
+                        type="button"
+                        className={s.mode === v ? "seg seg--active" : "seg"}
+                        aria-pressed={s.mode === v}
+                        disabled={!isHost}
+                        onClick={() => changeSetting({ mode: v })}
+                      >
+                        {text}
+                      </button>
+                    ))}
+                  </div>
+                  {/* จำนวนทีม (2-4) — เฉพาะโหมดแข่งทีม · server บังคับ maxPlayers >= 2 × จำนวนทีมเสมอ ค่าที่ขัดกันถูกเมิน */}
+                  {teamMode && (
+                    <div className="lb-seg lb-seg--sub" role="group" aria-label="จำนวนทีม">
+                      {TEAM_COUNT_CHOICES.map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          className={(s.teamCount ?? 2) === n ? "seg seg--active" : "seg"}
+                          aria-pressed={(s.teamCount ?? 2) === n}
+                          disabled={!isHost}
+                          onClick={() => changeSetting({ teamCount: n })}
+                        >
+                          {n} ทีม
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <Choice no="2" title="เวลาต่อตา (วิ)" label="เวลาวาดต่อตา" choices={TIME_CHOICES.map((n) => [n, n])} value={s.drawTime} onChange={(drawTime) => changeSetting({ drawTime })} />
                 <Choice no="3" title="จำนวนรอบ" label="จำนวนรอบ" choices={ROUND_CHOICES.map((n) => [n, n])} value={s.rounds} onChange={(rounds) => changeSetting({ rounds })} />
                 <Choice no="4" title="ความยากของคำ" label="ระดับความยากของคำ" choices={ROOM_DIFFICULTY_CHOICES} value={s.difficulty} onChange={(difficulty) => changeSetting({ difficulty })} />
@@ -207,11 +261,40 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }
 
               <div className="lb-roster__list">
                 {teamMode ? (
-                  <div className="lb-teams">
-                    {TEAMS.map((t) => (
-                      <section className={`team-col team-col--${t}`} key={t} aria-label={`ทีม ${t}`}>
+                  <div className="lb-teams" style={{ "--team-cols": teams.length }}>
+                    {teams.map((t) => (
+                      <section className={`team-col team-col--${t}`} key={t} aria-label={teamLabel(t)}>
                         <h3 className="team-col__title">
-                          <span>ทีม {t}{myTeam === t ? " (ทีมคุณ)" : ""}</span>
+                          {editingTeam === t ? (
+                            <input
+                              className="team-col__name-input"
+                              autoFocus
+                              maxLength={TEAM_NAME_MAX}
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              onBlur={() => submitEditTeam(t)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") submitEditTeam(t);
+                                if (e.key === "Escape") setEditingTeam(null);
+                              }}
+                            />
+                          ) : (
+                            <span className="team-col__name" title={teamLabel(t)}>
+                              {teamLabel(t)}
+                              {myTeam === t ? " (ทีมคุณ)" : ""}
+                              {canRenameTeam(t) && (
+                                <button
+                                  type="button"
+                                  className="team-col__rename"
+                                  aria-label={`เปลี่ยนชื่อ${teamLabel(t)}`}
+                                  title="เปลี่ยนชื่อทีม"
+                                  onClick={() => startEditTeam(t)}
+                                >
+                                  <Icon name="pen" size={13} />
+                                </button>
+                              )}
+                            </span>
+                          )}
                           <span className="team-col__count">{teamSize(t)} คน</span>
                         </h3>
                         <div className="lb-plist">
@@ -220,7 +303,7 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }
                         </div>
                         {myTeam !== t && (
                           <button type="button" className="btn team-col__join" onClick={() => socket.emit("set_team", { team: t })}>
-                            ย้ายมาทีม {t}
+                            ย้ายมา{teamLabel(t)}
                           </button>
                         )}
                       </section>

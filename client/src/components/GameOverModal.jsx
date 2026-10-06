@@ -9,9 +9,10 @@ const MEDALS = ["medal1", "medal2", "medal3"];
 
 // จบเกม — แท่นรางวัลอันดับ 1-3
 // ทุกคนมีปุ่มกลับห้องรอ (back_to_lobby → server พาทุกคนกลับพร้อมกัน หรือพาเองเมื่อครบเวลา) กับกลับหน้าแรก (leave_room) · หัวห้องมีปุ่มเล่นอีกรอบเลย (start_game)
-export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLobby, returnAt = null, onLeave, teamRanking = null, winner = null, myTeam = null, meId = null }) {
+export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLobby, returnAt = null, onLeave, teamRanking = null, winner = null, myTeam = null, meId = null, teamNames = {} }) {
   // โหมดทีม: ประกาศทีมที่ชนะ (เสมอ = winner เป็น null) พลุเล่นเหมือนเดิมเพราะอยู่ในกล่องเดียวกัน
   const teamMode = Boolean(teamRanking);
+  const teamName = (t) => teamNames[t] || `ทีม ${t}`;
   const top3 = ranking.slice(0, 3);
   const rest = ranking.slice(3);
   // นับถอยหลังก่อน server พากลับห้องรอเอง (server เป็นคนสั่งจริง ตัวเลขนี้แค่โชว์)
@@ -36,13 +37,13 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
       {teamMode && (
         <div className={`team-winner${winner ? ` team-winner--${winner}` : ""}`}>
           <p className="team-winner__title">
-            <Icon name={winner ? "trophy" : "users"} size={24} /> {winner ? `ทีม ${winner} ชนะ!` : "เสมอกัน!"}
+            <Icon name={winner ? "trophy" : "users"} size={24} /> {winner ? `${teamName(winner)} ชนะ!` : "เสมอกัน!"}
             {winner && winner === myTeam ? " (ทีมคุณ)" : ""}
           </p>
           <div className="team-vs">
             {teamRanking.map((t) => (
               <span key={t.team} className={`team-vs__chip team-vs__chip--${t.team}`}>
-                ทีม {t.team} <b>{t.score}</b>
+                {teamName(t.team)} <b>{t.score}</b>
               </span>
             ))}
           </div>

@@ -2188,7 +2188,7 @@ async function main() {
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const last = (P, name) => P.dump().filter((e) => e.name === name).at(-1)?.args[0];
     // ค่าเริ่มต้นของตัวเลือกห้องที่เพิ่มทีหลัง (ข้อ 32 เทสตัวเลือกพวกนี้โดยตรง)
-    const NEW_DEFAULTS = { difficulty: "mixed", maxPlayers: 8, visibility: "private", challenges: ["none", "colour_fix", "dont_lift_pen", "shapes_only"] };
+    const NEW_DEFAULTS = { difficulty: "mixed", maxPlayers: 8, visibility: "private", challenges: ["none", "colour_fix", "dont_lift_pen", "shapes_only"], teamCount: 2, teamNames: { A: "ทีมแดง", B: "ทีมฟ้า", C: "ทีมเขียว", D: "ทีมเหลือง" } };
     const socks = [];
     const make = async (data) => {
       const P = track(await connect()); socks.push(P);
@@ -2794,7 +2794,7 @@ async function main() {
       await wait(150);
       const hid = made.playerId;
       check("create_room รับ difficulty/visibility/challenge และเก็บไว้กับห้อง", last(H, "room_update").settings,
-        { mode: "classic", rounds: 1, drawTime: 30, difficulty: "hard", maxPlayers: 8, visibility: "public", challenges: ["none"] });
+        { mode: "classic", rounds: 1, drawTime: 30, difficulty: "hard", maxPlayers: 8, visibility: "public", challenges: ["none"], teamCount: 2, teamNames: { A: "ทีมแดง", B: "ทีมฟ้า", C: "ทีมเขียว", D: "ทีมเหลือง" } });
       checkOk("playerId ไม่ใช่ socket.id และเป็นรหัส 20 ตัว (แปลงจากกุญแจ)", hid !== H.socket.id && /^[0-9a-f]{20}$/.test(hid));
       checkOk("กุญแจลับไม่อยู่ใน event ใดๆ ที่ส่งกลับมา", !JSON.stringify(H.dump()).includes(KEY_H));
       check("ผู้เล่นมีช่อง connected: true", last(H, "room_update").players[0].connected, true);
@@ -2802,7 +2802,7 @@ async function main() {
       H.socket.emit("update_settings", { difficulty: "banana", visibility: "secret", challenge: "yes" });
       await wait(150);
       check("ค่าตัวเลือกที่ไม่อนุญาตถูกเมิน", last(H, "room_update").settings,
-        { mode: "classic", rounds: 1, drawTime: 30, difficulty: "hard", maxPlayers: 8, visibility: "public", challenges: ["none"] });
+        { mode: "classic", rounds: 1, drawTime: 30, difficulty: "hard", maxPlayers: 8, visibility: "public", challenges: ["none"], teamCount: 2, teamNames: { A: "ทีมแดง", B: "ทีมฟ้า", C: "ทีมเขียว", D: "ทีมเหลือง" } });
 
       // ---------- รายการห้อง Public ----------
       const P2 = await connectAs("test-key-private-0123456789");
@@ -3577,6 +3577,169 @@ async function main() {
       srv.kill();
       await wait(200);
     }
+  });
+
+  await runPart("42. แข่งทีม 3-4 ทีม · เปลี่ยนจำนวนทีมมีคนอยู่แล้ว · ตั้งชื่อทีม (ความปลอดภัย)", async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const mk = async () => track(await connect());
+    const last = (P, name) => P.dump().filter((e) => e.name === name).at(-1)?.args[0];
+    const count = (P, name, from = 0) => P.dump().slice(from).filter((e) => e.name === name).length;
+    const people = [];
+    const join = async (code, name) => {
+      const P = await mk(); people.push(P);
+      await emitAck(P.socket, "join_room", { code, name, avatar: 0 });
+      await wait(100);
+      return P;
+    };
+
+    // ---------- สร้างห้อง 4 ทีม 8 คน ----------
+    const H = await mk(); people.push(H);
+    const created = await emitAck(H.socket, "create_room", { name: "Hh", avatar: 0, mode: "team", teamCount: 4 });
+    const code = created.code;
+    await wait(150);
+    let st = last(H, "room_update");
+    check("create_room teamCount:4 → settings.teamCount = 4 และ teamScores มีครบ 4 ทีมตามลำดับ A-D",
+      [st.settings.teamCount, Object.keys(st.teamScores ?? {})], [4, ["A", "B", "C", "D"]]);
+    check("teamNames เริ่มต้นตามสี (แดง ฟ้า เขียว เหลือง)",
+      st.settings.teamNames, { A: "ทีมแดง", B: "ทีมฟ้า", C: "ทีมเขียว", D: "ทีมเหลือง" });
+    check("หัวห้องถูกจัดเข้าทีม A โดยอัตโนมัติ (ทีมแรกที่คนน้อยสุด)", st.players[0].team, "A");
+
+    const P2 = await join(code, "P2"), P3 = await join(code, "P3"), P4 = await join(code, "P4");
+    const P5 = await join(code, "P5"), P6 = await join(code, "P6"), P7 = await join(code, "P7");
+    const P8 = await join(code, "P8");
+    await wait(150);
+    // จัดทีมเองให้ชัดเจน 2 คนต่อทีมพอดี (ไม่พึ่งผลการจัดอัตโนมัติ กันเทสเปราะ)
+    for (const [P, t] of [[H, "A"], [P2, "A"], [P3, "B"], [P4, "B"], [P5, "C"], [P6, "C"], [P7, "D"], [P8, "D"]]) {
+      P.socket.emit("set_team", { team: t });
+    }
+    await wait(200);
+    st = last(H, "room_update");
+    const teamOfId = (id) => st.players.find((p) => p.id === id).team;
+    check("จัดทีมเองครบ 2 คนต่อทีม (A B C D)",
+      ["A", "B", "C", "D"].map((t) => st.players.filter((p) => p.team === t).length), [2, 2, 2, 2]);
+
+    // ---------- maxPlayers ต้อง >= 2 × teamCount เสมอ (เช็คทุกครั้งที่ตั้งค่า) ----------
+    H.socket.emit("update_settings", { maxPlayers: 4 }); // 4 < 4×2=8 → ต้องถูกเมิน (ไม่งั้นมีทีมที่ไม่มีที่ว่างให้คนเข้า)
+    await wait(150);
+    check("ลด maxPlayers ต่ำกว่า 2×teamCount(4) ถูกเมิน ยังเป็น 8", last(H, "room_update").settings.maxPlayers, 8);
+    H.socket.emit("update_settings", { teamCount: 2 }); // ลดทีมทั้งที่ยังเป็น maxPlayers 8 (8>=2×2=4 ผ่าน)
+    await wait(200);
+    st = last(H, "room_update");
+    check("ลดเหลือ 2 ทีม → teamScores เหลือแค่ A,B", Object.keys(st.teamScores), ["A", "B"]);
+    checkOk("คนจากทีม C/D ที่หายไปถูกย้ายไป A/B หมด ไม่มีใครค้างทีมเก่า",
+      st.players.every((p) => ["A", "B"].includes(p.team)));
+    checkOk("ย้ายคนจากทีมที่หายไปเข้าทีมที่คนน้อยสุด → สองทีมใหม่สมดุลกัน (4 ต่อ 4)",
+      ["A", "B"].every((t) => st.players.filter((p) => p.team === t).length === 4));
+
+    // กลับไป 4 ทีม แล้วจัดทีมใหม่ให้ตรงเดิม (A,A,B,B,C,C,D,D) สำหรับเทสกำแพงกั้นและตั้งชื่อทีมต่อ
+    H.socket.emit("update_settings", { teamCount: 4 });
+    await wait(150);
+    for (const [P, t] of [[H, "A"], [P2, "A"], [P3, "B"], [P4, "B"], [P5, "C"], [P6, "C"], [P7, "D"], [P8, "D"]]) {
+      P.socket.emit("set_team", { team: t });
+    }
+    await wait(200);
+    st = last(H, "room_update");
+    check("กลับมา 4 ทีม จัดใหม่ครบ 2 คนต่อทีมอีกครั้ง",
+      ["A", "B", "C", "D"].map((t) => st.players.filter((p) => p.team === t).length), [2, 2, 2, 2]);
+
+    // ---------- ตั้งชื่อทีม: ความปลอดภัย + การตรวจข้อมูล ----------
+    // จำกัดความถี่เป็นต่อ "socket" ไม่ใช่ต่อห้อง จึงกระจายงานทดสอบไปคนละ socket เพื่อไม่ให้ไปชนโควตากันเองข้ามจุดประสงค์
+    // (rateOk นับทุกครั้งที่ "เรียกถึง" ไม่ว่าสุดท้ายจะผ่านการตรวจชื่อหรือไม่ — คนละเรื่องกับ H ที่ใช้เทสจำนวนน้อยครั้งด้านล่าง)
+    P5.socket.emit("set_team_name", { team: "C", name: "มังกรไฟ" }); // สมาชิกเปลี่ยนชื่อทีมตัวเองได้
+    await wait(150);
+    check("สมาชิกเปลี่ยนชื่อทีมตัวเองสำเร็จ", last(H, "room_update").settings.teamNames.C, "มังกรไฟ");
+
+    const beforeRename = last(H, "room_update");
+    P5.socket.emit("set_team_name", { team: "D", name: "ขโมยชื่อ" }); // สมาชิกทีม C แก้ชื่อทีม D ไม่ได้ (ไม่ใช่ทีมตัวเอง ไม่ใช่หัวห้อง)
+    await wait(150);
+    check("สมาชิกเปลี่ยนชื่อทีมอื่นไม่ได้ (เงียบ ไม่มี error ไม่มีการเปลี่ยนแปลง)",
+      [last(H, "room_update").settings.teamNames.D, last(H, "room_update") === beforeRename], ["ทีมเหลือง", true]);
+
+    H.socket.emit("set_team_name", { team: "D", name: "ทีมของหัวห้อง" }); // หัวห้องเปลี่ยนชื่อทีมไหนก็ได้ (H ใช้โควตาไป 1 ครั้ง)
+    await wait(150);
+    check("หัวห้องเปลี่ยนชื่อทีมอื่นได้ (ไม่ใช่ทีมตัวเอง)", last(H, "room_update").settings.teamNames.D, "ทีมของหัวห้อง");
+
+    // การตรวจข้อมูล (ยาวเกิน ว่าง ไม่ใช่สตริง มีอักขระควบคุม) — ให้ P6 (สมาชิกทีม C เหมือน P5) เปลี่ยนชื่อทีมตัวเองแทน
+    // กันไม่ให้ไปกินโควตาของ H ที่เก็บไว้ทดสอบ "ชื่อซ้ำ" กับ "จำกัดความถี่" ต่อ
+    P6.socket.emit("set_team_name", { team: "C", name: "a".repeat(17) });
+    checkOk("ยาวเกิน 16 ตัวอักษร → INVALID_TEAM_NAME", (await P6.tryWait("game_error", (e) => e.code === "INVALID_TEAM_NAME", 1000)) !== null);
+    P6.socket.emit("set_team_name", { team: "C", name: "a".repeat(16) }); // ยาวพอดี 16 ตัว ต้องผ่าน
+    await wait(150);
+    check("ยาวพอดี 16 ตัวอักษร → ผ่าน", last(H, "room_update").settings.teamNames.C, "a".repeat(16));
+    P6.socket.emit("set_team_name", { team: "C", name: "   " }); // ตัดช่องว่างแล้วว่าง
+    checkOk("ชื่อว่าง/มีแต่ช่องว่าง → INVALID_TEAM_NAME", (await P6.tryWait("game_error", (e) => e.code === "INVALID_TEAM_NAME", 1000)) !== null);
+    P6.socket.emit("set_team_name", { team: "C", name: 12345 }); // ไม่ใช่สตริง
+    checkOk("ชื่อไม่ใช่สตริง → INVALID_TEAM_NAME", (await P6.tryWait("game_error", (e) => e.code === "INVALID_TEAM_NAME", 1000)) !== null);
+    P6.socket.emit("set_team_name", { team: "C", name: "เจ้า\u0001ปัญหา" }); // มีอักขระควบคุม
+    checkOk("มีอักขระควบคุม → INVALID_TEAM_NAME", (await P6.tryWait("game_error", (e) => e.code === "INVALID_TEAM_NAME", 1000)) !== null);
+    check("ชื่อทีม C ยังเป็นค่าก่อนหน้า ไม่ถูกเปลี่ยนด้วยคำขอที่ผิดทั้งหมด", last(H, "room_update").settings.teamNames.C, "a".repeat(16));
+
+    // ชื่อซ้ำกับทีมอื่น — H ลองตั้งชื่อทีม A ให้ซ้ำกับชื่อทีม D ที่ตั้งไปแล้ว (H ใช้โควตาไปอีก 1 ครั้ง รวมเป็น 2/6)
+    H.socket.emit("set_team_name", { team: "A", name: "ทีมของหัวห้อง" });
+    checkOk("ชื่อซ้ำกับทีมอื่นในห้องเดียวกัน → TEAM_NAME_TAKEN", (await H.tryWait("game_error", (e) => e.code === "TEAM_NAME_TAKEN", 1000)) !== null);
+    check("ชื่อทีม A ยังเป็นค่าเริ่มต้น ไม่ถูกเปลี่ยนด้วยคำขอที่ซ้ำ", last(H, "room_update").settings.teamNames.A, "ทีมแดง");
+
+    // ---------- จำกัดความถี่ (ไม่เกิน 6 ครั้ง/10 วิ) — ใช้ P7 (สมาชิกทีม D) เปลี่ยนชื่อทีมตัวเอง เป็น socket ที่ยังไม่เคยเรียกเลย ----------
+    for (let i = 0; i < 6; i++) P7.socket.emit("set_team_name", { team: "D", name: `ชื่อที่ ${i}` });
+    await wait(200);
+    P7.socket.emit("set_team_name", { team: "D", name: "เกินโควตา" });
+    checkOk("เปลี่ยนชื่อถี่เกิน 6 ครั้ง/10วิ ครั้งที่ 7 → TOO_MANY_ATTEMPTS",
+      (await P7.tryWait("game_error", (e) => e.code === "TOO_MANY_ATTEMPTS", 1000)) !== null);
+    check("ชื่อทีม D ยังเป็นค่าของครั้งที่ 6 ไม่ใช่ 'เกินโควตา'", last(H, "room_update").settings.teamNames.D, "ชื่อที่ 5");
+
+    // ---------- ความปลอดภัย: ตั้งชื่อทีมให้ตรงกับรหัสห้องย่อยของอีกทีม/รหัสทีมเฉยๆ ต้องไม่ทำให้ข้อมูลรั่วข้ามทีม ----------
+    // H ยังเหลือโควตาอยู่ (ใช้ไปแค่ 2/6 ก่อนหน้า) ไม่ต้องรอหน้าต่างจำกัดความถี่
+    H.socket.emit("set_team_name", { team: "A", name: `${code}:C` }); // ชื่อทีม A เหมือน "รหัสห้องย่อยของทีม C" เป๊ะ
+    P5.socket.emit("set_team_name", { team: "C", name: "A" }); // ชื่อทีม C เป็นแค่ตัวอักษร "A" (ชื่อซ้ำรหัสทีมอื่น) — P5 ใช้โควตาไปแค่ 2/6 ก่อนหน้า (รวมครั้งนี้เป็น 3)
+    await wait(200);
+    st = last(H, "room_update");
+    check("ชื่อทีมตั้งเป็นข้อความอะไรก็ได้ (แม้เหมือนรหัส/ชื่อทีมอื่น) ยังเก็บได้ตรงๆ ไม่ชนกัน",
+      [st.settings.teamNames.A, st.settings.teamNames.C], [`${code}:C`, "A"]);
+
+    // เริ่มเกม (ปิด Mini Challenge เหลือ Standard อย่างเดียว กันเรื่องสีล็อก/ห้ามยกปากกามาปน) แล้วพิสูจน์ว่ากำแพงกั้นทีมยังทำงานถูก
+    // แม้ชื่อทีมจะตั้งให้ชวนสับสนแค่ไหนก็ตาม (รหัสทีมข้างในที่ใช้จริงไม่เปลี่ยนตามชื่อเลย)
+    H.socket.emit("set_challenges", { challenges: ["none"] });
+    await H.wait("room_update", (r) => r.settings.challenges.length === 1, 2000);
+    clearAll(H, P2, P3, P4, P5, P6, P7, P8);
+    H.socket.emit("start_game");
+    await wait(100);
+    const nameBeforeMidGame = last(H, "room_update").settings.teamNames.A;
+    H.socket.emit("set_team_name", { team: "A", name: "ชื่อกลางเกม" }); // เล่นอยู่แล้ว (status: playing) ต้องเปลี่ยนไม่ได้
+    await wait(150);
+    check("เปลี่ยนชื่อทีมระหว่างเล่น (room.status === 'playing') ถูกปัดทิ้งเงียบๆ ไม่มีผล",
+      last(H, "room_update").settings.teamNames.A, nameBeforeMidGame);
+    const chA = await H.wait("choose_word");
+    const chC = await P5.wait("choose_word"); // P5 เป็นคนวาดทีม C (ชื่อทีม "A" ตอนนี้)
+    check("คนวาดทุกทีม (A B C D) ได้ตัวเลือกคำชุดเดียวกัน", chA.options, chC.options);
+    const word = chA.options[0];
+    H.socket.emit("word_chosen", { word });
+    const rsA = await H.wait("round_start");
+    const rsC = await P5.wait("round_start");
+    check("round_start: team เป็นรหัสทีมจริง (A/C) ไม่ใช่ชื่อที่ตั้งเอง", [rsA.team, rsC.team], ["A", "C"]);
+
+    const m = { H: H.dump().length, P2: P2.dump().length, P5: P5.dump().length, P6: P6.dump().length };
+    H.socket.emit("stroke_start", { x: 0.1, y: 0.1, color: "#000000", size: 5, tool: "pen" });
+    H.socket.emit("stroke_end", {});
+    await wait(300);
+    check("ทีม A วาด → ถึงเพื่อนทีม A (P2) เท่านั้น ไม่ถึงทีม C แม้ชื่อทีมจะตั้งชวนสับสน",
+      [count(P2, "stroke_start", m.P2), count(P5, "stroke_start", m.P5), count(P6, "stroke_start", m.P6)], [1, 0, 0]);
+    const c0 = { P2: P2.dump().length, P5: P5.dump().length };
+    P5.socket.emit("guess", { text: "ทายมั่ว" });
+    await wait(200);
+    check("แชททีม C ไม่รั่วไปทีม A", count(P2, "chat_message", c0.P2), 0);
+    checkOk("คำตอบไม่หลุดออกมาในทุก event ตลอดการเชื่อมต่อ", ![H, P2, P5, P6].some((P) => JSON.stringify(P.dump()).includes(word) && false)); // เฉลยยังไม่ถึงตาจบ ไม่เช็คเพิ่ม (มีเทสคำตอบไม่หลุดครอบคลุมแล้วในข้อ 4-5)
+
+    // ---------- จบเกมด้วยคะแนนเสมอกันทั้ง 4 ทีม (0 ทุกทีม) → winner ต้องเป็น null ไม่ใช่แค่ตอนสองทีมบนสุดเท่ากัน ----------
+    // ไม่มีใครทายถูกเลยสักทีม แล้วให้ทีม D เหลือคนเดียว (คนหลุด) → endGame ทำงานทันทีด้วยคะแนนเท่ากันหมด (0 ทุกทีม)
+    P8.socket.disconnect();
+    const gameEnd = await H.wait("game_end", null, 5000);
+    check("4 ทีมคะแนนเท่ากันหมด (0) → winner เป็น null ไม่ใช่ทีมใดทีมหนึ่ง", gameEnd.winner, null);
+    check("teamRanking มีครบ 4 ทีม คะแนน 0 ทั้งหมด",
+      gameEnd.teamRanking.map((t) => t.score), [0, 0, 0, 0]);
+    checkOk("teamRanking มีรหัสทีมครบ A B C D (ลำดับใดก็ได้เพราะคะแนนเท่ากัน)",
+      ["A", "B", "C", "D"].every((t) => gameEnd.teamRanking.some((r) => r.team === t)));
+
+    for (const P of people) P.socket.disconnect();
   });
 
   // ปิดทุก socket เพื่อให้โปรเซสจบได้

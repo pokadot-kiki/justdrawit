@@ -1,0 +1,146 @@
+import { spawn, execSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+// เทสเบราว์เซอร์จริง (Chrome headless ผ่าน CDP · --mute-audio) — ต้อง `cd client && npm run build` ก่อน
+// ตรวจขยายโหมดทีม: เลือกจำนวนทีม (2-4) + ตั้งชื่อทีมเอง — 4 ทีม 8 แท็บจริง
+const SP = fs.mkdtempSync(path.join(os.tmpdir(), "jdi-browser-shots-"));
+const PROFILE = path.join(os.tmpdir(), "jdi-chrome-" + process.pid);
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const PORT = 3001, DBG = 9334;
+let pass = 0, fail = 0;
+const ck = (n, ok, extra = "") => { ok ? pass++ : fail++; console.log(`${ok ? "✅" : "❌"} [team-options] ${n}${ok ? "" : "  " + extra}`); };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let server, chrome;
+const cdpOf = async (wsUrl) => {
+  const ws = new WebSocket(wsUrl); await new Promise((r) => (ws.onopen = r));
+  let id = 0; const pend = new Map(); const errs = [];
+  ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.method === "Runtime.exceptionThrown") errs.push(String(d.params.exceptionDetails.exception?.description ?? d.params.exceptionDetails.text).slice(0, 200)); if (d.id && pend.has(d.id)) { pend.get(d.id)(d); pend.delete(d.id); } };
+  const send = (method, params = {}) => new Promise((res) => { const i = ++id; pend.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
+  const ev = async (expr) => (await send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true })).result?.result?.value;
+  return { send, ev, ws, errs };
+};
+async function newTab(url, w = 1440, h = 900) {
+  const t = await (await fetch(`http://127.0.0.1:${DBG}/json/new?${encodeURIComponent(url)}`, { method: "PUT" })).json();
+  const c = await cdpOf(t.webSocketDebuggerUrl);
+  c.tid = t.id;
+  await c.send("Page.enable"); await c.send("Runtime.enable");
+  await c.send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+  return c;
+}
+const act = (c) => fetch(`http://127.0.0.1:${DBG}/json/activate/${c.tid}`);
+const shot = async (c, name) => { await act(c); const r = await c.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true }); fs.writeFileSync(`${SP}/team-options-${name}.png`, Buffer.from(r.result.data, "base64")); };
+const waitFor = async (c, expr, ms = 8000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await c.ev(`!!(${expr})`)) return true; await sleep(120); } return false; };
+const click = (c, sel, text) => c.ev(`(()=>{const els=[...document.querySelectorAll(${JSON.stringify(sel)})];const e=${text ? `els.find(x=>x.textContent.includes(${JSON.stringify(text)}))` : "els[0]"};if(!e)return false;e.scrollIntoView({block:"center"});e.click();return true})()`);
+const typeInto = (c, sel, text) => c.ev(`(()=>{const i=document.querySelector(${JSON.stringify(sel)});if(!i)return false;const s=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;s.call(i,${JSON.stringify(text)});i.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
+const noOverflow = (c) => c.ev(`document.documentElement.scrollWidth<=innerWidth+1 && document.documentElement.scrollHeight<=innerHeight+1`);
+
+const base = `http://localhost:${PORT}`;
+
+try {
+  server = spawn("node", ["index.js"], { cwd: `${ROOT}/server`, env: { ...process.env, PORT: String(PORT), SCORES_FILE: `${SP}/scores-to.json`, AI_MODE: "mock", CHALLENGE_NO_PACING: "1", CHALLENGE_ODDS: "0" }, stdio: "ignore" });
+  chrome = spawn((process.env.CHROME_BIN || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"), [`--remote-debugging-port=${DBG}`, `--user-data-dir=${PROFILE}`, "--headless=new", "--mute-audio", "--no-first-run", "--window-size=1500,1000", "about:blank"], { stdio: "ignore" });
+  for (let i = 0; i < 50; i++) { try { await fetch(`http://127.0.0.1:${DBG}/json/version`); break; } catch { await sleep(200); } }
+  await sleep(1200);
+  for (let i = 0; i < 50; i++) { try { const r = await fetch(`${base}/`); if (r.ok) break; } catch {} await sleep(200); }
+
+  // ── หัวห้อง: ไปหน้า SET UP เลือกแข่งทีม + 4 ทีม แล้วสร้างห้อง ──
+  const H = await newTab(`${base}/`);
+  await H.ev(`localStorage.setItem("jdi.rulesSeen","1");localStorage.setItem("jdi.teamRulesSeen","1");localStorage.setItem("jdi.music","0");localStorage.setItem("jdi.name","Host")`);
+  await act(H);
+  await H.send("Page.navigate", { url: `${base}/setup` }); await sleep(900);
+  await click(H, ".mode-card", "แข่งทีม"); await sleep(250);
+  // ป้าย "จำนวนทีม" เป็น aria-label ล้วน (ไม่ใช่ข้อความที่มองเห็น กันไม่ให้กินที่อีกบรรทัดในหน้า SET UP ที่สูงจำกัดอยู่แล้ว)
+  ck("เลือกแข่งทีมแล้วขึ้นตัวเลือกจำนวนทีม", await H.ev(`!![...document.querySelectorAll('[role="group"]')].find(e=>e.getAttribute("aria-label")?.includes("จำนวนทีม"))`));
+  await click(H, ".setup__opt .segmented .seg", "4 ทีม"); await sleep(150);
+  await click(H, ".setup__create"); await sleep(900);
+  ck("สร้างห้องสำเร็จ เข้าห้องรอ", await waitFor(H, `document.querySelector(".screen--lb")`, 8000));
+  const code = await H.ev(`document.querySelector(".lb-codechip b")?.textContent`);
+  ck("ห้องรอ: มีคอลัมน์ทีมครบ 4 ทีม", await H.ev(`document.querySelectorAll(".lb-teams .team-col").length === 4`));
+
+  // ── อีก 7 แท็บเข้าห้องเดียวกัน ──
+  const guests = [];
+  for (let i = 2; i <= 8; i++) {
+    const c = await newTab(`${base}/`);
+    await c.ev(`localStorage.setItem("jdi.rulesSeen","1");localStorage.setItem("jdi.teamRulesSeen","1");localStorage.setItem("jdi.music","0");localStorage.setItem("jdi.name","P${i}")`);
+    await c.send("Page.navigate", { url: `${base}/?room=${code}` }); await sleep(600);
+    await click(c, ".modal .btn--primary"); // ยืนยันเข้าห้อง
+    await waitFor(c, `document.querySelector(".screen--lb")`, 6000);
+    guests.push(c);
+  }
+  await sleep(800);
+  const ALL = [H, ...guests];
+  ck("ทั้ง 8 แท็บเข้าห้องรอสำเร็จ", await Promise.all(ALL.map((c) => c.ev(`!!document.querySelector(".screen--lb")`))).then((xs) => xs.every(Boolean)));
+  ck("ห้องรอ 8 คน: ทุกคน (รวมหัวห้อง) เห็นคอลัมน์ทีมครบ 4", (await Promise.all(ALL.map((c) => c.ev(`document.querySelectorAll(".lb-teams .team-col").length === 4`)))).every(Boolean));
+
+  // ── จัดทีมให้ชัดเจน 2 คนต่อทีม (กดปุ่ม "ย้ายมา...") ──
+  const teamOfTab = ["A", "A", "B", "B", "C", "C", "D", "D"];
+  for (let i = 0; i < ALL.length; i++) {
+    const want = teamOfTab[i];
+    await click(ALL[i], `.team-col--${want} .team-col__join`);
+  }
+  await sleep(600);
+  const counts = await H.ev(`Object.fromEntries([..."ABCD"].map(t=>[t, document.querySelectorAll(".team-col--"+t+" .lb-player").length]))`);
+  ck("จัดทีมเองครบ 2 คนต่อทีม (A B C D)", JSON.stringify(counts) === JSON.stringify({ A: 2, B: 2, C: 2, D: 2 }), JSON.stringify(counts));
+
+  // ── ตั้งชื่อทีม (หัวห้องอยู่ทีม A ลองเปลี่ยนชื่อทีมตัวเอง และทีม D ซึ่งไม่ใช่ทีมตัวเอง) ──
+  // ต้อง activate แท็บก่อนเสมอ (บทเรียนเดิมของโปรเจกต์: แท็บที่ไม่ active ทำงานช้ากว่าปกติ)
+  await act(H);
+  await click(H, ".team-col--A .team-col__rename"); await sleep(300);
+  await typeInto(H, ".team-col--A .team-col__name-input", "มังกรทอง");
+  await sleep(100);
+  await H.ev(`document.querySelector(".team-col--A .team-col__name-input")?.blur()`);
+  await sleep(800);
+  ck("หัวห้องเปลี่ยนชื่อทีมตัวเองสำเร็จ (เห็นในห้องรอ)", await H.ev(`document.querySelector(".team-col--A .team-col__name")?.textContent.includes("มังกรทอง")`));
+  ck("คนอื่นในห้องเห็นชื่อทีมใหม่ด้วย (room_update ถึงทุกคน)", await guests[6].ev(`document.querySelector(".team-col--A .team-col__name")?.textContent.includes("มังกรทอง")`));
+
+  await click(H, ".team-col--D .team-col__rename"); await sleep(300); // หัวห้องเปลี่ยนชื่อทีม D ได้ (ไม่ใช่ทีมตัวเอง)
+  await typeInto(H, ".team-col--D .team-col__name-input", "อินทรีเงิน");
+  await sleep(100);
+  await H.ev(`document.querySelector(".team-col--D .team-col__name-input")?.blur()`);
+  await sleep(800);
+  ck("หัวห้องเปลี่ยนชื่อทีมอื่นได้ด้วย", await H.ev(`document.querySelector(".team-col--D .team-col__name")?.textContent.includes("อินทรีเงิน")`));
+
+  // สมาชิกทีม C (guests[4] = P6 อยู่ทีม C) ลองกดปุ่มเปลี่ยนชื่อทีม A (ไม่ใช่ทีมตัวเอง) — ปุ่มต้องไม่โผล่ให้กดเลย
+  ck("สมาชิกทีมอื่นไม่เห็นปุ่มเปลี่ยนชื่อทีม A เลย (ปุ่มกดได้เฉพาะหัวห้อง/เจ้าของทีม)",
+    await guests[4].ev(`!document.querySelector(".team-col--A .team-col__rename")`));
+
+  // ── เลย์เอาต์ 4 ทีม ไม่ล้นจอ หลายขนาด ──
+  for (const [w, h] of [[1440, 900], [1366, 768], [1024, 768]]) {
+    await H.send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+    ck(`ห้องรอ 4 ทีม ไม่ล้นจอที่ ${w}x${h}`, await noOverflow(H));
+  }
+  await H.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await sleep(300);
+  ck("ห้องรอ 4 ทีม ไม่ล้นแนวนอนที่มือถือ 390px", await H.ev(`document.documentElement.scrollWidth<=391`));
+  await H.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await shot(H, "lobby-4teams");
+
+  // ── เริ่มเกม แล้วดูหน้าเกม: ชิปคะแนนทีม 4 ใบ + ชื่อทีมที่ตั้งไว้ ──
+  for (const c of guests) await click(c, ".lb-bigbtn"); // ทุกคนกด "พร้อม"
+  await sleep(500);
+  await click(H, ".lb-bigbtn"); // หัวห้องกด "เริ่มเกม"
+  await sleep(1200);
+  // ใครก็ตามที่เห็นกล่องเลือกคำ กดเลือกคำแรก (คนวาดของแต่ละทีม)
+  for (const c of ALL) { if (await c.ev(`!!document.querySelector(".word-choices")`)) await click(c, ".word-choices button"); }
+  ck("ทุกแท็บเข้าหน้าเกม", (await Promise.all(ALL.map((c) => waitFor(c, `document.querySelector(".game")`, 10000)))).every(Boolean));
+  await sleep(2500);
+  ck("แถบบน: มีชิปคะแนนทีมครบ 4 ใบ", await H.ev(`document.querySelectorAll(".team-vs__chip").length === 4`));
+  ck("ชิปคะแนนทีมโชว์ชื่อที่ตั้งไว้ (มังกรทอง) ไม่ใช่แค่ตัวอักษร A", await H.ev(`[...document.querySelectorAll(".team-vs__name")].some(e=>e.textContent.includes("มังกรทอง"))`));
+  await noOverflow(H).then((ok) => ck("หน้าเกม 4 ทีม ไม่ล้นจอ 1440x900", ok));
+  await shot(H, "game-4teams");
+  ck("ไม่มี exception ตลอดการทดสอบ (หัวห้อง)", H.errs.length === 0, JSON.stringify(H.errs.slice(0, 3)));
+} catch (e) {
+  fail++; console.log("❌ สคริปต์พัง:", e.stack?.split("\n").slice(0, 3).join(" | "));
+} finally {
+  try { chrome?.kill(); } catch {}
+  try { server?.kill(); } catch {}
+  await sleep(500);
+  try { execSync(`pkill -f "remote-debugging-port=${DBG}"`); } catch {}
+  fs.rmSync(PROFILE, { recursive: true, force: true });
+  console.log(`ภาพหน้าจอ: ${SP}`);
+  console.log(`\nสรุป [team-options]: ผ่าน ${pass} · ไม่ผ่าน ${fail}`);
+  process.exitCode = fail > 0 ? 1 : 0;
+}

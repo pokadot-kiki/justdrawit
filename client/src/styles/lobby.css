@@ -279,6 +279,16 @@
   gap: 6px;
 }
 
+/* แถวจำนวนทีม (ซ้อนอยู่ใต้แถวโหมดในกล่องเดียวกัน) เตี้ยกว่าแถวหลักเล็กน้อย ไม่ดันกล่องสูงขึ้นมาก */
+.lb-seg--sub {
+  margin-top: 2px;
+}
+
+.lb-seg--sub .seg {
+  min-height: 30px;
+  font-size: 13px;
+}
+
 /* ปุ่มกระจายเต็มความกว้างกล่องพอดี (ไม่ชิดซ้ายแล้วเหลือที่ว่างขวา) */
 .lb-seg .seg {
   flex: 1 1 0;
@@ -469,7 +479,8 @@
 
 .lb-teams {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* --team-cols ตั้งจาก JS (จำนวนทีมจริงของห้อง 2-4) ผ่าน custom property เพื่อให้ media query ด้านล่างยังทับได้ */
+  grid-template-columns: repeat(var(--team-cols, 2), minmax(0, 1fr));
   gap: 8px;
 }
 

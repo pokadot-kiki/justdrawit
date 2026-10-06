@@ -100,7 +100,7 @@ try {
   for (let i = 0; i < 4; i++) { const c = await newTab(`${base}/`); await c.ev(`localStorage.setItem("jdi.rulesSeen","1");localStorage.setItem("jdi.teamRulesSeen","1");localStorage.setItem("jdi.music","0")`); T.push(c); }
   const [H, ...rest] = T;
   await H.send("Page.navigate", { url: `${base}/setup` }); await sleep(1000);
-  await click(H, ".mode-card", "ทีม A vs B"); await sleep(200);
+  await click(H, ".mode-card", "แข่งทีม"); await sleep(200);
   await click(H, ".setup__create");
   ck("เข้าห้องรอโหมดทีม", await waitFor(H, `document.querySelector(".screen--lb")`));
   const code = await H.ev(`document.querySelector(".lb-codechip b")?.textContent`);

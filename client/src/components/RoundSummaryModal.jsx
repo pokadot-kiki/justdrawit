@@ -4,9 +4,10 @@ import YouTag from "./YouTag";
 
 // สรุปจบตา — เฉลยคำ + คะแนนที่แต่ละคนได้ในตานี้
 // results จาก server มีแค่ { playerId, gained } ต้องไปหาชื่อจากรายชื่อผู้เล่นเอง
-export default function RoundSummaryModal({ summary, players, myTeam = null, meId = null }) {
+export default function RoundSummaryModal({ summary, players, myTeam = null, meId = null, teamNames = {} }) {
   const nameOf = (id) => players.find((p) => p.id === id)?.name ?? "?";
   const gains = summary.results ?? [];
+  const teamName = (t) => teamNames[t] || `ทีม ${t}`;
 
   return (
     <Modal labelledBy="round-end-title">
@@ -22,13 +23,13 @@ export default function RoundSummaryModal({ summary, players, myTeam = null, meI
         <div className="team-result">
           <p className="team-result__first">
             {summary.firstTeam
-              ? `ทีม ${summary.firstTeam}${summary.firstTeam === myTeam ? " (ทีมคุณ)" : ""} ทายถูกก่อน! โบนัส +100 ต่อคน`
+              ? `${teamName(summary.firstTeam)}${summary.firstTeam === myTeam ? " (ทีมคุณ)" : ""} ทายถูกก่อน! โบนัส +100 ต่อคน`
               : "ตานี้ไม่มีทีมไหนทายถูก"}
           </p>
           <div className="team-vs">
-            {["A", "B"].map((t) => (
+            {Object.keys(summary.teamGained).map((t) => (
               <span key={t} className={`team-vs__chip team-vs__chip--${t}`}>
-                ทีม {t} <b>+{summary.teamGained[t] ?? 0}</b>
+                {teamName(t)} <b>+{summary.teamGained[t] ?? 0}</b>
               </span>
             ))}
           </div>

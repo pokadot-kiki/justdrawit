@@ -11,6 +11,7 @@ import { DIFFICULTY_CHOICES, ROOM_DIFFICULTY_CHOICES, VISIBILITY_CHOICES } from 
 // ค่าที่เลือกส่งไปกับ create_room (events.md §1) server เช็คซ้ำ ค่าไม่ถูกจะใช้ค่าเริ่มต้น
 const ROUND_CHOICES = [1, 2, 3, 4, 5];
 const TIME_CHOICES = [30, 45, 60, 90];
+const TEAM_COUNT_CHOICES = [2, 3, 4];
 
 // ตัวเลขของโหมด Solo ที่โชว์ในกล่องข้อมูล — คัดลอกมาจากค่าจริงที่ server ใช้ ห้ามเดา/คิดเอง
 // SOLO_LIVES (server/index.js) และ LEVEL_TIME + "ยากขึ้นทุก 2 ด่าน" (server/ai.js levelConfig) ถ้าแก้ตัวเลขฝั่ง server ต้องแก้ที่นี่ด้วย
@@ -26,6 +27,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
   // ส่วน Solo คือ "จุดเริ่มต้น" แล้วยากขึ้นเอง) สลับไปมาระหว่างโหมดจึงจำค่าของแต่ละฝั่งไว้คนละตัว ไม่ทับกัน
   const [soloLevel, setSoloLevel] = useState("easy");
   const [visibility, setVisibility] = useState("private");
+  const [teamCount, setTeamCount] = useState(2); // เฉพาะโหมดแข่งทีม (2-4 ทีม) — ปรับต่อได้อีกในห้องรอ
   // Challenge เลือกเปิด/ปิดทีละใบในห้องรอ (การ์ด 4 ใบ) ไม่ตั้งที่นี่แล้ว — ห้องเริ่มด้วยชุดเริ่มต้นของ server
   const { busy, enter } = useEnterRoom({ connected, onEntered, onError });
   const { name, avatar } = profile;
@@ -41,7 +43,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
     const who = name.trim() || randomName(); // กันกรณีชื่อว่าง
     enter(
       "create_room",
-      { name: who, avatar, mode, rounds, drawTime, difficulty, visibility },
+      { name: who, avatar, mode, rounds, drawTime, difficulty, visibility, teamCount },
       { name: who, avatar }
     );
   }
@@ -54,7 +56,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
       <Ribbon tone="red">SET UP</Ribbon>
 
       <div className="setup">
-        <section className="panel setup__opts deco-host" aria-label="ตั้งค่าห้อง">
+        <section className={`panel setup__opts deco-host${mode === "team" ? " setup__opts--team" : ""}`} aria-label="ตั้งค่าห้อง">
           <Critter name="cat" className="crit crit--top-left" />
           <h2 className="panel__title setup__title">ตั้งค่า</h2>
           {/* โหมดแข่งกับ AI ไม่มีรอบ ไม่มีเวลาวาดแบบห้อง (Solo ตายตัว 60 วิ/ด่าน) จึงซ่อนสองช่องนี้ */}
@@ -112,6 +114,15 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
                 <Icon name="star" size={22} /> ความยากของคำ
               </h3>
               <OptionRow label="ระดับความยากของคำ" choices={ROOM_DIFFICULTY_CHOICES} value={difficulty} onChange={setDifficulty} />
+              {/* เฉพาะโหมดแข่งทีม — รวมไว้ในกล่องเดียวกัน (ไม่เพิ่มกล่องใหม่) กันหน้าสูงเกินจนต้องเลื่อน · ปรับต่อได้อีกทีในห้องรอ */}
+              {mode === "team" && (
+                <OptionRow
+                  label="จำนวนทีม (ทีมละอย่างน้อย 2 คน)"
+                  choices={TEAM_COUNT_CHOICES.map((n) => [n, `${n} ทีม`])}
+                  value={teamCount}
+                  onChange={setTeamCount}
+                />
+              )}
             </div>
           )}
           {/* โหมดแข่งกับ AI ไม่ต้องมีห้อง จึงซ่อนตัวเลือกประเภทห้อง แทนด้วยกล่องสรุปกติกา Solo สั้นๆ */}
@@ -190,8 +201,8 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
                 <AvatarArt index={5} size={40} />
               </span>
             </span>
-            <span className="mode-card__title">ทีม A vs B</span>
-            <span className="mode-card__desc">แบ่งสองทีม วาดคำเดียวกันพร้อมกัน ทีมไหนทายถูกก่อนได้โบนัส (ต้องมี 4 คนขึ้นไป)</span>
+            <span className="mode-card__title">แข่งทีม</span>
+            <span className="mode-card__desc">แบ่ง 2-4 ทีม วาดคำเดียวกันพร้อมกัน ทีมไหนทายถูกก่อนได้โบนัส (ทีมละอย่างน้อย 2 คน)</span>
           </button>
 
           <button
