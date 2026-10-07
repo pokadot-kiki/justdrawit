@@ -53,7 +53,7 @@ try {
   await act(H);
   await H.send("Page.navigate", { url: `${base}/setup` }); await sleep(900);
   await click(H, ".mode-card", "แข่งทีม"); await sleep(250);
-  await click(H, ".setup__opt .segmented .seg", "3 ทีม"); await sleep(150);
+  await click(H, ".mode-card__teamcount .seg", "3"); await sleep(150);
   await click(H, ".setup__create"); await sleep(900);
   ck("สร้างห้อง 3 ทีมสำเร็จ เข้าห้องรอ", await waitFor(H, `document.querySelector(".screen--lb")`, 8000));
   const code = await H.ev(`document.querySelector(".lb-codechip b")?.textContent`);

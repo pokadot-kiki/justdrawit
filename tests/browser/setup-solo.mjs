@@ -94,12 +94,13 @@ try {
   await click(C, ".mode-card", "แข่งทีม"); await sleep(200);
   txt = await C.ev(`document.querySelector(".setup__opts").innerText`);
   ck("ทีม: มีจำนวนรอบ/เวลาวาด/ความยาก/ประเภทห้องครบ เหมือน classic", /จำนวนรอบ/.test(txt) && /เวลาวาด/.test(txt) && /ความยากของคำ/.test(txt) && /ประเภทห้อง/.test(txt) && /ผสม/.test(txt), txt.slice(0, 160));
-  // ป้าย "จำนวนทีม" เป็น aria-label ล้วน (ไม่ใช่ข้อความที่มองเห็น กันไม่ให้กินที่อีกบรรทัด) จึงเช็คจาก aria-label + ปุ่มที่มองเห็นแทน innerText
-  const hasTeamCountGroup = await C.ev(`!![...document.querySelectorAll('[role="group"]')].find(e=>e.getAttribute("aria-label")?.includes("จำนวนทีม"))`);
-  ck("ทีม: มีช่องจำนวนทีม (2/3/4 ทีม) เพิ่มมาในกล่องความยากของคำ", hasTeamCountGroup && /2 ทีม/.test(txt) && /3 ทีม/.test(txt) && /4 ทีม/.test(txt), txt.slice(0, 200));
-  // โหมดทีมมีช่องเพิ่มมา (จำนวนทีม) ความสูงจึงต่างจาก classic ได้ตามจริง — แค่ต้องไม่ล้นจอ (เช็คแยกด้านล่างที่ 3 ขนาดจอ) ไม่ใช่เท่ากันเป๊ะ
+  // จำนวนทีมย้ายออกจากฝั่งซ้ายไปอยู่ในการ์ด "แข่งทีม" เอง (ใต้คำอธิบาย) แล้ว — ฝั่งซ้ายจึงต้องไม่มีคำว่า "จำนวนทีม" อีกต่อไป
+  ck("ทีม: ฝั่งซ้ายไม่มี \"จำนวนทีม\" อีกต่อไป (ย้ายเข้าการ์ดแข่งทีมแล้ว)", !/จำนวนทีม/.test(txt), txt.slice(0, 160));
+  const teamCardTxt = await C.ev(`document.querySelector(".mode-card__teamcount")?.textContent ?? ""`);
+  ck("ทีม: มีช่องจำนวนทีม (2/3/4) อยู่ในการ์ดแข่งทีมเอง ใต้คำอธิบาย", /จำนวนทีม/.test(teamCardTxt) && /2/.test(teamCardTxt) && /3/.test(teamCardTxt) && /4/.test(teamCardTxt), teamCardTxt);
+  // ฝั่งซ้ายตอนนี้มีแค่ 4 หัวข้อเดียวกับ classic เป๊ะ (จำนวนทีมไม่ได้มาแทรกในนี้แล้ว) ความสูงจึงควรเท่ากับ classic เป๊ะ ไม่ใช่แค่ "ไม่ล้นจนเกินไป" แบบเดิม
   const hTeam = await panelH(C);
-  ck("ทีม: ความสูงการ์ดยังอยู่ในช่วงที่สมเหตุสมผล (ไม่พุ่งจนล้นจนต้องพึ่งแค่การเลื่อน)", hTeam > 0 && hTeam < hClassic + 200, `${hClassic} → ${hTeam}`);
+  ck("ทีม: ความสูงกล่องตั้งค่าฝั่งซ้ายเท่ากับ classic เป๊ะ", Math.abs(hTeam - hClassic) <= 2, `${hClassic} → ${hTeam}`);
 
   // ── สลับ classic → AI → team → classic อีกรอบ เพื่อความชัวร์ (ไม่มี exception) ──
   for (const label of [".mode-card--ai", ".mode-card", ".mode-card--ai"]) await (label === ".mode-card" ? click(C, label, "แข่งเดี่ยว") : click(C, label));

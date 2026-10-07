@@ -53,7 +53,7 @@ try {
   await click(H, ".mode-card", "แข่งทีม"); await sleep(250);
   // ป้าย "จำนวนทีม" เป็น aria-label ล้วน (ไม่ใช่ข้อความที่มองเห็น กันไม่ให้กินที่อีกบรรทัดในหน้า SET UP ที่สูงจำกัดอยู่แล้ว)
   ck("เลือกแข่งทีมแล้วขึ้นตัวเลือกจำนวนทีม", await H.ev(`!![...document.querySelectorAll('[role="group"]')].find(e=>e.getAttribute("aria-label")?.includes("จำนวนทีม"))`));
-  await click(H, ".setup__opt .segmented .seg", "4 ทีม"); await sleep(150);
+  await click(H, ".mode-card__teamcount .seg", "4"); await sleep(150);
   await click(H, ".setup__create"); await sleep(900);
   ck("สร้างห้องสำเร็จ เข้าห้องรอ", await waitFor(H, `document.querySelector(".screen--lb")`, 8000));
   const code = await H.ev(`document.querySelector(".lb-codechip b")?.textContent`);

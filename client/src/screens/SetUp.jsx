@@ -56,7 +56,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
       <Ribbon tone="red">SET UP</Ribbon>
 
       <div className="setup">
-        <section className={`panel setup__opts deco-host${mode === "team" ? " setup__opts--team" : ""}`} aria-label="ตั้งค่าห้อง">
+        <section className="panel setup__opts deco-host" aria-label="ตั้งค่าห้อง">
           <Critter name="cat" className="crit crit--top-left" />
           <h2 className="panel__title setup__title">ตั้งค่า</h2>
           {/* โหมดแข่งกับ AI ไม่มีรอบ ไม่มีเวลาวาดแบบห้อง (Solo ตายตัว 60 วิ/ด่าน) จึงซ่อนสองช่องนี้ */}
@@ -114,15 +114,6 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
                 <Icon name="star" size={22} /> ความยากของคำ
               </h3>
               <OptionRow label="ระดับความยากของคำ" choices={ROOM_DIFFICULTY_CHOICES} value={difficulty} onChange={setDifficulty} />
-              {/* เฉพาะโหมดแข่งทีม — รวมไว้ในกล่องเดียวกัน (ไม่เพิ่มกล่องใหม่) กันหน้าสูงเกินจนต้องเลื่อน · ปรับต่อได้อีกทีในห้องรอ */}
-              {mode === "team" && (
-                <OptionRow
-                  label="จำนวนทีม (ทีมละอย่างน้อย 2 คน)"
-                  choices={TEAM_COUNT_CHOICES.map((n) => [n, `${n} ทีม`])}
-                  value={teamCount}
-                  onChange={setTeamCount}
-                />
-              )}
             </div>
           )}
           {/* โหมดแข่งกับ AI ไม่ต้องมีห้อง จึงซ่อนตัวเลือกประเภทห้อง แทนด้วยกล่องสรุปกติกา Solo สั้นๆ */}
@@ -183,12 +174,20 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
             <span className="mode-card__desc">ทุกคนแข่งกันเอง ผลัดกันวาด คนอื่นพิมพ์ทาย ทายถูกเร็วได้คะแนนเยอะ</span>
           </button>
 
-          <button
-            type="button"
+          {/* การ์ดนี้เป็น <div role="radio"> แทน <button> เพราะต้องมีปุ่ม "จำนวนทีม" ซ้อนอยู่ข้างใน
+              (ปุ่มในปุ่มเป็น HTML ที่ผิดกติกา เบราว์เซอร์จะดีดปุ่มข้างในออกมานอกการ์ดเอง) — onKeyDown เติม Enter/Space ให้ทำงานเหมือนปุ่มจริงกับคีย์บอร์ด */}
+          <div
             role="radio"
+            tabIndex={0}
             aria-checked={mode === "team"}
-            className={mode === "team" ? "mode-card mode-card--active" : "mode-card"}
+            className={mode === "team" ? "mode-card mode-card--team mode-card--active" : "mode-card mode-card--team"}
             onClick={() => setMode("team")}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setMode("team");
+              }
+            }}
           >
             <span className="mode-card__art mode-card__art--team" aria-hidden="true">
               <span className="mode-card__side mode-card__side--A">
@@ -203,7 +202,27 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
             </span>
             <span className="mode-card__title">แข่งทีม</span>
             <span className="mode-card__desc">แบ่ง 2-4 ทีม วาดคำเดียวกันพร้อมกัน ทีมไหนทายถูกก่อนได้โบนัส (ทีมละอย่างน้อย 2 คน)</span>
-          </button>
+            {/* โผล่เฉพาะตอนเลือกการ์ดนี้อยู่แล้ว · หยุด event ไม่ให้ลอยขึ้นไปโดน onClick ของการ์ด (ไม่งั้นนับเป็นการกดเลือกโหมดซ้ำ) */}
+            {mode === "team" && (
+              // แถวเดียว (หัวเล็ก "จำนวนทีม" + ปุ่มเรียงข้างกัน) แทนสองบรรทัดเดิม — ประหยัดความสูงให้พอดีกับที่ว่างที่มีจริงในการ์ด
+              <div className="mode-card__teamcount" onClick={(e) => e.stopPropagation()} role="group" aria-label="จำนวนทีม">
+                <span className="mode-card__teamcount-head">จำนวนทีม</span>
+                <div className="segmented">
+                  {TEAM_COUNT_CHOICES.map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      className={teamCount === n ? "seg seg--active" : "seg"}
+                      aria-pressed={teamCount === n}
+                      onClick={() => setTeamCount(n)}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           <button
             type="button"
