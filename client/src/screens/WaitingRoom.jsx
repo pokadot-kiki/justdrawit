@@ -37,8 +37,8 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }
   const teamsReady = teams.every((t) => teamSize(t) >= TEAM_MIN);
   const myTeam = room.players.find((p) => p.id === me?.playerId)?.team ?? null;
 
-  // แก้ชื่อทีม: สมาชิกแก้ได้แค่ทีมตัวเอง หัวห้องแก้ได้ทุกทีม · server ตรวจซ้ำอีกชั้นเสมอ (ยาว 1-16 ไม่ซ้ำ ไม่มีอักขระควบคุม)
-  const canRenameTeam = (t) => isHost || myTeam === t;
+  // แก้ชื่อทีม: เฉพาะสมาชิกของทีมนั้นเอง หัวห้องไม่มีสิทธิ์พิเศษเรื่องนี้เลย (เปลี่ยนจากรอบก่อน) · server ตรวจซ้ำอีกชั้นเสมอ (ยาว 1-16 ไม่ซ้ำ ไม่มีอักขระควบคุม ไม่มีคำไม่เหมาะสม)
+  const canRenameTeam = (t) => myTeam === t;
   function startEditTeam(t) {
     setEditingTeam(t);
     setEditValue(teamNames[t] || `ทีม ${t}`);

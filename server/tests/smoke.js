@@ -3643,24 +3643,38 @@ async function main() {
       ["A", "B", "C", "D"].map((t) => st.players.filter((p) => p.team === t).length), [2, 2, 2, 2]);
 
     // ---------- ตั้งชื่อทีม: ความปลอดภัย + การตรวจข้อมูล ----------
+    // รอบนี้เปลี่ยนกติกา: หัวห้องไม่มีสิทธิ์พิเศษเรื่องชื่อทีมเลย เปลี่ยนได้เฉพาะสมาชิกของทีมนั้นเอง (รวมหัวห้องถ้าหัวห้องอยู่ทีมนั้น)
     // จำกัดความถี่เป็นต่อ "socket" ไม่ใช่ต่อห้อง จึงกระจายงานทดสอบไปคนละ socket เพื่อไม่ให้ไปชนโควตากันเองข้ามจุดประสงค์
-    // (rateOk นับทุกครั้งที่ "เรียกถึง" ไม่ว่าสุดท้ายจะผ่านการตรวจชื่อหรือไม่ — คนละเรื่องกับ H ที่ใช้เทสจำนวนน้อยครั้งด้านล่าง)
+    // (rateOk นับทุกครั้งที่ "เรียกถึง" ไม่ว่าสุดท้ายจะผ่านการตรวจชื่อหรือไม่)
+    const c0chat = H.dump().length;
     P5.socket.emit("set_team_name", { team: "C", name: "มังกรไฟ" }); // สมาชิกเปลี่ยนชื่อทีมตัวเองได้
     await wait(150);
     check("สมาชิกเปลี่ยนชื่อทีมตัวเองสำเร็จ", last(H, "room_update").settings.teamNames.C, "มังกรไฟ");
+    const chatMsg = H.dump().slice(c0chat).find((e) => e.name === "chat_message")?.args[0];
+    check("เปลี่ยนชื่อทีมสำเร็จ → แชทห้องรอขึ้นข้อความว่าใครเปลี่ยนเป็นอะไร (ถึงทั้งห้อง)",
+      [chatMsg?.playerId, chatMsg?.name, chatMsg?.text], [P5.socket.id, "P5", 'เปลี่ยนชื่อทีมเป็น "มังกรไฟ"']);
 
     const beforeRename = last(H, "room_update");
-    P5.socket.emit("set_team_name", { team: "D", name: "ขโมยชื่อ" }); // สมาชิกทีม C แก้ชื่อทีม D ไม่ได้ (ไม่ใช่ทีมตัวเอง ไม่ใช่หัวห้อง)
+    P5.socket.emit("set_team_name", { team: "D", name: "ขโมยชื่อ" }); // สมาชิกทีม C แก้ชื่อทีม D ไม่ได้ (ไม่ใช่ทีมตัวเอง)
     await wait(150);
-    check("สมาชิกเปลี่ยนชื่อทีมอื่นไม่ได้ (เงียบ ไม่มี error ไม่มีการเปลี่ยนแปลง)",
+    check("ลูกห้องเปลี่ยนชื่อทีมอื่นไม่ได้ (เงียบ ไม่มี error ไม่มีการเปลี่ยนแปลง)",
       [last(H, "room_update").settings.teamNames.D, last(H, "room_update") === beforeRename], ["ทีมเหลือง", true]);
 
-    H.socket.emit("set_team_name", { team: "D", name: "ทีมของหัวห้อง" }); // หัวห้องเปลี่ยนชื่อทีมไหนก็ได้ (H ใช้โควตาไป 1 ครั้ง)
+    const beforeRename2 = last(H, "room_update");
+    H.socket.emit("set_team_name", { team: "D", name: "หัวห้องขอลอง" }); // H เป็นหัวห้องแต่ไม่ได้อยู่ทีม D → เปลี่ยนไม่ได้เหมือนกัน (กติกาใหม่)
     await wait(150);
-    check("หัวห้องเปลี่ยนชื่อทีมอื่นได้ (ไม่ใช่ทีมตัวเอง)", last(H, "room_update").settings.teamNames.D, "ทีมของหัวห้อง");
+    check("หัวห้องเปลี่ยนชื่อทีมอื่นไม่ได้เหมือนกัน (ไม่มีสิทธิ์พิเศษอีกต่อไป)",
+      [last(H, "room_update").settings.teamNames.D, last(H, "room_update") === beforeRename2], ["ทีมเหลือง", true]);
+
+    H.socket.emit("set_team_name", { team: "A", name: "ทีมของหัวห้อง" }); // H เปลี่ยนชื่อทีมตัวเอง (A) ได้ตามปกติ เหมือนสมาชิกทั่วไป
+    await wait(150);
+    check("หัวห้องเปลี่ยนชื่อทีมตัวเอง (A) ได้ตามปกติ เหมือนสมาชิกคนอื่น", last(H, "room_update").settings.teamNames.A, "ทีมของหัวห้อง");
+
+    P7.socket.emit("set_team_name", { team: "D", name: "ทีมจริงของดี" }); // สมาชิกทีม D ตั้งชื่อทีมตัวเอง ไว้ใช้ทดสอบชื่อซ้ำต่อ
+    await wait(150);
+    check("สมาชิกทีม D เปลี่ยนชื่อทีมตัวเองสำเร็จ", last(H, "room_update").settings.teamNames.D, "ทีมจริงของดี");
 
     // การตรวจข้อมูล (ยาวเกิน ว่าง ไม่ใช่สตริง มีอักขระควบคุม) — ให้ P6 (สมาชิกทีม C เหมือน P5) เปลี่ยนชื่อทีมตัวเองแทน
-    // กันไม่ให้ไปกินโควตาของ H ที่เก็บไว้ทดสอบ "ชื่อซ้ำ" กับ "จำกัดความถี่" ต่อ
     P6.socket.emit("set_team_name", { team: "C", name: "a".repeat(17) });
     checkOk("ยาวเกิน 16 ตัวอักษร → INVALID_TEAM_NAME", (await P6.tryWait("game_error", (e) => e.code === "INVALID_TEAM_NAME", 1000)) !== null);
     P6.socket.emit("set_team_name", { team: "C", name: "a".repeat(16) }); // ยาวพอดี 16 ตัว ต้องผ่าน
@@ -3672,19 +3686,22 @@ async function main() {
     checkOk("ชื่อไม่ใช่สตริง → INVALID_TEAM_NAME", (await P6.tryWait("game_error", (e) => e.code === "INVALID_TEAM_NAME", 1000)) !== null);
     P6.socket.emit("set_team_name", { team: "C", name: "เจ้า\u0001ปัญหา" }); // มีอักขระควบคุม
     checkOk("มีอักขระควบคุม → INVALID_TEAM_NAME", (await P6.tryWait("game_error", (e) => e.code === "INVALID_TEAM_NAME", 1000)) !== null);
+    P6.socket.emit("set_team_name", { team: "C", name: "เหี้ยมาก" }); // มีคำไม่เหมาะสม
+    checkOk("ชื่อทีมมีคำไม่เหมาะสม → INAPPROPRIATE_NAME", (await P6.tryWait("game_error", (e) => e.code === "INAPPROPRIATE_NAME", 1000)) !== null);
     check("ชื่อทีม C ยังเป็นค่าก่อนหน้า ไม่ถูกเปลี่ยนด้วยคำขอที่ผิดทั้งหมด", last(H, "room_update").settings.teamNames.C, "a".repeat(16));
 
-    // ชื่อซ้ำกับทีมอื่น — H ลองตั้งชื่อทีม A ให้ซ้ำกับชื่อทีม D ที่ตั้งไปแล้ว (H ใช้โควตาไปอีก 1 ครั้ง รวมเป็น 2/6)
-    H.socket.emit("set_team_name", { team: "A", name: "ทีมของหัวห้อง" });
-    checkOk("ชื่อซ้ำกับทีมอื่นในห้องเดียวกัน → TEAM_NAME_TAKEN", (await H.tryWait("game_error", (e) => e.code === "TEAM_NAME_TAKEN", 1000)) !== null);
-    check("ชื่อทีม A ยังเป็นค่าเริ่มต้น ไม่ถูกเปลี่ยนด้วยคำขอที่ซ้ำ", last(H, "room_update").settings.teamNames.A, "ทีมแดง");
+    // ชื่อซ้ำกับทีมอื่น — ใช้ P5 (ทีม C เหมือน P6 แต่ยังไม่ได้ใช้โควตาไปกับการตรวจข้อมูลด้านบน) ลองตั้งชื่อทีมตัวเองให้ซ้ำกับชื่อทีม D ที่ P7 ตั้งไปแล้ว
+    // (P6 ใช้โควตาไป 6/6 แล้วจากการตรวจข้อมูล 6 แบบด้านบน ถ้าใช้ P6 ต่อจะโดน TOO_MANY_ATTEMPTS แทน ไม่ได้ทดสอบ TEAM_NAME_TAKEN จริง)
+    P5.socket.emit("set_team_name", { team: "C", name: "ทีมจริงของดี" });
+    checkOk("ชื่อซ้ำกับทีมอื่นในห้องเดียวกัน → TEAM_NAME_TAKEN", (await P5.tryWait("game_error", (e) => e.code === "TEAM_NAME_TAKEN", 1000)) !== null);
+    check("ชื่อทีม C ยังเป็นค่าเดิม ไม่ถูกเปลี่ยนด้วยคำขอที่ซ้ำ", last(H, "room_update").settings.teamNames.C, "a".repeat(16));
 
-    // ---------- จำกัดความถี่ (ไม่เกิน 6 ครั้ง/10 วิ) — ใช้ P7 (สมาชิกทีม D) เปลี่ยนชื่อทีมตัวเอง เป็น socket ที่ยังไม่เคยเรียกเลย ----------
-    for (let i = 0; i < 6; i++) P7.socket.emit("set_team_name", { team: "D", name: `ชื่อที่ ${i}` });
+    // ---------- จำกัดความถี่ (ไม่เกิน 6 ครั้ง/10 วิ) — ใช้ P8 (สมาชิกทีม D เหมือน P7) เป็น socket ที่ยังไม่เคยเรียกเลย ----------
+    for (let i = 0; i < 6; i++) P8.socket.emit("set_team_name", { team: "D", name: `ชื่อที่ ${i}` });
     await wait(200);
-    P7.socket.emit("set_team_name", { team: "D", name: "เกินโควตา" });
+    P8.socket.emit("set_team_name", { team: "D", name: "เกินโควตา" });
     checkOk("เปลี่ยนชื่อถี่เกิน 6 ครั้ง/10วิ ครั้งที่ 7 → TOO_MANY_ATTEMPTS",
-      (await P7.tryWait("game_error", (e) => e.code === "TOO_MANY_ATTEMPTS", 1000)) !== null);
+      (await P8.tryWait("game_error", (e) => e.code === "TOO_MANY_ATTEMPTS", 1000)) !== null);
     check("ชื่อทีม D ยังเป็นค่าของครั้งที่ 6 ไม่ใช่ 'เกินโควตา'", last(H, "room_update").settings.teamNames.D, "ชื่อที่ 5");
 
     // ---------- ความปลอดภัย: ตั้งชื่อทีมให้ตรงกับรหัสห้องย่อยของอีกทีม/รหัสทีมเฉยๆ ต้องไม่ทำให้ข้อมูลรั่วข้ามทีม ----------
@@ -3740,6 +3757,60 @@ async function main() {
       ["A", "B", "C", "D"].every((t) => gameEnd.teamRanking.some((r) => r.team === t)));
 
     for (const P of people) P.socket.disconnect();
+  });
+
+  await runPart("43. ตัวกรองคำไม่เหมาะสม (ชื่อเล่น + ชื่อทีม)", async () => {
+    const { hasBadWord } = require("../profanity");
+
+    // ---------- หน่วยฟังก์ชันตรงๆ: ชื่อสุ่มอัตโนมัติ 400 แบบ (20 สัตว์ × 20 คำน่ารัก ของจริงจาก client/src/playerName.js) ต้องไม่โดนบล็อกสักแบบ ----------
+    const ANIMALS = ["แมว", "เพนกวิน", "หมี", "กระต่าย", "แพนด้า", "เป็ด", "หมูน้อย", "ช้างน้อย", "กบ", "ปลาหมึก", "นกฮูก", "จิ้งจอก", "ลูกหมา", "ฮิปโป", "แกะ", "ยีราฟ", "โลมา", "เต่า", "ลิงน้อย", "แฮมสเตอร์"];
+    const CUTE_WORDS = ["ขี้เซา", "ซ่า", "พุงกลม", "ใจดี", "ขี้เล่น", "ตัวจิ๋ว", "ร่าเริง", "สดใส", "ขยันวาด", "ใจกล้า", "อารมณ์ดี", "ยิ้มแป้น", "ฟูฟ่อง", "ช่างฝัน", "ว่องไว", "ขี้อาย", "ใจฟู", "หัวใส", "ตาโต", "ซนน่ารัก"];
+    check("20 สัตว์ × 20 คำน่ารัก = 400 แบบพอดี (กันพลาดคัดลอกลิสต์มาไม่ครบ)", ANIMALS.length * CUTE_WORDS.length, 400);
+    const blockedNames = [];
+    for (const a of ANIMALS) for (const c of CUTE_WORDS) if (hasBadWord(a + c)) blockedNames.push(a + c);
+    check("ชื่อสุ่มอัตโนมัติทั้ง 400 แบบไม่มีแบบไหนโดนบล็อก", blockedNames, []);
+
+    // ---------- หน่วยฟังก์ชัน: คำหยาบตรงๆ · เว้นวรรคแทรก · จุดคั่น · ตัวซ้ำ · เลขแทนตัวอักษร · zero-width ต้องถูกจับได้หมด ----------
+    const mustBlock = [
+      "fuck", "FuCk", "f u c k", "f.u.c.k", "f-u-c-k", "fuuuuuck",
+      "a55hole", "a$$hole", "f​uck", "ไอสัส", "ไ-อ-ส-ัส",
+      "เหี้ย", "เ ห ี้ ย", "เหี้ยยยย", "ไอ.เหี้ย", "ไอ-ควย",
+    ];
+    const notBlocked = mustBlock.filter((w) => !hasBadWord(w));
+    check("คำหยาบตรงๆ/เว้นวรรคแทรก/จุดคั่น/ตัวซ้ำ/เลขแทนตัวอักษร/zero-width ถูกจับได้ทุกแบบ", notBlocked, []);
+
+    // ---------- หน่วยฟังก์ชัน: ชื่อปกติที่บังเอิญมีคำต้องห้ามเป็นส่วนย่อย ต้องไม่โดนบล็อกผิด (รายการคำยกเว้น) ----------
+    const mustPass = ["class", "classic", "password", "assassin", "glass", "hello world", "แมวขี้เซา", "เพนกวินซ่า", "cockpit", "cocktail"];
+    const wronglyBlocked = mustPass.filter((w) => hasBadWord(w));
+    check("ชื่อปกติที่มีคำยกเว้นซ้อนอยู่ (class/password/ฯลฯ) ไม่โดนบล็อกผิด", wronglyBlocked, []);
+
+    // ---------- ผ่าน socket จริง: create_room / join_room / ai_start ----------
+    const H = track(await connect());
+    let r = await emitAck(H.socket, "create_room", { name: "fuckyou", avatar: 0 });
+    check("create_room ชื่อหยาบ → INAPPROPRIATE_NAME ไม่สร้างห้อง", [r.ok, r.error], [false, "INAPPROPRIATE_NAME"]);
+    r = await emitAck(H.socket, "create_room", { name: "ผู้เล่นดี", avatar: 0 });
+    check("create_room ชื่อปกติยังสร้างห้องได้ตามปกติ", r.ok, true);
+    const code = r.code;
+
+    const G = track(await connect());
+    r = await emitAck(G.socket, "join_room", { code, name: "เหี้ยมาก", avatar: 0 });
+    check("join_room ชื่อหยาบ → INAPPROPRIATE_NAME ไม่เข้าห้อง", [r.ok, r.error], [false, "INAPPROPRIATE_NAME"]);
+    r = await emitAck(G.socket, "join_room", { code, name: "เพื่อนดี", avatar: 0 });
+    check("join_room ชื่อปกติยังเข้าห้องได้ตามปกติ", r.ok, true);
+
+    const S = track(await connect());
+    S.socket.emit("ai_start", { name: "ไอควย" });
+    checkOk("ai_start ชื่อหยาบ → game_error INAPPROPRIATE_NAME", (await S.tryWait("game_error", (e) => e.code === "INAPPROPRIATE_NAME", 1500)) !== null);
+    S.socket.emit("ai_start", { name: "นักวาดมือดี" });
+    checkOk("ai_start ชื่อปกติเริ่มเกมได้ตามปกติ", (await S.tryWait("ai_round_start", null, 2000)) !== null);
+
+    // ---------- ห้าม log ชื่อที่ถูกปัดเต็มๆ ลง server ----------
+    const logText = serverLog.join("\n");
+    check("log ของ server ไม่มีคำหยาบที่ถูกปัดไปเต็มๆ เลย", ["fuckyou", "เหี้ยมาก", "ไอควย"].filter((w) => logText.includes(w)), []);
+
+    H.socket.disconnect();
+    G.socket.disconnect();
+    S.socket.disconnect();
   });
 
   // ปิดทุก socket เพื่อให้โปรเซสจบได้

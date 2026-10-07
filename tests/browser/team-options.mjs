@@ -94,13 +94,21 @@ try {
   await sleep(800);
   ck("หัวห้องเปลี่ยนชื่อทีมตัวเองสำเร็จ (เห็นในห้องรอ)", await H.ev(`document.querySelector(".team-col--A .team-col__name")?.textContent.includes("มังกรทอง")`));
   ck("คนอื่นในห้องเห็นชื่อทีมใหม่ด้วย (room_update ถึงทุกคน)", await guests[6].ev(`document.querySelector(".team-col--A .team-col__name")?.textContent.includes("มังกรทอง")`));
+  ck("แชทห้องรอขึ้นข้อความว่าใครเปลี่ยนชื่อทีมเป็นอะไร (เห็นที่คนอื่นด้วย)",
+    await guests[6].ev(`[...document.querySelectorAll(".lb-chat__row")].some(e=>e.textContent.includes("Host")&&e.textContent.includes("มังกรทอง"))`));
 
-  await click(H, ".team-col--D .team-col__rename"); await sleep(300); // หัวห้องเปลี่ยนชื่อทีม D ได้ (ไม่ใช่ทีมตัวเอง)
-  await typeInto(H, ".team-col--D .team-col__name-input", "อินทรีเงิน");
+  // หัวห้องไม่มีสิทธิ์พิเศษอีกต่อไป — ปุ่มเปลี่ยนชื่อทีม D (ไม่ใช่ทีมตัวเอง) ต้องไม่โผล่ให้หัวห้องกดเลย
+  ck("หัวห้องไม่เห็นปุ่มเปลี่ยนชื่อทีมอื่น (ไม่มีสิทธิ์พิเศษอีกต่อไป)", await H.ev(`!document.querySelector(".team-col--D .team-col__rename")`));
+
+  // สมาชิกจริงของทีม D (ALL[6] = guests[5] = P7 ตาม teamOfTab) เปลี่ยนชื่อทีมตัวเองแทน
+  const memberD = guests[5];
+  await act(memberD);
+  await click(memberD, ".team-col--D .team-col__rename"); await sleep(300);
+  await typeInto(memberD, ".team-col--D .team-col__name-input", "อินทรีเงิน");
   await sleep(100);
-  await H.ev(`document.querySelector(".team-col--D .team-col__name-input")?.blur()`);
+  await memberD.ev(`document.querySelector(".team-col--D .team-col__name-input")?.blur()`);
   await sleep(800);
-  ck("หัวห้องเปลี่ยนชื่อทีมอื่นได้ด้วย", await H.ev(`document.querySelector(".team-col--D .team-col__name")?.textContent.includes("อินทรีเงิน")`));
+  ck("สมาชิกจริงของทีม D เปลี่ยนชื่อทีมตัวเองได้", await H.ev(`document.querySelector(".team-col--D .team-col__name")?.textContent.includes("อินทรีเงิน")`));
 
   // สมาชิกทีม C (guests[4] = P6 อยู่ทีม C) ลองกดปุ่มเปลี่ยนชื่อทีม A (ไม่ใช่ทีมตัวเอง) — ปุ่มต้องไม่โผล่ให้กดเลย
   ck("สมาชิกทีมอื่นไม่เห็นปุ่มเปลี่ยนชื่อทีม A เลย (ปุ่มกดได้เฉพาะหัวห้อง/เจ้าของทีม)",

@@ -275,8 +275,8 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
     const onError = (err) => {
       // AI ไม่ว่าง: ด่านเดินต่อ ไม่เสียชีวิต ส่งภาพใหม่ได้ (App โชว์ Toast ให้แล้ว)
       if (err?.code === "AI_UNAVAILABLE") setThink(false);
-      // ชื่อไม่ผ่าน: ยังไม่ได้เริ่มเกมจริง กลับไปกรอกใหม่
-      if (err?.code === "INVALID_NAME" && phaseRef.current === "starting") setPhase("intro");
+      // ชื่อไม่ผ่าน (ว่าง หรือมีคำไม่เหมาะสม): ยังไม่ได้เริ่มเกมจริง กลับไปกรอกใหม่
+      if ((err?.code === "INVALID_NAME" || err?.code === "INAPPROPRIATE_NAME") && phaseRef.current === "starting") setPhase("intro");
     };
     socket.on("ai_round_start", onRoundStart);
     socket.on("ai_guess", onGuess);

@@ -8,6 +8,7 @@ const crypto = require("crypto");
 const path = require("path");
 const { Server } = require("socket.io");
 const { cleanName } = require("./clean");
+const { hasBadWord } = require("./profanity");
 const leaderboard = require("./leaderboard");
 const ai = require("./ai");
 const aiDrawings = require("./ai-drawings");
@@ -1621,6 +1622,7 @@ io.on("connection", (socket) => {
     if (typeof callback !== "function") return;
     const name = cleanName(data?.name);
     if (!name) return callback({ ok: false, error: "INVALID_NAME" });
+    if (hasBadWord(name)) return callback({ ok: false, error: "INAPPROPRIATE_NAME" });
 
     leaveRoom(socket);
     dropSoloSession(socket.data.pid);
@@ -1652,6 +1654,7 @@ io.on("connection", (socket) => {
     const room = rooms.get(code);
 
     if (!name) return callback({ ok: false, error: "INVALID_NAME" });
+    if (hasBadWord(name)) return callback({ ok: false, error: "INAPPROPRIATE_NAME" });
     if (!room) return callback({ ok: false, error: "ROOM_NOT_FOUND" });
     // เป็นสมาชิกห้องนี้อยู่แล้ว (เช่นรีเฟรชแล้วกดเข้าห้องเดิมภายในเวลารอ) = กลับเข้าที่เดิม ไม่สร้างผู้เล่นซ้ำ
     if (room.players.some((p) => p.id === socket.data.pid)) return callback(rejoinRoom(socket, room));
@@ -1754,6 +1757,7 @@ io.on("connection", (socket) => {
 
   // ตั้งชื่อทีม (ป้ายแสดงผลเท่านั้น รหัสข้างในยังเป็น A/B/C/D) — ตอนอยู่ในห้องรอ เฉพาะโหมดทีม
   // สมาชิกตั้งได้เฉพาะทีมตัวเอง · หัวห้องตั้งได้ทุกทีม
+  // เปลี่ยนชื่อทีม — เฉพาะ "สมาชิกของทีมนั้นเอง" เท่านั้น หัวห้องไม่มีสิทธิ์พิเศษเรื่องนี้เลย (ย้ำตามที่ผู้ใช้สั่ง)
   socket.on("set_team_name", (data) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room || room.status === "playing" || !isTeamMode(room)) return;
@@ -1762,8 +1766,7 @@ io.on("connection", (socket) => {
     if (!teams.includes(team)) return;
     const player = room.players.find((p) => p.id === socket.data.pid);
     if (!player) return;
-    const isHost = room.hostId === socket.data.pid;
-    if (!isHost && player.team !== team) return; // สมาชิกเปลี่ยนชื่อได้แค่ทีมตัวเอง
+    if (player.team !== team) return; // เปลี่ยนได้แค่ทีมตัวเอง ไม่มีข้อยกเว้นให้ใคร
     if (!rateOk(socket, "teamname", TEAMNAME_MAX, TEAMNAME_WINDOW_MS)) {
       return socket.emit("game_error", { code: "TOO_MANY_ATTEMPTS", message: "เปลี่ยนชื่อทีมถี่เกินไป ลองใหม่สักครู่" });
     }
@@ -1771,12 +1774,17 @@ io.on("connection", (socket) => {
     if (!name) {
       return socket.emit("game_error", { code: "INVALID_TEAM_NAME", message: "ชื่อทีมต้องยาว 1-16 ตัวอักษร ไม่มีอักขระควบคุม" });
     }
+    if (hasBadWord(name)) {
+      return socket.emit("game_error", { code: "INAPPROPRIATE_NAME", message: "ชื่อนี้ใช้ไม่ได้ ลองตั้งชื่ออื่นนะ" });
+    }
     const dup = teams.some((t) => t !== team && teamNameOf(room, t) === name);
     if (dup) {
       return socket.emit("game_error", { code: "TEAM_NAME_TAKEN", message: "ชื่อนี้ถูกใช้โดยอีกทีมแล้ว" });
     }
     room.settings.teamNames[team] = name;
     io.to(room.code).emit("room_update", roomState(room));
+    // บอกในแชทห้องรอด้วยว่าใครเปลี่ยนเป็นอะไร (ส่งเป็นข้อความแชทปกติจากคนที่เปลี่ยน ไม่เพิ่ม event ใหม่)
+    io.to(room.code).emit("chat_message", { playerId: socket.data.pid, name: player.name, text: `เปลี่ยนชื่อทีมเป็น "${name}"` });
   });
 
   // หน้าสรุปผล: ใครกด "กลับห้องรอ" ก็พาทุกคนกลับพร้อมกัน (server เช็คว่าเกมจบแล้วจริงและคนกดอยู่ในห้อง)
@@ -2023,6 +2031,7 @@ io.on("connection", (socket) => {
   socket.on("ai_start", (data) => {
     const name = cleanName(data?.name);
     if (!name) return socket.emit("game_error", { code: "INVALID_NAME", message: "กรุณาใส่ชื่อ" });
+    if (hasBadWord(name)) return socket.emit("game_error", { code: "INAPPROPRIATE_NAME", message: "ชื่อนี้ใช้ไม่ได้ ลองตั้งชื่ออื่นนะ" });
     leaveRoom(socket); // ผู้เล่นหนึ่งคนอยู่ได้อย่างเดียว: ห้อง หรือ Solo
     stopSolo(socket);  // กดเริ่มซ้ำ = เริ่มเกมใหม่ เกมเก่าทิ้ง
     dropSoloSession(socket.data.pid); // เกมเก่าที่ค้างรอรีเฟรชจาก socket ตัวก่อนหน้า (ถ้ามี)
