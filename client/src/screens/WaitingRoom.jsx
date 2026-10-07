@@ -338,8 +338,9 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
               )}
 
               <div className="lb-roster__list">
+                {/* 4 ทีม: จัดเป็นตาราง 2×2 แทนสี่คอลัมน์เรียงกัน (ทุกทีมได้ความกว้างเท่า 2 ทีม อ่านชื่อทีมได้ง่ายกว่าคอลัมน์แคบจัดเดียว) */}
                 {teamMode ? (
-                  <div className="lb-teams" style={{ "--team-cols": teams.length }}>
+                  <div className={`lb-teams${teams.length === 4 ? " lb-teams--grid2x2" : ""}`} style={{ "--team-cols": teams.length === 4 ? 2 : teams.length }}>
                     {teams.map((t) => (
                       <section className={`team-col team-col--${t}`} key={t} aria-label={teamLabel(t)}>
                         <h3 className="team-col__title">
@@ -357,23 +358,28 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
                               }}
                             />
                           ) : (
-                            <span className="team-col__name" title={teamLabel(t)}>
-                              <span className="team-col__name-text">{teamLabel(t)}</span>
-                              {canRenameTeam(t) && (
+                            <span className="team-col__name">
+                              {/* กดชื่อทีมเพื่อเปลี่ยนชื่อได้เลย (เดิมเป็นปุ่มดินสอแยก — เอาออกเพื่อคืนที่ให้ตัวอักษรชื่อทีม อย่างน้อย 6 ตัวก่อนตัด ...) */}
+                              {canRenameTeam(t) ? (
                                 <button
                                   type="button"
-                                  className="team-col__rename"
+                                  className="team-col__name-text team-col__name-text--edit"
                                   aria-label={`เปลี่ยนชื่อ${teamLabel(t)}`}
-                                  title="เปลี่ยนชื่อทีม"
+                                  title="กดเพื่อเปลี่ยนชื่อทีม"
                                   onClick={() => startEditTeam(t)}
                                 >
-                                  <Icon name="pen" size={13} />
+                                  {teamLabel(t)}
                                 </button>
+                              ) : (
+                                <span className="team-col__name-text" title={teamLabel(t)}>
+                                  {teamLabel(t)}
+                                </span>
                               )}
                               {/* แทนคำว่า "(ทีมคุณ)" ด้วยป้ายเล็ก "คุณ" — ป้ายเดียวกับที่ใช้ชี้แถวตัวเองทุกที่ในแอป */}
                               {myTeam === t && <YouTag />}
                             </span>
                           )}
+                          {/* ชื่อทีมมีที่ขั้นต่ำ 6 ตัวอักษรก่อนตัด ... (ดู CSS min-width: 6ch) — ถ้าคอลัมน์แคบจนไม่พอจริง แถวนี้จะตกไปบรรทัดใหม่เอง (flex-wrap) ไม่บีบชื่อต่อ */}
                           <span className="team-col__count">{teamSize(t)} คน</span>
                         </h3>
                         <div className="lb-plist">

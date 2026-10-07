@@ -2382,11 +2382,13 @@ select[class] {
 
 .team-col__title {
   display: flex;
-  flex-wrap: nowrap;
+  /* เดิม nowrap แล้วบีบชื่อทีมจนสั้นกว่าที่อ่านได้ — ตอนนี้ปล่อยให้ "จำนวนคน" ตกไปบรรทัดใหม่เองได้
+     ถ้าแถวไม่พอจริงๆ (ชื่อกินขั้นต่ำ 6 ตัวอักษรแล้ว + ป้ายคุณ) ไม่ต้องบีบชื่อทีมต่อให้สั้นกว่า 6 ตัว */
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 6px;
-  min-width: 0; /* เป็น grid item ของ .team-col (display:grid) เองก็มี min-width:auto โดยปริยาย ถ้าไม่ตั้งเป็น 0 แถวนี้จะกว้างเกินคอลัมน์แคบๆ (4 ทีม) แล้วล้นทับคอลัมน์ข้างๆ แทนที่จะยอมหด */
+  gap: 2px 6px;
+  min-width: 0; /* เป็น grid item ของ .team-col (display:grid) เองก็มี min-width:auto โดยปริยาย ถ้าไม่ตั้งเป็น 0 แถวนี้จะกว้างเกินคอลัมน์แคบๆ แล้วล้นทับคอลัมน์ข้างๆ แทนที่จะยอมหด */
   margin: 0;
   font-family: var(--font-head);
   font-weight: 600;
@@ -2423,11 +2425,9 @@ select[class] {
   font-size: 11px;
 }
 
-/* ชื่อทีม (กดดินสอเปลี่ยนชื่อได้ — หัวห้องเปลี่ยนได้ทุกทีม สมาชิกเปลี่ยนได้แค่ทีมตัวเอง)
-   ชื่อกับจำนวนคนต้องอยู่บรรทัดเดียวเสมอ (ไม่ตกบรรทัดแม้ชื่อทีมยาว/คอลัมน์แคบตอน 4 ทีม) — หัวใจคือ:
-   1) .team-col__name ตัวกลุ่มเอง "หดได้" (flex: 1 1 auto; min-width: 0) ภายใน .team-col__title
-   2) เฉพาะ "ตัวข้อความ" (.team-col__name-text) เท่านั้นที่ตัด ... ปุ่มดินสอ/ป้ายคุณข้างๆ ไม่หด (flex: none)
-   เดิมใส่ ellipsis ไว้ที่กลุ่มทั้งก้อน (มีทั้งข้อความ+ปุ่มข้างใน) ซึ่งเบราว์เซอร์ตัด ... ให้ไม่ได้ตามจริง เพราะไม่ใช่เนื้อความล้วน */
+/* ชื่อทีม (กดที่ชื่อเพื่อเปลี่ยนได้เลย — หัวห้องเปลี่ยนได้ทุกทีม สมาชิกเปลี่ยนได้แค่ทีมตัวเอง)
+   ชื่อทีมเห็นอย่างน้อย 6 ตัวอักษรเสมอก่อนตัด ... (min-width: 6ch บน .team-col__name-text) ไม่บีบสั้นกว่านี้
+   ถ้าแถวแคบจนไม่พอ (ชื่อ 6 ตัว + ป้ายคุณ + จำนวนคน) ให้ "จำนวนคน" ตกไปบรรทัดใหม่แทน (ดู flex-wrap ที่ .team-col__title) */
 .team-col__name {
   display: inline-flex;
   align-items: center;
@@ -2437,27 +2437,29 @@ select[class] {
 }
 
 .team-col__name-text {
-  min-width: 0;
+  min-width: 6ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.team-col__rename {
-  flex: none;
-  display: inline-grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
+/* เดิมเป็นปุ่มดินสอแยกข้างชื่อ ตอนนี้กดที่ตัวชื่อได้เลย (ประหยัดที่ คืนที่ให้ตัวอักษรชื่อทีม) — หน้าตายังเหมือนข้อความทั่วไป มีแค่เส้นใต้จุดๆ จางๆ เป็นสัญญาณว่ากดได้ + title บอกชัดอีกชั้น */
+.team-col__name-text--edit {
   border: none;
   background: transparent;
-  opacity: 0.6;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
   cursor: pointer;
+  text-decoration: underline dotted;
+  text-decoration-color: currentColor;
+  text-underline-offset: 3px;
 }
 
-.team-col__rename:hover {
-  opacity: 1;
+.team-col__name-text--edit:hover {
+  opacity: 0.75;
 }
 
 .team-col__name-input {

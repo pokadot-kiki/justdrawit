@@ -233,8 +233,10 @@
 }
 
 /* ── ตั้งค่าเกม ── */
+/* สูงแค่พอดีเนื้อหา (ไม่ยืดกินที่เหลือแบบเดิม) — ที่เหลือทั้งหมดให้กล่อง Mini Challenge (.lb-chal) กินแทน
+   กันไม่ให้มีที่ว่างโล่งใต้กล่อง "ประเภทห้อง" เหมือนก่อนหน้านี้ */
 .lb-settings {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
 }
 
 .lb-settings__grid {
@@ -327,21 +329,26 @@
   opacity: 0.6;
 }
 
-/* ── Mini Challenge 2×2 (แต่ละใบ: ไอคอนซ้าย · ชื่อ+คำอธิบายกลาง · ป้ายเปิด/ปิดขวา) ── */
+/* ── Mini Challenge 2×2 (แต่ละใบ: ไอคอนซ้าย · ชื่อ+คำอธิบายกลาง · ป้ายเปิด/ปิดขวา)
+   ขยายกินที่ที่เหลือทั้งหมดในคอลัมน์ซ้าย (หลังกล่องตั้งค่าเกมที่ตอนนี้สูงพอดีเนื้อหาแล้ว) จนขอบล่างเสมอกับคอลัมน์ขวา ── */
 .lb-chal {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .lb-chal__grid {
+  flex: 1; /* ยืดเต็มพื้นที่ที่เหลือของกล่อง .lb-chal */
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, 1fr); /* ตั้งตรงๆ ว่าสองแถวสูงเท่ากันและยืดเต็ม ไม่พึ่งพฤติกรรม align-content:normal ของ grid ที่อาจไม่เหมือนกันทุกเบราว์เซอร์ */
   gap: 8px;
+  min-height: 0;
 }
 
 .lb-ch {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: center; /* ไอคอน/ชื่อ+คำอธิบาย/ป้าย จัดกึ่งกลางแนวตั้งเทียบกับความสูงการ์ดที่ถูกยืดแล้ว */
   gap: 10px;
   padding: 8px 10px;
   text-align: left;
@@ -390,14 +397,12 @@
   line-height: 1.1;
 }
 
+/* โชว์คำอธิบายเต็ม ไม่ตัด ... (การ์ดยืดสูงพอแล้วจากการที่ .lb-chal กินที่เหลือทั้งหมด)
+   จอเตี้ยที่ที่ไม่พอจริงๆ มีการ clamp เหลือบรรทัดเดียวใน media query ด้านล่าง */
 .lb-ch__desc {
   font-size: 13px;
   line-height: 1.3;
   color: var(--muted);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .lb-ch__badge {
@@ -544,6 +549,34 @@
   height: 24px;
 }
 
+/* 4 ทีมจัดเป็น 2x2 (ทีมกว้างเท่า 2 ทีม แต่ตอนนี้ต้องการพื้นที่สูง "สองแถว" ของทีม ไม่ใช่แถวเดียวเหมือนก่อน)
+   ย่อช่องไฟ/padding เพิ่มอีกชั้นเฉพาะกรณีนี้ กันไม่ให้ต้องเลื่อนในกรอบรายชื่อที่ 1440×900/1366×768 */
+.lb-teams--grid2x2 {
+  gap: 5px;
+}
+
+.lb-teams--grid2x2 .team-col {
+  gap: 3px;
+  padding: 5px;
+}
+
+.lb-teams--grid2x2 .lb-plist {
+  gap: 2px;
+}
+
+.lb-teams--grid2x2 .lb-player {
+  padding: 2px 5px;
+}
+
+.lb-teams--grid2x2 .team-col__join {
+  min-height: 30px; /* เดิม 44px ตามกฎปุ่มสูงอย่างน้อย 44px ทั่วไป แต่ 2x2 ต้องการพื้นที่สูงมากเป็นพิเศษ (2 แถว) จึงยอมลดเฉพาะปุ่มนี้ ไม่ใช่ปุ่มหลักของเกม */
+  font-size: 13px;
+}
+
+.lb-teams--grid2x2 .team-col__title {
+  font-size: 16px;
+}
+
 .lb-mascot {
   display: grid;
   place-items: center;
@@ -674,6 +707,30 @@
   .lb-ch {
     padding: 6px 8px;
   }
+
+  /* จอเตี้ย (≤800px สูง): แชทแคบลงอีกหน่อย คืนที่ให้รายชื่อผู้เล่น — สำคัญตอน 4 ทีม (2x2) ที่ต้องการพื้นที่สูง "สองแถว" ของทีม */
+  .lb-chat {
+    flex-basis: 22%;
+    min-height: 90px;
+  }
+
+  .lb-teams--grid2x2 {
+    gap: 4px;
+  }
+
+  .lb-teams--grid2x2 .team-col {
+    gap: 2px;
+    padding: 4px;
+  }
+
+  .lb-teams--grid2x2 .lb-player .avatar-chip {
+    width: 22px;
+    height: 22px;
+  }
+
+  .lb-teams--grid2x2 .team-col__join {
+    min-height: 26px;
+  }
 }
 
 /* ต่ำมาก (≤ 700px เช่น 1024×690): ซ่อนคำอธิบายใต้ชื่อกติกา (ชื่อ + ป้ายเปิด/ปิดยังอยู่) */
@@ -756,8 +813,12 @@ body:has(.screen--lb) .audio-dock {
     text-overflow: ellipsis;
   }
 
+  /* จอเตี้ยที่เหลือพื้นที่ไม่พอ (≤800px สูง) — คำอธิบายเหลือบรรทัดเดียวเหมือนเดิม (ต้องตั้งครบ 4 อย่างนี้ ไม่ใช่แค่ line-clamp ตัวเดียว ไม่งั้น clamp ไม่ทำงานเพราะฐานไม่ได้ตั้ง -webkit-box ไว้แล้ว) */
   .screen--lb .lb-ch__desc {
+    display: -webkit-box;
     -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 }
 

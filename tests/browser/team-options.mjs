@@ -98,7 +98,7 @@ try {
   // ── ตั้งชื่อทีม (หัวห้องเปลี่ยนชื่อทีมตัวเอง และลองแก้ทีมอื่นซึ่งไม่ใช่ทีมตัวเอง) ──
   // ต้อง activate แท็บก่อนเสมอ (บทเรียนเดิมของโปรเจกต์: แท็บที่ไม่ active ทำงานช้ากว่าปกติ)
   await act(H);
-  await click(H, `.team-col--${hostTeam} .team-col__rename`); await sleep(300);
+  await click(H, `.team-col--${hostTeam} .team-col__name-text--edit`); await sleep(300);
   await typeInto(H, `.team-col--${hostTeam} .team-col__name-input`, "มังกรทอง");
   await sleep(100);
   await H.ev(`document.querySelector(".team-col--${hostTeam} .team-col__name-input")?.blur()`);
@@ -109,11 +109,11 @@ try {
     await guests[6].ev(`[...document.querySelectorAll(".lb-chat__row")].some(e=>e.textContent.includes("Host")&&e.textContent.includes("มังกรทอง"))`));
 
   // หัวห้องไม่มีสิทธิ์พิเศษอีกต่อไป — ปุ่มเปลี่ยนชื่อทีมอื่น (ไม่ใช่ทีมตัวเอง) ต้องไม่โผล่ให้หัวห้องกดเลย
-  ck("หัวห้องไม่เห็นปุ่มเปลี่ยนชื่อทีมอื่น (ไม่มีสิทธิ์พิเศษอีกต่อไป)", await H.ev(`!document.querySelector(".team-col--${otherTeam} .team-col__rename")`));
+  ck("หัวห้องไม่เห็นปุ่มเปลี่ยนชื่อทีมอื่น (ไม่มีสิทธิ์พิเศษอีกต่อไป)", await H.ev(`!document.querySelector(".team-col--${otherTeam} .team-col__name-text--edit")`));
 
   // สมาชิกจริงของทีมอื่น (memberOther) เปลี่ยนชื่อทีมตัวเองแทน
   await act(memberOther);
-  await click(memberOther, `.team-col--${otherTeam} .team-col__rename`); await sleep(300);
+  await click(memberOther, `.team-col--${otherTeam} .team-col__name-text--edit`); await sleep(300);
   await typeInto(memberOther, `.team-col--${otherTeam} .team-col__name-input`, "อินทรีเงิน");
   await sleep(100);
   await memberOther.ev(`document.querySelector(".team-col--${otherTeam} .team-col__name-input")?.blur()`);
@@ -122,7 +122,7 @@ try {
 
   // สมาชิกทีมที่สาม ลองกดปุ่มเปลี่ยนชื่อทีมหัวห้อง (ไม่ใช่ทีมตัวเอง) — ปุ่มต้องไม่โผล่ให้กดเลย
   ck("สมาชิกทีมอื่นไม่เห็นปุ่มเปลี่ยนชื่อทีมหัวห้องเลย (ปุ่มกดได้เฉพาะหัวห้อง/เจ้าของทีม)",
-    await memberThird.ev(`!document.querySelector(".team-col--${hostTeam} .team-col__rename")`));
+    await memberThird.ev(`!document.querySelector(".team-col--${hostTeam} .team-col__name-text--edit")`));
 
   // ── เลย์เอาต์ 4 ทีม ไม่ล้นจอ หลายขนาด ──
   for (const [w, h] of [[1440, 900], [1366, 768], [1024, 768]]) {
