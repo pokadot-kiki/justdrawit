@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icons";
+import { predictWords } from "../utils/predictiveText";
+import { createSpeechRecognizer } from "../utils/speechToText";
 
 /**
  * แชทของห้อง — คอลัมน์ขวาของหน้าเกม (DESIGN.md หัวข้อหน้าเกม)
@@ -24,8 +26,38 @@ const KINDS = {
 
 export default function Chat({ messages = [], meId, disabled = false, onSend, focusKey = 0 }) {
   const [text, setText] = useState("");
+  const [listening, setListening] = useState(false);
   const listRef = useRef(null);
   const inputRef = useRef(null);
+  const recognizerRef = useRef(null);
+
+  const suggestions = predictWords(text, 3);
+
+  // Initialize Speech Recognizer
+  useEffect(() => {
+    recognizerRef.current = createSpeechRecognizer({
+      onResult: (transcript) => {
+        setText(transcript);
+      },
+      onError: () => {
+        setListening(false);
+      },
+      onEnd: () => {
+        setListening(false);
+      },
+    });
+  }, []);
+
+  function toggleListening() {
+    if (!recognizerRef.current) return;
+    if (listening) {
+      recognizerRef.current.stop();
+      setListening(false);
+    } else {
+      setListening(true);
+      recognizerRef.current.start();
+    }
+  }
 
   // ข้อความใหม่มา ให้เลื่อนลงล่างสุดเสมอ
   useEffect(() => {
@@ -41,11 +73,17 @@ export default function Chat({ messages = [], meId, disabled = false, onSend, fo
   }, [focusKey]);
 
   function handleSubmit(e) {
-    e.preventDefault(); // กด Enter ในช่องนี้ = ส่ง (ฟอร์มจัดการให้เอง ไม่ต้องดักคีย์เอง)
+    if (e) e.preventDefault(); // กด Enter ในช่องนี้ = ส่ง (ฟอร์มจัดการให้เอง ไม่ต้องดักคีย์เอง)
     const value = text.trim();
     if (!value || disabled) return;
     onSend(value);
     setText("");
+  }
+
+  function handleSelectSuggestion(word) {
+    onSend(word);
+    setText("");
+    if (!disabled) inputRef.current?.focus();
   }
 
   return (
@@ -77,7 +115,32 @@ export default function Chat({ messages = [], meId, disabled = false, onSend, fo
         })}
       </div>
 
-      <form className="chat__form" onSubmit={handleSubmit}>
+      {/* Word Suggestion Candidate Pills (Predictive Text) */}
+      {!disabled && text.trim().length > 0 && suggestions.length > 0 && (
+        <div style={{ display: "flex", gap: "6px", margin: "4px 0", flexWrap: "wrap" }}>
+          {suggestions.map((word) => (
+            <button
+              key={word}
+              type="button"
+              className="btn"
+              style={{
+                fontSize: "12px",
+                padding: "2px 8px",
+                background: "#eef2ff",
+                border: "1px solid #6366f1",
+                color: "#4338ca",
+                borderRadius: "12px",
+                cursor: "pointer",
+              }}
+              onClick={() => handleSelectSuggestion(word)}
+            >
+              💡 {word}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <form className="chat__form" onSubmit={handleSubmit} style={{ display: "flex", gap: "4px" }}>
         <input
           ref={inputRef}
           className="input chat__input"
@@ -89,6 +152,22 @@ export default function Chat({ messages = [], meId, disabled = false, onSend, fo
           aria-label="ช่องทายคำ"
           onChange={(e) => setText(e.target.value)}
         />
+        {!disabled && (
+          <button
+            type="button"
+            className="btn"
+            style={{
+              padding: "0 8px",
+              background: listening ? "#ef4444" : "#f3f4f6",
+              color: listening ? "#ffffff" : "#374151",
+              border: "1px solid #d1d5db",
+            }}
+            title={listening ? "กำลังฟังเสียง..." : "ตอบด้วยเสียง (Speech-to-Text)"}
+            onClick={toggleListening}
+          >
+            🎤
+          </button>
+        )}
         <button className="btn btn--primary" type="submit" disabled={disabled || !text.trim()}>
           ส่ง
         </button>

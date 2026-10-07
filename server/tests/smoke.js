@@ -26,6 +26,7 @@ const NO_DRAWINGS_FILE = path.join(os.tmpdir(), "jdi-no-drawings.json");
 process.env.AI_DRAWINGS_FILE = NO_DRAWINGS_FILE;
 // TEST_PORT: ให้เทสรันบนพอร์ตอื่นได้ตอนที่ server จริงของผู้ใช้เปิดพอร์ต 3000 อยู่ (ไม่ต้องคัดลอกโฟลเดอร์ไปแก้เลขพอร์ต)
 const TEST_PORT = process.env.TEST_PORT || "3000";
+const ALT_PORT = process.env.ALT_PORT || String(Number(TEST_PORT) + 10);
 const URL = `http://localhost:${TEST_PORT}`;
 const SECRET_KEY = "sk-ant-TEST-SECRET-must-never-leak";
 
@@ -1567,19 +1568,19 @@ async function main() {
     await new Promise((r) => stub.listen(0, r));
     const stubUrl = `http://localhost:${stub.address().port}/v1/messages`;
 
-    // server ตัวที่สองบนพอร์ต 3001 ใช้ key ปลอม ไม่บังคับ mock จึงอยู่โหมด claude
-    const env = { ...process.env, SCORES_FILE, PORT: "3001", ANTHROPIC_API_KEY: SECRET_KEY, AI_API_URL: stubUrl, AI_NEXT_DELAY_MS: "300", AI_MODEL_DIR: path.join(os.tmpdir(), "jdi-no-model") }; // ชี้โมเดลไปที่ที่ไม่มีไฟล์ = ถอยมา claude
+    // server ตัวที่สองบนพอร์ต ALT_PORT ใช้ key ปลอม ไม่บังคับ mock จึงอยู่โหมด claude
+    const env = { ...process.env, SCORES_FILE, PORT: ALT_PORT, ANTHROPIC_API_KEY: SECRET_KEY, AI_API_URL: stubUrl, AI_NEXT_DELAY_MS: "300", AI_MODEL_DIR: path.join(os.tmpdir(), "jdi-no-model") }; // ชี้โมเดลไปที่ที่ไม่มีไฟล์ = ถอยมา claude
     delete env.AI_MODE; delete env.AI_MOCK_CHANCE; delete env.AI_TIME_OVERRIDE;
     const child2 = spawn(process.execPath, ["index.js"], { cwd: SERVER_DIR, stdio: "ignore", env });
     try {
       let up = false;
       for (let i = 0; i < 100 && !up; i++) {
-        up = await fetch("http://localhost:3001/test.html").then((r) => r.ok).catch(() => false);
+        up = await fetch(`http://localhost:${ALT_PORT}/test.html`).then((r) => r.ok).catch(() => false);
         if (!up) await new Promise((r) => setTimeout(r, 100));
       }
       checkOk("server ตัวที่สองเปิดได้", up);
 
-      const sock = io("http://localhost:3001", { transports: ["websocket"] });
+      const sock = io(`http://localhost:${ALT_PORT}`, { transports: ["websocket"] });
       const P = track(sock);
       await new Promise((r) => sock.on("connect", r));
 
@@ -1608,7 +1609,7 @@ async function main() {
       const err = await P.tryWait("game_error", (e) => e.code === "AI_UNAVAILABLE", 3000);
       checkOk("API ตอบ 500 → game_error AI_UNAVAILABLE", err !== null);
       checkOk("ภาพที่สองครบ 4 วิ เรียก API จริง และบอกคำที่ผิดไปแล้ว", requests.length === 2 && requests[1].body.includes("ยีราฟ"));
-      checkOk("API พังแล้ว server ไม่ล่ม", await fetch("http://localhost:3001/test.html").then((r) => r.ok).catch(() => false));
+      checkOk("API พังแล้ว server ไม่ล่ม", await fetch(`http://localhost:${ALT_PORT}/test.html`).then((r) => r.ok).catch(() => false));
       check("เรียก AI ไม่ได้ ไม่เสียชีวิตและไม่จบด่าน", (await P.quiet("ai_round_end", 300)).length, 0);
 
       // ปลายทางไม่ตอบเลย (เชื่อมต่อไม่ได้) ก็ต้องไม่ล่ม
@@ -1712,17 +1713,17 @@ async function main() {
     fs.copyFileSync(path.join(modelDir, "config.json"), path.join(brokenDir, "config.json"));
     fs.writeFileSync(path.join(brokenDir, "model.onnx"), "ไม่ใช่โมเดล");
     for (const [label, dir, expected] of [["มีโมเดล", modelDir, "model"], ["ไฟล์โมเดลเสีย", brokenDir, "mock"], ["ไม่มีโมเดล", path.join(os.tmpdir(), "jdi-no-model"), "mock"]]) {
-      const env = { ...process.env, SCORES_FILE, PORT: "3001", AI_MODEL_DIR: dir, AI_NEXT_DELAY_MS: "300" };
+      const env = { ...process.env, SCORES_FILE, PORT: ALT_PORT, AI_MODEL_DIR: dir, AI_NEXT_DELAY_MS: "300" };
       delete env.AI_MODE; delete env.AI_MOCK_CHANCE; delete env.AI_TIME_OVERRIDE; delete env.ANTHROPIC_API_KEY;
       const child3 = spawn(process.execPath, ["index.js"], { cwd: SERVER_DIR, stdio: "ignore", env });
       try {
         let up = false;
         for (let i = 0; i < 150 && !up; i++) {
-          up = await fetch("http://localhost:3001/test.html").then((r) => r.ok).catch(() => false);
+          up = await fetch(`http://localhost:${ALT_PORT}/test.html`).then((r) => r.ok).catch(() => false);
           if (!up) await new Promise((r) => setTimeout(r, 100));
         }
         checkOk(`[${label}] server เปิดได้ (ไม่ล่ม)`, up);
-        const sock = io("http://localhost:3001", { transports: ["websocket"] });
+        const sock = io(`http://localhost:${ALT_PORT}`, { transports: ["websocket"] });
         const P = track(sock);
         await new Promise((r) => sock.on("connect", r));
         sock.emit("ai_start", { name: "ModelTest" });
@@ -1769,7 +1770,7 @@ async function main() {
       console.log("   ⚠️  ข้ามเช็คไฟล์ภาพจริง: ยังไม่ได้ดาวน์โหลด (รัน npm run get-drawings ก่อน)");
     }
 
-    // --- ผ่าน socket: server ตัวที่สองบนพอร์ต 3001 ชี้ไปไฟล์ภาพชั่วคราวที่มีแค่คำเดียว (cat = แมว, easy) ---
+    // --- ผ่าน socket: server ตัวที่สองบนพอร์ต ALT_PORT ชี้ไปไฟล์ภาพชั่วคราวที่มีแค่คำเดียว (cat = แมว, easy) ---
     // B ของทุกด่านจึงเป็น "แมว" แน่นอน (ไม่มีภาพอื่นให้สุ่ม) เทสถึงรู้คำตอบเพื่อทายถูกได้
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "jdi-draw-"));
     const fixture = path.join(dir, "ai-drawings.json");
@@ -1779,11 +1780,11 @@ async function main() {
     }));
     const spawnChild = (extra) => spawn(process.execPath, ["index.js"], {
       cwd: SERVER_DIR, stdio: "ignore",
-      env: { ...process.env, SCORES_FILE, PORT: "3001", AI_MODE: "mock", AI_NEXT_DELAY_MS: "300", ...extra },
+      env: { ...process.env, SCORES_FILE, PORT: ALT_PORT, AI_MODE: "mock", AI_NEXT_DELAY_MS: "300", ...extra },
     });
     const waitUp = async () => {
       for (let i = 0; i < 100; i++) {
-        if (await fetch("http://localhost:3001/test.html").then((r) => r.ok).catch(() => false)) return true;
+        if (await fetch(`http://localhost:${ALT_PORT}/test.html`).then((r) => r.ok).catch(() => false)) return true;
         await new Promise((r) => setTimeout(r, 100));
       }
       return false;
@@ -1793,7 +1794,7 @@ async function main() {
     let child = spawnChild({ AI_DRAWINGS_FILE: fixture, AI_MOCK_CHANCE: "0", AI_TIME_OVERRIDE: "3" });
     try {
       checkOk("server ตัวที่สองเปิดได้", await waitUp());
-      const sock = io("http://localhost:3001", { transports: ["websocket"] });
+      const sock = io(`http://localhost:${ALT_PORT}`, { transports: ["websocket"] });
       const P = track(sock);
       await new Promise((r) => sock.on("connect", r));
       const strokeAt = [];
@@ -1820,7 +1821,7 @@ async function main() {
       // ข้อมูลเสียทุกแบบ → เงียบ ไม่ล่ม
       for (const bad of [null, undefined, 5, "แมว", {}, { text: 5 }, { text: "" }, { text: "   " }, { text: "ก".repeat(41) }, { text: ["แมว"] }]) sock.emit("ai_draw_guess", bad);
       check("ทายด้วยข้อมูลเสีย 10 แบบ → ไม่มีคำตอบกลับ", (await P.quiet("ai_draw_reply", 400)).length, 0);
-      checkOk("ข้อมูลเสียแล้ว server ยังอยู่", await fetch("http://localhost:3001/test.html").then((r) => r.ok).catch(() => false));
+      checkOk("ข้อมูลเสียแล้ว server ยังอยู่", await fetch(`http://localhost:${ALT_PORT}/test.html`).then((r) => r.ok).catch(() => false));
 
       // ทายผิด → ได้ ai_draw_reply · ทายถี่ติดกัน (ก่อน 300ms) ตัวที่สองถูกทิ้ง
       sock.emit("ai_draw_guess", { text: "หมา" });
@@ -1895,7 +1896,7 @@ async function main() {
       child = spawnChild({ AI_DRAWINGS_FILE: file, AI_MOCK_CHANCE: "1", AI_TIME_OVERRIDE: "3" });
       try {
         checkOk(`${label}: server ยังเปิดได้`, await waitUp());
-        const sock = io("http://localhost:3001", { transports: ["websocket"] });
+        const sock = io(`http://localhost:${ALT_PORT}`, { transports: ["websocket"] });
         const P = track(sock);
         await new Promise((r) => sock.on("connect", r));
         sock.emit("ai_start", { name: "NoDraw" });
@@ -2180,8 +2181,8 @@ async function main() {
   // จึงเดาลำดับได้แน่นอน: ตา 1 ไม่มี → ตา 2 มี → ตา 3 ไม่มี (ติดกันไม่ได้) → ตา 4 มี
   // ══════════════════════════════════════════════════════════════════
   await runPart("29. Mini Challenge มีจังหวะ — ตาแรกไม่มี · ไม่ติดกัน · บอกคนวาดก่อนเลือกคำ · ป้ายใหญ่ 2 วิก่อนเริ่มนับเวลา (classic และทีม)", async () => {
-    const URL2 = "http://localhost:3001";
-    const env = { ...process.env, SCORES_FILE, PORT: "3001", AI_MODE: "mock", CHALLENGE_ODDS: "1" };
+    const URL2 = `http://localhost:${ALT_PORT}`;
+    const env = { ...process.env, SCORES_FILE, PORT: ALT_PORT, AI_MODE: "mock", CHALLENGE_ODDS: "1" };
     for (const k of ["CHALLENGE_NO_PACING", "CHALLENGE_INTRO_MS"]) delete env[k];
     const srv = spawn(process.execPath, ["index.js"], { cwd: SERVER_DIR, stdio: "ignore", env });
     const socks = [];
@@ -2421,12 +2422,12 @@ async function main() {
     fs.writeFileSync(path.join(fakeDist, "index.html"), "<!doctype html><div id=root>JDI-FAKE-CLIENT</div>");
     const waitUp = async () => {
       for (let i = 0; i < 100; i++) {
-        if (await fetch("http://localhost:3001/test.html").then((r) => r.ok).catch(() => false)) return true;
+        if (await fetch(`http://localhost:${ALT_PORT}/test.html`).then((r) => r.ok).catch(() => false)) return true;
         await new Promise((r) => setTimeout(r, 100));
       }
       return false;
     };
-    const baseEnv = { ...process.env, SCORES_FILE, PORT: "3001", AI_MODE: "mock" };
+    const baseEnv = { ...process.env, SCORES_FILE, PORT: ALT_PORT, AI_MODE: "mock" };
     // ส่งคำขอดิบ (ตั้ง Origin / Host เองได้ — fetch ของ Node ตั้ง Host ไม่ได้)
     const req = (reqPath, { origin, host } = {}) =>
       new Promise((resolve, reject) => {
@@ -2434,7 +2435,7 @@ async function main() {
         if (origin) headers.Origin = origin;
         if (host) headers.Host = host;
         http
-          .get({ host: "127.0.0.1", port: 3001, path: encodeURI(reqPath), headers }, (res) => {
+          .get({ host: "127.0.0.1", port: Number(ALT_PORT), path: encodeURI(reqPath), headers }, (res) => {
             let body = "";
             res.on("data", (d) => (body += d));
             res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body }));
@@ -2476,7 +2477,7 @@ async function main() {
         r = await req(POLL, { origin: o });
         check(`CORS ไม่ผ่าน (ปฏิเสธ): ${o}`, [r.status, r.headers["access-control-allow-origin"]], [403, undefined]);
       }
-      r = await req(POLL, { origin: "http://my-domain.test:3001", host: "my-domain.test:3001" });
+      r = await req(POLL, { origin: `http://my-domain.test:${ALT_PORT}`, host: `my-domain.test:${ALT_PORT}` });
       check("same-origin (Origin ตรง Host) ผ่านเสมอ แม้ชื่อโดเมนไม่อยู่ในรายการ", r.status, 200);
 
       // websocket จริง (ใช้ไลบรารี ws ตรงๆ เพราะตั้ง Origin ได้แน่นอน — socket.io-client ฝั่ง Node ไม่ส่ง Origin ตามที่ตั้ง)
@@ -2484,7 +2485,7 @@ async function main() {
       const WebSocket = require("ws");
       const wsTry = (origin) =>
         new Promise((resolve) => {
-          const w = new WebSocket("ws://127.0.0.1:3001/socket.io/?EIO=4&transport=websocket", { origin });
+          const w = new WebSocket(`ws://127.0.0.1:${ALT_PORT}/socket.io/?EIO=4&transport=websocket`, { origin });
           const t = setTimeout(() => { w.terminate(); resolve("timeout"); }, 4000);
           w.on("open", () => { clearTimeout(t); w.close(); resolve("connected"); });
           w.on("unexpected-response", (q, res) => { clearTimeout(t); resolve(`refused ${res.statusCode}`); });
@@ -2625,12 +2626,12 @@ async function main() {
       fs.rmSync(tmpFile, { force: true });
     }
 
-    // ---- 6) ตัว server จริง (พอร์ต 3001): โหลดคะแนนจาก Upstash ตอนสตาร์ท · /healthz · FORCE_HTTPS · HOST · origin ของ Render ----
+    // ---- 6) ตัว server จริง (พอร์ต ALT_PORT): โหลดคะแนนจาก Upstash ตอนสตาร์ท · /healthz · FORCE_HTTPS · HOST · origin ของ Render ----
     store.set("jdi:scores:v1", JSON.stringify([
       { id: 1, name: "จาก-Upstash", score: 4321, levelReached: 6, playedAt: "2026-10-05 20:14" },
     ]));
     const month = "2026-10";
-    const env = { ...process.env, PORT: "3001", HOST: "127.0.0.1", AI_MODE: "mock", FORCE_HTTPS: "1",
+    const env = { ...process.env, PORT: ALT_PORT, HOST: "127.0.0.1", AI_MODE: "mock", FORCE_HTTPS: "1",
       UPSTASH_REDIS_REST_URL: stubUrl, UPSTASH_REDIS_REST_TOKEN: TOKEN, RENDER_EXTERNAL_URL: "https://jdi-demo.onrender.com",
       SCORES_FILE: path.join(os.tmpdir(), `jdi-unused-${process.pid}.json`) };
     const srv = spawn(process.execPath, ["index.js"], { cwd: SERVER_DIR, stdio: ["ignore", "pipe", "pipe"], env });
@@ -2639,7 +2640,7 @@ async function main() {
     srv.stderr.on("data", (d) => (out += d));
     const rawGet = (reqPath, headers = {}) =>
       new Promise((resolve, reject) => {
-        http.get({ host: "127.0.0.1", port: 3001, path: reqPath, headers }, (res) => {
+        http.get({ host: "127.0.0.1", port: Number(ALT_PORT), path: reqPath, headers }, (res) => {
           let b = "";
           res.on("data", (d) => (b += d));
           res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: b }));
@@ -2689,13 +2690,13 @@ async function main() {
   // ══════════════════════════════════════════════════════════════════
   // ข้อ 32 — ตัวตนถาวร (playerId) · rejoin หลังรีเฟรช · รอหลังหลุด · ตัวเลือกห้อง (ความยาก/Public/Challenge) ·
   //          รายการห้อง Public · Leaderboard กระดาน multiplayer · ความยากของ Solo
-  // server ตัวที่สองบนพอร์ต 3001: ย่อเวลารอหลังหลุดเหลือ 1.5 วิ (ของจริง 30 วิ)
+  // server ตัวที่สองบนพอร์ต ALT_PORT: ย่อเวลารอหลังหลุดเหลือ 1.5 วิ (ของจริง 30 วิ)
   // และตั้ง Mini Challenge ให้ "ออกทุกตา" เพื่อพิสูจน์ว่าปิด Challenge mode แล้วไม่ออกจริง
   // ══════════════════════════════════════════════════════════════════
   await runPart("32. playerId ถาวร · rejoin · รอหลังหลุด · ตัวเลือกห้อง · ห้อง Public · Leaderboard multiplayer", async () => {
-    const URL2 = "http://localhost:3001";
+    const URL2 = `http://localhost:${ALT_PORT}`;
     const scores32 = path.join(SCORES_DIR, "scores32.json");
-    const env = { ...process.env, SCORES_FILE: scores32, PORT: "3001", AI_MODE: "mock", REJOIN_GRACE_MS: "1500",
+    const env = { ...process.env, SCORES_FILE: scores32, PORT: ALT_PORT, AI_MODE: "mock", REJOIN_GRACE_MS: "1500",
       CHALLENGE_ODDS: "1", CHALLENGE_NO_PACING: "1", CHALLENGE_INTRO_MS: "0" };
     const srv = spawn(process.execPath, ["index.js"], { cwd: SERVER_DIR, stdio: "ignore", env });
     const socks = [];
@@ -2712,7 +2713,7 @@ async function main() {
       // ต่อ socket พร้อม "กุญแจ" แบบเดียวกับที่หน้าเว็บส่ง (handshake.auth.playerKey)
       const connectAs = (key) => new Promise((resolve, reject) => {
         const s = io(URL2, { transports: ["websocket"], auth: key ? { playerKey: key } : undefined });
-        const t = setTimeout(() => reject(new Error("ต่อ server 3001 ไม่ติด")), 8000);
+        const t = setTimeout(() => reject(new Error(`ต่อ server ${ALT_PORT} ไม่ติด`)), 8000);
         s.on("connect", () => { clearTimeout(t); const P = track(s); socks.push(P); resolve(P); });
         s.on("connect_error", (e) => { clearTimeout(t); reject(e); });
       });
@@ -3362,8 +3363,8 @@ async function main() {
     for (const r of [P, Q, Q2, Q3, X]) r.socket.disconnect();
 
     // ---------- โหมดทีม + กลับเองหลังครบเวลา: server ตัวที่สอง LOBBY_RETURN_MS=1500 ----------
-    const URL2 = "http://localhost:3001";
-    const env = { ...process.env, SCORES_FILE, PORT: "3001", AI_MODE: "mock", LOBBY_RETURN_MS: "1500", CHALLENGE_NO_PACING: "1", CHALLENGE_INTRO_MS: "0" };
+    const URL2 = `http://localhost:${ALT_PORT}`;
+    const env = { ...process.env, SCORES_FILE, PORT: ALT_PORT, AI_MODE: "mock", LOBBY_RETURN_MS: "1500", CHALLENGE_NO_PACING: "1", CHALLENGE_INTRO_MS: "0" };
     const srv = spawn(process.execPath, ["index.js"], { cwd: SERVER_DIR, stdio: "ignore", env });
     const socks = [];
     try {
@@ -3410,11 +3411,12 @@ async function main() {
   // ══════════════════════════════════════════════════════════════════
   await runPart("41. Solo กลับเข้าเกมหลังรีเฟรช — ช่วงเราวาด · ช่วง AI วาด (เส้นที่ส่งไปแล้วกลับมา คำตอบไม่หลุด) · เกินเวลารอเสียเกม", async () => {
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    const URL2 = "http://localhost:3001";
+    const PORT2 = String(Number(TEST_PORT) + 1);
+    const URL2 = `http://localhost:${PORT2}`;
     // เวลาด่าน 4 วิ · รอ 2.5 วิก่อนเลิกเกมที่ไม่มีคนกลับมา · ใช้ไฟล์ภาพจริง (ช่วง AI วาดมีจริง)
-    const env = { ...process.env, SCORES_FILE, PORT: "3001", AI_MODE: "mock", AI_MOCK_CHANCE: "1", AI_TIME_OVERRIDE: "4", AI_NEXT_DELAY_MS: "300", REJOIN_GRACE_MS: "2500" };
-    delete env.AI_DRAWINGS_FILE;
-    const srv = spawn(process.execPath, ["index.js"], { cwd: SERVER_DIR, stdio: "ignore", env });
+    const env = { ...process.env, SCORES_FILE, PORT: PORT2, AI_MODE: "mock", AI_MOCK_CHANCE: "1", AI_TIME_OVERRIDE: "4", AI_NEXT_DELAY_MS: "300", REJOIN_GRACE_MS: "2500" };
+    if (process.env.AI_MODE !== "mock") delete env.AI_DRAWINGS_FILE;
+    const srv = spawn(process.execPath, ["index.js"], { cwd: SERVER_DIR, stdio: "inherit", env });
     const socks = [];
     const connectAs = (key) => new Promise((resolve, reject) => {
       const sk = io(URL2, { transports: ["websocket"], auth: key ? { playerKey: key } : undefined });

@@ -21,6 +21,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
   const [mode, setMode] = useState("classic"); // classic | team | ai (ai = Solo แข่งกับ AI ไม่สร้างห้อง)
   const [rounds, setRounds] = useState(3);
   const [drawTime, setDrawTime] = useState(60);
+  const [teamCount, setTeamCount] = useState(2); // 2, 3, 4 ทีมสำหรับโหมดทีม
   const [difficulty, setDifficulty] = useState("mixed"); // ชุดคำของห้อง (ไม่เกี่ยวกับเวลา) · mixed ใช้ได้เฉพาะห้อง
   // ระดับเริ่มต้นของ Solo แยกจาก difficulty ของห้องโดยเจตนา (คนละความหมาย: ห้องคือ "ชุดคำทั้งเกม"
   // ส่วน Solo คือ "จุดเริ่มต้น" แล้วยากขึ้นเอง) สลับไปมาระหว่างโหมดจึงจำค่าของแต่ละฝั่งไว้คนละตัว ไม่ทับกัน
@@ -41,7 +42,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
     const who = name.trim() || randomName(); // กันกรณีชื่อว่าง
     enter(
       "create_room",
-      { name: who, avatar, mode, rounds, drawTime, difficulty, visibility },
+      { name: who, avatar, mode, rounds, drawTime, difficulty, visibility, teamCount },
       { name: who, avatar }
     );
   }
@@ -93,6 +94,26 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
                     onClick={() => setDrawTime(n)}
                   >
                     {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {!isAI && mode === "team" && (
+            <div className="setup__opt">
+              <h3 className="setup__head">
+                <Icon name="users" size={22} /> จำนวนทีม
+              </h3>
+              <div className="segmented" role="group" aria-label="จำนวนทีม">
+                {[2, 3, 4].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={teamCount === n ? "seg seg--active" : "seg"}
+                    aria-pressed={teamCount === n}
+                    onClick={() => setTeamCount(n)}
+                  >
+                    {n} ทีม
                   </button>
                 ))}
               </div>
