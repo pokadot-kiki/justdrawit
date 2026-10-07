@@ -34,7 +34,8 @@ const shot = async (c, name) => { await act(c); const r = await c.send("Page.cap
 const waitFor = async (c, expr, ms = 8000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await c.ev(`!!(${expr})`)) return true; await sleep(120); } return false; };
 const click = (c, sel, text) => c.ev(`(()=>{const els=[...document.querySelectorAll(${JSON.stringify(sel)})];const e=${text ? `els.find(x=>x.textContent.includes(${JSON.stringify(text)}))` : "els[0]"};if(!e)return false;e.scrollIntoView({block:"center"});e.click();return true})()`);
 const noOverflow = (c) => c.ev(`document.documentElement.scrollWidth<=innerWidth+1 && document.documentElement.scrollHeight<=innerHeight+1`);
-const ownTeam = (c) => c.ev(`[...document.querySelectorAll(".team-col")].find(e=>e.querySelector(".team-col__name")?.textContent.includes("(ทีมคุณ)"))?.className.match(/team-col--(\\w)/)?.[1] ?? null`);
+// "(ทีมคุณ)" ถูกแทนด้วยป้าย "คุณ" (.you-tag) แล้ว (รอบปรับ layout ห้องรอ) — หาทีมของเราจากป้ายนี้แทนข้อความเดิม
+const ownTeam = (c) => c.ev(`[...document.querySelectorAll(".team-col")].find(e=>e.querySelector(".team-col__name .you-tag"))?.className.match(/team-col--(\\w)/)?.[1] ?? null`);
 const teamSizes = (c, teams) => c.ev(`(${JSON.stringify(teams)}).map(t=>document.querySelectorAll(".team-col--"+t+" .lb-player").length)`);
 
 const base = `http://localhost:${PORT}`;

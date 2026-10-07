@@ -82,7 +82,8 @@ try {
   ck("8 คนเข้า 4 ทีม จัดอัตโนมัติได้ 2 คนต่อทีมพอดี (A B C D)", JSON.stringify(counts) === JSON.stringify({ A: 2, B: 2, C: 2, D: 2 }), JSON.stringify(counts));
 
   // หาว่าแต่ละแท็บอยู่ทีมไหนจริง (ดูป้าย "(ทีมคุณ)" ที่ตัวเองเห็น)
-  const ownTeam = (c) => c.ev(`[...document.querySelectorAll(".team-col")].find(e=>e.querySelector(".team-col__name")?.textContent.includes("(ทีมคุณ)"))?.className.match(/team-col--(\\w)/)?.[1] ?? null`);
+  // "(ทีมคุณ)" ถูกแทนด้วยป้าย "คุณ" (.you-tag) แล้ว (รอบปรับ layout ห้องรอ) — หาทีมของเราจากป้ายนี้แทนข้อความเดิม
+  const ownTeam = (c) => c.ev(`[...document.querySelectorAll(".team-col")].find(e=>e.querySelector(".team-col__name .you-tag"))?.className.match(/team-col--(\\w)/)?.[1] ?? null`);
   const hostTeam = await ownTeam(H);
   ck("หาทีมของหัวห้องได้จาก DOM", ["A", "B", "C", "D"].includes(hostTeam), hostTeam);
   const otherTeam = ["A", "B", "C", "D"].find((t) => t !== hostTeam);

@@ -241,19 +241,43 @@
   flex: 1;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: minmax(min-content, 1fr); /* 3 แถวสูงเท่ากัน แต่ไม่ต่ำกว่าเนื้อหา (กันกล่องซ้อนการ์ดข้างล่าง) */
-  gap: 10px;
+  /* ความสูงแถวตามเนื้อหาจริง (ไม่บังคับเท่ากันข้ามแถวอีกต่อไป) + align-items: start ไม่ยืดกล่องให้สูงเกินเนื้อหาตัวเอง
+     ผลคือ "ที่ว่าง" ในกล่องหายไป และหัวกล่อง (lb-set__label) อยู่ขอบบนของทุกกล่องเสมอ ไม่ลอยกลางกล่องแบบเดิม */
+  grid-auto-rows: min-content;
+  align-items: start;
+  gap: 8px;
 }
 
 .lb-set {
-  display: grid;
-  align-content: center;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
   min-width: 0;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border: 2px solid var(--ink);
   border-radius: var(--r-ctl);
   background: var(--lb-box-bg);
+}
+
+/* กล่อง "ประเภทห้อง" กินเต็มแถวล่างสุด (กล่องที่ 7 เป็นกล่องคี่ เดี่ยวๆ ไม่มีคู่) */
+.lb-set--full {
+  grid-column: 1 / -1;
+}
+
+/* กล่องที่ใช้ไม่ได้ในสถานการณ์นี้ (เช่น "จำนวนทีม" ตอนแข่งเดี่ยว) — จางลง กดไม่ได้ แต่ยังอยู่ที่เดิมเสมอ กันหน้ากระโดดตอนสลับโหมด */
+.lb-set--locked {
+  opacity: 0.55;
+}
+
+.lb-set--locked .seg {
+  cursor: default;
+}
+
+.lb-set__note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
 }
 
 .lb-set__label {
@@ -277,16 +301,6 @@
 .lb-seg {
   display: flex;
   gap: 6px;
-}
-
-/* แถวจำนวนทีม (ซ้อนอยู่ใต้แถวโหมดในกล่องเดียวกัน) เตี้ยกว่าแถวหลักเล็กน้อย ไม่ดันกล่องสูงขึ้นมาก */
-.lb-seg--sub {
-  margin-top: 2px;
-}
-
-.lb-seg--sub .seg {
-  min-height: 30px;
-  font-size: 13px;
 }
 
 /* ปุ่มกระจายเต็มความกว้างกล่องพอดี (ไม่ชิดซ้ายแล้วเหลือที่ว่างขวา) */
@@ -488,9 +502,46 @@
   min-width: 0;
 }
 
+.lb-teams .lb-plist {
+  gap: 4px;
+}
+
+/* การ์ดผู้เล่นในคอลัมน์ทีม — กะทัดรัดกว่าแถวปกติ (คอลัมน์แคบ โดยเฉพาะตอน 4 ทีม) อยู่แถวเดียวเสมอ ไม่ตกบรรทัด
+   เดิมปล่อย flex-wrap:wrap ทำให้ป้าย/ปุ่มล้นไปตกบรรทัดใหม่เมื่อคอลัมน์แคบ ดูรก — ตอนนี้บังคับแถวเดียวแล้วย่อทุกชิ้นให้พอดีแทน */
 .lb-teams .lb-player {
-  flex-wrap: wrap;
-  gap: 4px 6px;
+  flex-wrap: nowrap;
+  gap: 5px;
+  padding: 4px 6px;
+}
+
+.lb-teams .lb-player .avatar-chip {
+  width: 26px;
+  height: 26px;
+}
+
+.lb-teams .lb-player .avatar-chip .pix {
+  transform: scale(0.62);
+}
+
+.lb-teams .lb-player__name {
+  font-size: 14px;
+}
+
+.lb-teams .you-tag {
+  margin-left: 4px;
+  padding: 1px 5px;
+  font-size: 11px;
+}
+
+.lb-teams .ready-badge {
+  flex: none;
+  padding: 1px 6px;
+}
+
+.lb-teams .kick-btn,
+.lb-teams .swap-btn {
+  width: 24px;
+  height: 24px;
 }
 
 .lb-mascot {
@@ -529,8 +580,8 @@
 
 /* ── แชท ── */
 .lb-chat {
-  flex: 0 0 34%;
-  min-height: 130px;
+  flex: 0 0 28%;
+  min-height: 110px;
 }
 
 .lb-chat__list {

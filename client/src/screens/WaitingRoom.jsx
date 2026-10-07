@@ -190,9 +190,10 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
   }
 
   // กล่องย่อยของการ์ดตั้งค่า (มีเลขกำกับ) — คนที่ไม่ใช่หัวห้องกดไม่ได้
-  function Choice({ no, title, className = "", label, choices, value, onChange }) {
+  // locked = ใช้ไม่ได้ในสถานการณ์นี้ (เช่น "จำนวนทีม" ตอนอยู่โหมดแข่งเดี่ยว) กดไม่ได้แม้เป็นหัวห้อง + จางลง + มีบรรทัดอธิบาย
+  function Choice({ no, title, className = "", label, choices, value, onChange, locked = false, note }) {
     return (
-      <div className={`lb-set ${className}`}>
+      <div className={`lb-set ${locked ? "lb-set--locked" : ""} ${className}`}>
         <span className="lb-set__label">
           <b>{no}</b> {title}
         </span>
@@ -203,13 +204,14 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
               type="button"
               className={value === v ? "seg seg--active" : "seg"}
               aria-pressed={value === v}
-              disabled={!isHost}
+              disabled={!isHost || locked}
               onClick={() => onChange(v)}
             >
               {text}
             </button>
           ))}
         </div>
+        {note && <p className="lb-set__note">{note}</p>}
       </div>
     );
   }
@@ -272,48 +274,25 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
                 <h2 className="lb-card__title">ตั้งค่าเกม</h2>
                 {!isHost && <span className="lb-count">ดูอย่างเดียว</span>}
               </div>
+              {/* 2 คอลัมน์ 7 กล่อง: โหมด|จำนวนทีม · เวลาต่อตา|จำนวนรอบ · ความยากของคำ|จำนวนผู้เล่นสูงสุด · ประเภทห้อง (เต็มแถว)
+                  "จำนวนทีม" แยกเป็นกล่องของตัวเองเสมอ (ไม่ซ้อนในกล่องโหมดอีกต่อไป) โผล่ตลอดแต่ล็อกไว้ตอนแข่งเดี่ยว กันหน้ากระโดดตอนสลับโหมด */}
               <div className="lb-settings__grid">
-                <div className="lb-set">
-                  <span className="lb-set__label">
-                    <b>1</b> โหมด
-                  </span>
-                  <div className="lb-seg" role="group" aria-label="โหมดเกม">
-                    {modeChoices.map(([v, text]) => (
-                      <button
-                        key={v}
-                        type="button"
-                        className={s.mode === v ? "seg seg--active" : "seg"}
-                        aria-pressed={s.mode === v}
-                        disabled={!isHost}
-                        onClick={() => changeSetting({ mode: v })}
-                      >
-                        {text}
-                      </button>
-                    ))}
-                  </div>
-                  {/* จำนวนทีม (2-4) — เฉพาะโหมดแข่งทีม · server บังคับ maxPlayers >= 2 × จำนวนทีมเสมอ ค่าที่ขัดกันถูกเมิน */}
-                  {teamMode && (
-                    <div className="lb-seg lb-seg--sub" role="group" aria-label="จำนวนทีม">
-                      {TEAM_COUNT_CHOICES.map((n) => (
-                        <button
-                          key={n}
-                          type="button"
-                          className={(s.teamCount ?? 2) === n ? "seg seg--active" : "seg"}
-                          aria-pressed={(s.teamCount ?? 2) === n}
-                          disabled={!isHost}
-                          onClick={() => changeSetting({ teamCount: n })}
-                        >
-                          {n} ทีม
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <Choice no="2" title="เวลาต่อตา (วิ)" label="เวลาวาดต่อตา" choices={TIME_CHOICES.map((n) => [n, n])} value={s.drawTime} onChange={(drawTime) => changeSetting({ drawTime })} />
-                <Choice no="3" title="จำนวนรอบ" label="จำนวนรอบ" choices={ROUND_CHOICES.map((n) => [n, n])} value={s.rounds} onChange={(rounds) => changeSetting({ rounds })} />
-                <Choice no="4" title="ความยากของคำ" label="ระดับความยากของคำ" choices={ROOM_DIFFICULTY_CHOICES} value={s.difficulty} onChange={(difficulty) => changeSetting({ difficulty })} />
-                <Choice no="5" title="จำนวนผู้เล่นสูงสุด" label="จำนวนผู้เล่นสูงสุด" choices={MAX_PLAYER_CHOICES.map((n) => [n, n])} value={s.maxPlayers ?? DEFAULT_MAX_PLAYERS} onChange={(maxPlayers) => changeSetting({ maxPlayers })} />
-                <Choice no="6" title="ประเภทห้อง" label="ประเภทห้อง" choices={VISIBILITY_CHOICES} value={s.visibility} onChange={(visibility) => changeSetting({ visibility })} />
+                <Choice no="1" title="โหมด" label="โหมดเกม" choices={modeChoices} value={s.mode} onChange={(mode) => changeSetting({ mode })} />
+                <Choice
+                  no="2"
+                  title="จำนวนทีม"
+                  label="จำนวนทีม"
+                  choices={TEAM_COUNT_CHOICES.map((n) => [n, `${n} ทีม`])}
+                  value={s.teamCount ?? 2}
+                  onChange={(teamCount) => changeSetting({ teamCount })}
+                  locked={!teamMode}
+                  note={!teamMode ? "ใช้เฉพาะโหมดแข่งทีม" : null}
+                />
+                <Choice no="3" title="เวลาต่อตา (วิ)" label="เวลาวาดต่อตา" choices={TIME_CHOICES.map((n) => [n, n])} value={s.drawTime} onChange={(drawTime) => changeSetting({ drawTime })} />
+                <Choice no="4" title="จำนวนรอบ" label="จำนวนรอบ" choices={ROUND_CHOICES.map((n) => [n, n])} value={s.rounds} onChange={(rounds) => changeSetting({ rounds })} />
+                <Choice no="5" title="ความยากของคำ" label="ระดับความยากของคำ" choices={ROOM_DIFFICULTY_CHOICES} value={s.difficulty} onChange={(difficulty) => changeSetting({ difficulty })} />
+                <Choice no="6" title="จำนวนผู้เล่นสูงสุด" label="จำนวนผู้เล่นสูงสุด" choices={MAX_PLAYER_CHOICES.map((n) => [n, n])} value={s.maxPlayers ?? DEFAULT_MAX_PLAYERS} onChange={(maxPlayers) => changeSetting({ maxPlayers })} />
+                <Choice no="7" title="ประเภทห้อง" label="ประเภทห้อง" choices={VISIBILITY_CHOICES} value={s.visibility} onChange={(visibility) => changeSetting({ visibility })} className="lb-set--full" />
               </div>
             </section>
             <ChallengeCards enabled={s.challenges ?? DEFAULT_CHALLENGES} isHost={isHost} />
@@ -379,8 +358,7 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
                             />
                           ) : (
                             <span className="team-col__name" title={teamLabel(t)}>
-                              {teamLabel(t)}
-                              {myTeam === t ? " (ทีมคุณ)" : ""}
+                              <span className="team-col__name-text">{teamLabel(t)}</span>
                               {canRenameTeam(t) && (
                                 <button
                                   type="button"
@@ -392,6 +370,8 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
                                   <Icon name="pen" size={13} />
                                 </button>
                               )}
+                              {/* แทนคำว่า "(ทีมคุณ)" ด้วยป้ายเล็ก "คุณ" — ป้ายเดียวกับที่ใช้ชี้แถวตัวเองทุกที่ในแอป */}
+                              {myTeam === t && <YouTag />}
                             </span>
                           )}
                           <span className="team-col__count">{teamSize(t)} คน</span>

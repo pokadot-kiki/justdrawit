@@ -2338,9 +2338,9 @@ select[class] {
 
 .team-col {
   display: grid;
-  gap: 10px;
+  gap: 6px;
   align-content: start;
-  padding: 10px;
+  padding: 8px;
   border: var(--border);
   min-width: 0;
 }
@@ -2382,8 +2382,11 @@ select[class] {
 
 .team-col__title {
   display: flex;
+  flex-wrap: nowrap;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
+  gap: 6px;
+  min-width: 0; /* เป็น grid item ของ .team-col (display:grid) เองก็มี min-width:auto โดยปริยาย ถ้าไม่ตั้งเป็น 0 แถวนี้จะกว้างเกินคอลัมน์แคบๆ (4 ทีม) แล้วล้นทับคอลัมน์ข้างๆ แทนที่จะยอมหด */
   margin: 0;
   font-family: var(--font-head);
   font-weight: 600;
@@ -2407,15 +2410,33 @@ select[class] {
 }
 
 .team-col__count {
+  flex: none;
+  white-space: nowrap;
   font-size: 14px;
   color: var(--muted);
 }
 
-/* ชื่อทีม (กดดินสอเปลี่ยนชื่อได้ — หัวห้องเปลี่ยนได้ทุกทีม สมาชิกเปลี่ยนได้แค่ทีมตัวเอง) */
+/* ป้าย "คุณ" ในหัวคอลัมน์ทีม — เล็กกว่าป้ายปกติเพราะพื้นที่หัวทีมแคบ (โดยเฉพาะตอน 4 ทีม) */
+.team-col__name .you-tag {
+  margin-left: 2px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+/* ชื่อทีม (กดดินสอเปลี่ยนชื่อได้ — หัวห้องเปลี่ยนได้ทุกทีม สมาชิกเปลี่ยนได้แค่ทีมตัวเอง)
+   ชื่อกับจำนวนคนต้องอยู่บรรทัดเดียวเสมอ (ไม่ตกบรรทัดแม้ชื่อทีมยาว/คอลัมน์แคบตอน 4 ทีม) — หัวใจคือ:
+   1) .team-col__name ตัวกลุ่มเอง "หดได้" (flex: 1 1 auto; min-width: 0) ภายใน .team-col__title
+   2) เฉพาะ "ตัวข้อความ" (.team-col__name-text) เท่านั้นที่ตัด ... ปุ่มดินสอ/ป้ายคุณข้างๆ ไม่หด (flex: none)
+   เดิมใส่ ellipsis ไว้ที่กลุ่มทั้งก้อน (มีทั้งข้อความ+ปุ่มข้างใน) ซึ่งเบราว์เซอร์ตัด ... ให้ไม่ได้ตามจริง เพราะไม่ใช่เนื้อความล้วน */
 .team-col__name {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.team-col__name-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
