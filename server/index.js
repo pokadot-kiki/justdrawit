@@ -228,6 +228,10 @@ const TEAM_MIN_PLAYERS = 2;      // ทุกทีมต้องมีอย�
 const FIRST_TEAM_BONUS = 100;    // ทีมที่ทายถูกก่อน ได้โบนัสต่อสมาชิกที่ทายถูก
 const TEAMNAME_MAX = 6;          // เปลี่ยนชื่อทีมได้ไม่เกิน 6 ครั้ง
 const TEAMNAME_WINDOW_MS = 10000; // ต่อ 10 วินาที (กันกดรัว)
+const TEAM_BALANCE_MAX_DIFF = 1; // ทีมใหญ่สุดกับเล็กสุดห่างกันได้ไม่เกินเท่านี้คน
+const SWAP_EXPIRE_MS = Number(process.env.SWAP_EXPIRE_MS) || 20000; // คำขอสลับตัวหมดอายุใน 20 วิ (env แค่ให้เทสย่อเวลาได้)
+const SWAP_MAX = 5;              // ขอสลับตัวได้ไม่เกิน 5 ครั้ง/10 วิ (กันกดรัว)
+const SWAP_WINDOW_MS = 10000;
 
 const isTeamMode = (room) => room.settings.mode === "team";
 const teamCount = (room, t) => room.players.filter((p) => p.team === t).length;
@@ -247,11 +251,92 @@ function autoTeam(room) {
   return best;
 }
 
+// คะแนนทีม = ค่าเฉลี่ยต่อสมาชิก (ปัดจำนวนเต็ม) ไม่ใช่ผลรวม — กันทีมใหญ่ได้เปรียบทีมเล็กเฉยๆ จากจำนวนคนที่มากกว่า
+// คะแนนรายคน (player.score) ไม่เปลี่ยน ยังเป็นผลรวมสะสมตามปกติ เปลี่ยนแค่ตัวเลข "คะแนนทีม" ที่โชว์/ใช้ตัดสินผู้ชนะ
 function teamScores(room) {
+  const sums = {}, counts = {};
+  for (const t of roomTeams(room)) { sums[t] = 0; counts[t] = 0; }
+  for (const p of room.players) if (p.team in sums) { sums[p.team] += p.score; counts[p.team]++; }
   const out = {};
-  for (const t of roomTeams(room)) out[t] = 0;
-  for (const p of room.players) if (p.team in out) out[p.team] += p.score;
+  for (const t of roomTeams(room)) out[t] = counts[t] > 0 ? Math.round(sums[t] / counts[t]) : 0;
   return out;
+}
+
+// จำนวนคนแต่ละทีม { A: n, B: n, ... } ตามทีมที่ใช้งานจริงของห้อง
+function teamCounts(room) {
+  const out = {};
+  for (const t of roomTeams(room)) out[t] = teamCount(room, t);
+  return out;
+}
+
+// ทีมใหญ่สุดกับเล็กสุดห่างกันไม่เกิน TEAM_BALANCE_MAX_DIFF คนไหม
+function isTeamBalanced(room) {
+  const vals = Object.values(teamCounts(room));
+  if (!vals.length) return true;
+  return Math.max(...vals) - Math.min(...vals) <= TEAM_BALANCE_MAX_DIFF;
+}
+
+// ย้ายทีมเอง (set_team) ได้ไหม: ต้องไปทีมที่ "คนน้อยกว่าทีมตัวเอง" เท่านั้น และย้ายแล้วทุกทีมยังห่างกันไม่เกิน 1 คน
+// env สำหรับเทสเท่านั้น: เปิดสวิตช์ไว้ว่า "ยอมรับ `force` ใน set_team ได้" — ต้องส่ง `{ team, force: true }` มาด้วยอีกชั้น
+// ไม่ใช่แค่ตั้ง env อย่างเดียว จึงใช้สองชั้นค่อนข้างปลอดภัย ของจริงไม่มีทางส่ง `force` มา (client ไม่มีปุ่มนี้)
+// มีไว้ให้เทสบางข้อ (เช่นข้อ 42) จัดทีมเองให้ตรงเป๊ะก่อนไปทดสอบเรื่องอื่น (ชื่อทีม/กำแพงกั้นทีม) โดยไม่ต้องพึ่งกฎห่างไม่เกิน 1 คน
+// ส่วนเทสที่ทดสอบกฎห่างไม่เกิน 1 คนตรงๆ (ข้อ 44) ไม่ส่ง `force` เลย จึงยังเจอกฎจริงเหมือนผู้เล่นทั่วไป
+const TEST_ALLOW_FORCE_TEAM = process.env.TEST_ALLOW_FORCE_TEAM === "1";
+function canSelfMove(room, player, toTeam) {
+  const counts = teamCounts(room);
+  const fromTeam = player.team;
+  if (fromTeam != null) {
+    if (!(toTeam in counts) || !(fromTeam in counts)) return false;
+    if (!(counts[toTeam] < counts[fromTeam])) return false; // ต้องเป็นทีมที่คนน้อยกว่าจริงๆ ไม่ใช่แค่เท่ากันหรือมากกว่า
+  }
+  const sim = { ...counts };
+  if (fromTeam != null && fromTeam in sim) sim[fromTeam]--;
+  sim[toTeam] = (sim[toTeam] ?? 0) + 1;
+  const vals = Object.values(sim);
+  return Math.max(...vals) - Math.min(...vals) <= TEAM_BALANCE_MAX_DIFF;
+}
+
+// ปุ่ม "จัดทีมให้สมดุล" ของหัวห้อง — ย้ายคนที่เข้าทีมใหญ่สุด "ล่าสุด" (ท้ายสุดใน room.players ของทีมนั้น) ไปทีมเล็กสุด ทีละคนจนห่างกันไม่เกิน 1
+function balanceTeams(room) {
+  const teams = roomTeams(room);
+  for (let guard = 0; guard < 50; guard++) {
+    const counts = teamCounts(room);
+    let maxTeam = teams[0], minTeam = teams[0];
+    for (const t of teams) {
+      if (counts[t] > counts[maxTeam]) maxTeam = t;
+      if (counts[t] < counts[minTeam]) minTeam = t;
+    }
+    if (counts[maxTeam] - counts[minTeam] <= TEAM_BALANCE_MAX_DIFF) break;
+    const members = room.players.filter((p) => p.team === maxTeam);
+    const mover = members[members.length - 1]; // คนที่เข้าทีมนี้ล่าสุด (ท้ายสุดในลิสต์ผู้เล่น)
+    if (!mover) break;
+    mover.team = minTeam;
+    syncTeamRoom(room, mover);
+  }
+}
+
+// ขอสลับตัว — เก็บเป็นลิสต์ { from, to, timer, createdAt } · หนึ่งคนมีได้แค่คำขอเดียวที่เกี่ยวข้อง (ทั้งเป็นคนขอและคนถูกขอ)
+function findSwap(room, pid) {
+  return (room.swapRequests ?? []).find((r) => r.from === pid || r.to === pid) ?? null;
+}
+
+function clearSwap(room, req) {
+  clearTimeout(req.timer);
+  room.swapRequests = (room.swapRequests ?? []).filter((r) => r !== req);
+}
+
+function clearAllSwaps(room) {
+  for (const r of room.swapRequests ?? []) clearTimeout(r.timer);
+  room.swapRequests = [];
+}
+
+// แจ้งผลคำขอสลับตัวให้ทั้งสองฝ่าย — accepted: true (ตกลง) · false (ปฏิเสธ/ทำไม่ได้) · null (หมดอายุ)
+function emitSwapResult(room, req, accepted) {
+  const fromP = room.players.find((p) => p.id === req.from);
+  const toP = room.players.find((p) => p.id === req.to);
+  const payload = { accepted, fromId: req.from, fromName: fromP?.name ?? "", targetId: req.to, targetName: toP?.name ?? "" };
+  io.to(req.from).emit("swap_result", payload);
+  io.to(req.to).emit("swap_result", payload);
 }
 
 // หัวห้องเปลี่ยนจำนวนทีม — ถ้าลดลง คนที่อยู่ในทีมที่หายไปต้องย้ายไปทีมที่คนน้อยสุดในชุดใหม่
@@ -311,6 +396,7 @@ function applyMode(room) {
     }
     syncTeamRoom(room, p);
   }
+  if (!isTeamMode(room)) clearAllSwaps(room); // ออกจากโหมดทีม คำขอสลับตัวที่ค้างอยู่ไม่มีความหมายแล้ว
 }
 
 const laneList = (room) => (isTeamMode(room) && room.teams ? roomTeams(room).map((t) => room.teams[t]) : []);
@@ -1119,6 +1205,7 @@ function returnToLobby(room) {
   room.roundGains = {};
   room.guessedIds = new Set();
   room.teams = null; // เลนของทีม สร้างใหม่ตอน start_game
+  clearAllSwaps(room); // คำขอสลับตัวที่ค้างจากเกมก่อนไม่มีความหมายแล้ว
   room.challengeHistory = [];
   resetCanvas(room);
   for (const p of room.players) {
@@ -1245,6 +1332,12 @@ function removePlayer(room, pid) {
   const code = room.code;
   if (!room.players.some((p) => p.id === pid)) return;
   cancelDrop(room, pid);
+  // ออกจากห้องระหว่างมีคำขอสลับตัวค้างอยู่ (ไม่ว่าเป็นฝ่ายขอหรือฝ่ายถูกขอ) → ยกเลิกคำขอ แจ้งอีกฝ่าย
+  const pendingSwap = findSwap(room, pid);
+  if (pendingSwap) {
+    clearSwap(room, pendingSwap);
+    emitSwapResult(room, pendingSwap, false);
+  }
   io.in(pid).socketsLeave([code, ...TEAM_CODES.map((t) => `${code}:${t}`)]);
   room.players = room.players.filter((p) => p.id !== pid);
 
@@ -1634,6 +1727,7 @@ io.on("connection", (socket) => {
       status: "lobby",
       players: [{ id: socket.data.pid, name, avatar: cleanAvatar(data.avatar), score: 0, isHost: true, team: null, connected: true, ready: false }],
       settings: { mode: "classic", rounds: 3, drawTime: 60, difficulty: "mixed", maxPlayers: MAX_PLAYERS, visibility: "private", challenges: [...DEFAULT_CHALLENGES], teamCount: 2, teamNames: { ...TEAM_DEFAULT_NAMES } },
+      swapRequests: [], // คำขอสลับตัวที่ค้างอยู่ (โหมดทีม)
     };
     rooms.set(code, room);
 
@@ -1744,15 +1838,81 @@ io.on("connection", (socket) => {
   });
 
   // เลือกทีม (ตอนอยู่ในห้องรอ/จบเกม ไม่ใช่ตอนเล่น) — เฉพาะโหมดทีม
+  // ย้ายเองได้แค่ไปทีมที่ "คนน้อยกว่าทีมตัวเอง" เท่านั้น และห้ามทำให้ทีมต่างกันเกิน 1 คน (canSelfMove)
   socket.on("set_team", (data) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room || room.status === "playing" || !isTeamMode(room)) return;
-    if (!roomTeams(room).includes(data?.team)) return;
+    const team = data?.team;
+    if (!roomTeams(room).includes(team)) return;
     const player = room.players.find((p) => p.id === socket.data.pid);
     if (!player) return;
-    player.team = data.team;
+    if (player.team === team) return;
+    const forced = TEST_ALLOW_FORCE_TEAM && data?.force === true;
+    if (!forced && !canSelfMove(room, player, team)) {
+      return socket.emit("game_error", { code: "TEAM_UNBALANCED", message: "ย้ายทีมนี้ไม่ได้ ต้องย้ายไปทีมที่คนน้อยกว่า และทำให้ทีมต่างกันไม่เกิน 1 คน" });
+    }
+    player.team = team;
     syncTeamRoom(room, player);
     io.to(room.code).emit("room_update", roomState(room));
+  });
+
+  // หัวห้องกดจัดทีมให้สมดุล (ตอนอยู่ในห้องรอ เฉพาะโหมดทีม)
+  socket.on("balance_teams", () => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room || room.status === "playing" || !isTeamMode(room)) return;
+    if (room.hostId !== socket.data.pid) {
+      return socket.emit("game_error", { code: "NOT_HOST", message: "เฉพาะหัวห้องเท่านั้น" });
+    }
+    balanceTeams(room);
+    io.to(room.code).emit("room_update", roomState(room));
+  });
+
+  // ขอสลับตัวกับคนทีมอื่น — ฝั่งที่ขอเป็นคนส่งเสมอ (socket.data.pid) ส่งแทนคนอื่นไม่ได้
+  socket.on("request_swap", (data, callback) => {
+    if (typeof callback !== "function") return;
+    const room = rooms.get(socket.data.roomCode);
+    if (!room || room.status === "playing" || !isTeamMode(room)) return callback({ ok: false, error: "NOT_IN_TEAM_MODE" });
+    if (!rateOk(socket, "swap", SWAP_MAX, SWAP_WINDOW_MS)) return callback({ ok: false, error: "TOO_MANY_ATTEMPTS" });
+    const me = room.players.find((p) => p.id === socket.data.pid);
+    if (!me || me.team == null) return callback({ ok: false, error: "NOT_IN_TEAM_MODE" });
+    const target = room.players.find((p) => p.id === String(data?.targetId ?? ""));
+    if (!target || target.id === me.id) return callback({ ok: false, error: "TARGET_NOT_FOUND" });
+    if (target.team == null || target.team === me.team) return callback({ ok: false, error: "SAME_TEAM" });
+    if (findSwap(room, me.id) || findSwap(room, target.id)) return callback({ ok: false, error: "ALREADY_PENDING" });
+    const req = { from: me.id, to: target.id, createdAt: Date.now() };
+    req.timer = setTimeout(() => {
+      if (!(room.swapRequests ?? []).includes(req)) return;
+      clearSwap(room, req);
+      emitSwapResult(room, req, null); // null = หมดอายุ
+    }, SWAP_EXPIRE_MS);
+    (room.swapRequests ??= []).push(req);
+    io.to(target.id).emit("swap_request", { fromId: me.id, fromName: me.name, expiresAt: Date.now() + SWAP_EXPIRE_MS });
+    callback({ ok: true });
+  });
+
+  // ตอบรับ/ปฏิเสธคำขอสลับตัว — เฉพาะคนที่ "ถูกขอ" เท่านั้นที่ตอบได้ (หาโดย socket.data.pid ไม่ใช่จากค่าที่ client ส่งมา)
+  socket.on("respond_swap", (data, callback) => {
+    if (typeof callback !== "function") return;
+    const room = rooms.get(socket.data.roomCode);
+    if (!room) return callback({ ok: false, error: "NOT_IN_ROOM" });
+    const req = findSwap(room, socket.data.pid);
+    if (!req || req.to !== socket.data.pid) return callback({ ok: false, error: "NO_PENDING_REQUEST" });
+    clearSwap(room, req);
+    const canSwapNow = Boolean(data?.accept) && room.status !== "playing" && isTeamMode(room);
+    if (canSwapNow) {
+      const fromP = room.players.find((p) => p.id === req.from);
+      const toP = room.players.find((p) => p.id === req.to);
+      if (fromP && toP && fromP.team != null && toP.team != null) {
+        const t1 = fromP.team, t2 = toP.team;
+        fromP.team = t2;
+        toP.team = t1;
+        syncTeamRoom(room, fromP);
+        syncTeamRoom(room, toP);
+        io.to(room.code).emit("room_update", roomState(room));
+      }
+    }
+    emitSwapResult(room, req, canSwapNow);
+    callback({ ok: true });
   });
 
   // ตั้งชื่อทีม (ป้ายแสดงผลเท่านั้น รหัสข้างในยังเป็น A/B/C/D) — ตอนอยู่ในห้องรอ เฉพาะโหมดทีม
@@ -1808,6 +1968,10 @@ io.on("connection", (socket) => {
     if (isTeamMode(room) && roomTeams(room).some((t) => teamCount(room, t) < TEAM_MIN_PLAYERS)) {
       return socket.emit("game_error", { code: "NOT_ENOUGH_PLAYERS", message: "แต่ละทีมต้องมีอย่างน้อย 2 คน" });
     }
+    if (isTeamMode(room) && !isTeamBalanced(room)) {
+      return socket.emit("game_error", { code: "TEAM_UNBALANCED", message: "ทีมยังไม่สมดุล (ต่างกันเกิน 1 คน) ลองกดจัดทีมให้สมดุลดูก่อน" });
+    }
+    clearAllSwaps(room); // เริ่มเกมแล้ว คำขอสลับตัวที่ค้างอยู่ใช้ไม่ได้อีกต่อไป
     clearTimeout(room.returnTimer); // เล่นอีกรอบเอง → ยกเลิกตัวนับกลับห้องรอ
     room.status = "playing";
     room.players.forEach((p) => (p.score = 0));

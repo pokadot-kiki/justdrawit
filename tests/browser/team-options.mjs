@@ -74,45 +74,54 @@ try {
   ck("ทั้ง 8 แท็บเข้าห้องรอสำเร็จ", await Promise.all(ALL.map((c) => c.ev(`!!document.querySelector(".screen--lb")`))).then((xs) => xs.every(Boolean)));
   ck("ห้องรอ 8 คน: ทุกคน (รวมหัวห้อง) เห็นคอลัมน์ทีมครบ 4", (await Promise.all(ALL.map((c) => c.ev(`document.querySelectorAll(".lb-teams .team-col").length === 4`)))).every(Boolean));
 
-  // ── จัดทีมให้ชัดเจน 2 คนต่อทีม (กดปุ่ม "ย้ายมา...") ──
-  const teamOfTab = ["A", "A", "B", "B", "C", "C", "D", "D"];
-  for (let i = 0; i < ALL.length; i++) {
-    const want = teamOfTab[i];
-    await click(ALL[i], `.team-col--${want} .team-col__join`);
-  }
-  await sleep(600);
+  // ── 8 คนเข้า 4 ทีม จัดอัตโนมัติได้ 2 คนต่อทีมพอดีอยู่แล้ว (ไม่ต้องกดย้ายเอง) ──
+  // งานขยายทีมสมดุล (ห่างไม่เกิน 1 คน) ทำให้ "ย้ายมา..." กดได้แค่ไปทีมที่คนน้อยกว่าจริงเท่านั้น
+  // 8 คน/4 ทีมของเดิมก็ได้ 2-2-2-2 พอดีอยู่แล้วตามธรรมชาติ จึงไม่ต้องกดย้ายเลย — หาว่าใครอยู่ทีมไหนจาก DOM แทนการเดาลำดับ
+  await sleep(300);
   const counts = await H.ev(`Object.fromEntries([..."ABCD"].map(t=>[t, document.querySelectorAll(".team-col--"+t+" .lb-player").length]))`);
-  ck("จัดทีมเองครบ 2 คนต่อทีม (A B C D)", JSON.stringify(counts) === JSON.stringify({ A: 2, B: 2, C: 2, D: 2 }), JSON.stringify(counts));
+  ck("8 คนเข้า 4 ทีม จัดอัตโนมัติได้ 2 คนต่อทีมพอดี (A B C D)", JSON.stringify(counts) === JSON.stringify({ A: 2, B: 2, C: 2, D: 2 }), JSON.stringify(counts));
 
-  // ── ตั้งชื่อทีม (หัวห้องอยู่ทีม A ลองเปลี่ยนชื่อทีมตัวเอง และทีม D ซึ่งไม่ใช่ทีมตัวเอง) ──
+  // หาว่าแต่ละแท็บอยู่ทีมไหนจริง (ดูป้าย "(ทีมคุณ)" ที่ตัวเองเห็น)
+  const ownTeam = (c) => c.ev(`[...document.querySelectorAll(".team-col")].find(e=>e.querySelector(".team-col__name")?.textContent.includes("(ทีมคุณ)"))?.className.match(/team-col--(\\w)/)?.[1] ?? null`);
+  const hostTeam = await ownTeam(H);
+  ck("หาทีมของหัวห้องได้จาก DOM", ["A", "B", "C", "D"].includes(hostTeam), hostTeam);
+  const otherTeam = ["A", "B", "C", "D"].find((t) => t !== hostTeam);
+  let memberOther = null, memberThird = null;
+  for (const g of guests) {
+    const t = await ownTeam(g);
+    if (t === otherTeam && !memberOther) memberOther = g;
+    else if (t !== hostTeam && t !== otherTeam && !memberThird) memberThird = g;
+  }
+  ck("หาสมาชิกทีมอื่น (ไม่ใช่ทีมหัวห้อง) ได้จาก DOM", Boolean(memberOther));
+
+  // ── ตั้งชื่อทีม (หัวห้องเปลี่ยนชื่อทีมตัวเอง และลองแก้ทีมอื่นซึ่งไม่ใช่ทีมตัวเอง) ──
   // ต้อง activate แท็บก่อนเสมอ (บทเรียนเดิมของโปรเจกต์: แท็บที่ไม่ active ทำงานช้ากว่าปกติ)
   await act(H);
-  await click(H, ".team-col--A .team-col__rename"); await sleep(300);
-  await typeInto(H, ".team-col--A .team-col__name-input", "มังกรทอง");
+  await click(H, `.team-col--${hostTeam} .team-col__rename`); await sleep(300);
+  await typeInto(H, `.team-col--${hostTeam} .team-col__name-input`, "มังกรทอง");
   await sleep(100);
-  await H.ev(`document.querySelector(".team-col--A .team-col__name-input")?.blur()`);
+  await H.ev(`document.querySelector(".team-col--${hostTeam} .team-col__name-input")?.blur()`);
   await sleep(800);
-  ck("หัวห้องเปลี่ยนชื่อทีมตัวเองสำเร็จ (เห็นในห้องรอ)", await H.ev(`document.querySelector(".team-col--A .team-col__name")?.textContent.includes("มังกรทอง")`));
-  ck("คนอื่นในห้องเห็นชื่อทีมใหม่ด้วย (room_update ถึงทุกคน)", await guests[6].ev(`document.querySelector(".team-col--A .team-col__name")?.textContent.includes("มังกรทอง")`));
+  ck("หัวห้องเปลี่ยนชื่อทีมตัวเองสำเร็จ (เห็นในห้องรอ)", await H.ev(`document.querySelector(".team-col--${hostTeam} .team-col__name")?.textContent.includes("มังกรทอง")`));
+  ck("คนอื่นในห้องเห็นชื่อทีมใหม่ด้วย (room_update ถึงทุกคน)", await guests[6].ev(`document.querySelector(".team-col--${hostTeam} .team-col__name")?.textContent.includes("มังกรทอง")`));
   ck("แชทห้องรอขึ้นข้อความว่าใครเปลี่ยนชื่อทีมเป็นอะไร (เห็นที่คนอื่นด้วย)",
     await guests[6].ev(`[...document.querySelectorAll(".lb-chat__row")].some(e=>e.textContent.includes("Host")&&e.textContent.includes("มังกรทอง"))`));
 
-  // หัวห้องไม่มีสิทธิ์พิเศษอีกต่อไป — ปุ่มเปลี่ยนชื่อทีม D (ไม่ใช่ทีมตัวเอง) ต้องไม่โผล่ให้หัวห้องกดเลย
-  ck("หัวห้องไม่เห็นปุ่มเปลี่ยนชื่อทีมอื่น (ไม่มีสิทธิ์พิเศษอีกต่อไป)", await H.ev(`!document.querySelector(".team-col--D .team-col__rename")`));
+  // หัวห้องไม่มีสิทธิ์พิเศษอีกต่อไป — ปุ่มเปลี่ยนชื่อทีมอื่น (ไม่ใช่ทีมตัวเอง) ต้องไม่โผล่ให้หัวห้องกดเลย
+  ck("หัวห้องไม่เห็นปุ่มเปลี่ยนชื่อทีมอื่น (ไม่มีสิทธิ์พิเศษอีกต่อไป)", await H.ev(`!document.querySelector(".team-col--${otherTeam} .team-col__rename")`));
 
-  // สมาชิกจริงของทีม D (ALL[6] = guests[5] = P7 ตาม teamOfTab) เปลี่ยนชื่อทีมตัวเองแทน
-  const memberD = guests[5];
-  await act(memberD);
-  await click(memberD, ".team-col--D .team-col__rename"); await sleep(300);
-  await typeInto(memberD, ".team-col--D .team-col__name-input", "อินทรีเงิน");
+  // สมาชิกจริงของทีมอื่น (memberOther) เปลี่ยนชื่อทีมตัวเองแทน
+  await act(memberOther);
+  await click(memberOther, `.team-col--${otherTeam} .team-col__rename`); await sleep(300);
+  await typeInto(memberOther, `.team-col--${otherTeam} .team-col__name-input`, "อินทรีเงิน");
   await sleep(100);
-  await memberD.ev(`document.querySelector(".team-col--D .team-col__name-input")?.blur()`);
+  await memberOther.ev(`document.querySelector(".team-col--${otherTeam} .team-col__name-input")?.blur()`);
   await sleep(800);
-  ck("สมาชิกจริงของทีม D เปลี่ยนชื่อทีมตัวเองได้", await H.ev(`document.querySelector(".team-col--D .team-col__name")?.textContent.includes("อินทรีเงิน")`));
+  ck("สมาชิกจริงของทีมอื่นเปลี่ยนชื่อทีมตัวเองได้", await H.ev(`document.querySelector(".team-col--${otherTeam} .team-col__name")?.textContent.includes("อินทรีเงิน")`));
 
-  // สมาชิกทีม C (guests[4] = P6 อยู่ทีม C) ลองกดปุ่มเปลี่ยนชื่อทีม A (ไม่ใช่ทีมตัวเอง) — ปุ่มต้องไม่โผล่ให้กดเลย
-  ck("สมาชิกทีมอื่นไม่เห็นปุ่มเปลี่ยนชื่อทีม A เลย (ปุ่มกดได้เฉพาะหัวห้อง/เจ้าของทีม)",
-    await guests[4].ev(`!document.querySelector(".team-col--A .team-col__rename")`));
+  // สมาชิกทีมที่สาม ลองกดปุ่มเปลี่ยนชื่อทีมหัวห้อง (ไม่ใช่ทีมตัวเอง) — ปุ่มต้องไม่โผล่ให้กดเลย
+  ck("สมาชิกทีมอื่นไม่เห็นปุ่มเปลี่ยนชื่อทีมหัวห้องเลย (ปุ่มกดได้เฉพาะหัวห้อง/เจ้าของทีม)",
+    await memberThird.ev(`!document.querySelector(".team-col--${hostTeam} .team-col__rename")`));
 
   // ── เลย์เอาต์ 4 ทีม ไม่ล้นจอ หลายขนาด ──
   for (const [w, h] of [[1440, 900], [1366, 768], [1024, 768]]) {

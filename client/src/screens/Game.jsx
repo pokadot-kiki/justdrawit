@@ -197,15 +197,17 @@ export default function Game({
           </span>
         </div>
 
-        {/* โหมดทีม: คะแนนทีม (2-4 ทีม ผลรวมสมาชิก จาก room.teamScores) ทีมเราขอบหนากว่า */}
+        {/* โหมดทีม: คะแนนทีม (2-4 ทีม ค่าเฉลี่ยต่อสมาชิก ปัดจำนวนเต็ม จาก room.teamScores) ทีมเราขอบหนากว่า
+            แถบนี้แคบมาก ไม่มีที่ใส่คำว่า "เฉลี่ย" ตรงๆ จึงใส่ไว้ใน title (hover บนจอคอม) แทน — หน้าจอที่มีที่พอ
+            (Scoreboard, GameOverModal) มีคำว่า "เฉลี่ย/คน" ให้เห็นตรงๆ อยู่แล้ว */}
         {teamMode && (
-          <div className="team-vs" aria-label="คะแนนทีม">
+          <div className="team-vs" aria-label="คะแนนทีม (ค่าเฉลี่ยต่อสมาชิก)">
             {Object.keys(room.teamScores ?? {}).map((t, i) => (
               <span key={t} className="team-vs__item">
                 {i > 0 && <span className="team-vs__sep">vs</span>}
                 <span
                   className={`team-vs__chip team-vs__chip--${t}${myTeam === t ? " team-vs__chip--mine" : ""}`}
-                  title={teamName(t)}
+                  title={`${teamName(t)} (คะแนนเฉลี่ยต่อสมาชิก)`}
                 >
                   <span className="team-vs__name">{teamName(t)}</span> <b>{room.teamScores?.[t] ?? 0}</b>
                 </span>

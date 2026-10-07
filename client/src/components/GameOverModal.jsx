@@ -47,6 +47,7 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
               </span>
             ))}
           </div>
+          <p className="modal__note">คะแนนทีม = ค่าเฉลี่ยต่อสมาชิก (ปัดจำนวนเต็ม)</p>
         </div>
       )}
 

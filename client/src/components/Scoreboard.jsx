@@ -16,7 +16,8 @@ import { Icon } from "./Icons";
 // "กำลังวาด/วาดคนถัดไป" โชว์เฉพาะตอนกำลังวาด (drawing) เพราะระหว่างพักตา drawerId ยังเป็นคนเก่าค้างอยู่
 // nextDrawerId มาจาก server (round_start) client เดาไม่ได้ · เช็คว่ายังอยู่ในห้องก่อนโชว์ เพราะอาจออกไประหว่างตา
 //
-// โหมดทีม (teamScores มีค่า): จัดกลุ่มตามทีม (2-4 ทีม รหัส A-D) หัวกลุ่มบอกชื่อทีม+คะแนนทีม (ผลรวมสมาชิก) · ในทีมเรียงตามคะแนนเหมือนเดิม
+// โหมดทีม (teamScores มีค่า): จัดกลุ่มตามทีม (2-4 ทีม รหัส A-D) หัวกลุ่มบอกชื่อทีม+คะแนนทีม
+// คะแนนทีม = ค่าเฉลี่ยต่อสมาชิก (ปัดจำนวนเต็ม ไม่ใช่ผลรวม — กันทีมใหญ่ได้เปรียบแค่เพราะคนเยอะกว่า) หน้าจอมีคำว่า "เฉลี่ย/คน" กำกับไว้เสมอ · คะแนนรายคนในทีมยังเป็นผลรวมสะสมปกติ ไม่เปลี่ยน · ในทีมเรียงตามคะแนนเหมือนเดิม
 // หมายเหตุ: ใน round_start ของโหมดทีม drawerId/nextDrawerId เป็นของ "ทีมเรา" เท่านั้น
 //   ป้าย ✏️ ของทีมอื่นจึงอาศัย drawerIds (คนวาดของทั้งสองทีม) ซึ่ง server ส่งมาให้
 export default function Scoreboard({
@@ -46,6 +47,7 @@ export default function Scoreboard({
               </span>
               <span className="score-team__total">
                 <AnimatedNumber value={teamScores[t] ?? 0} />
+                <small className="score-team__avg">เฉลี่ย/คน</small>
               </span>
             </h3>
             {renderList(byScore(players.filter((p) => p.team === t)))}

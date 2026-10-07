@@ -2591,7 +2591,18 @@ select[class] {
 }
 
 .score-team__total {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.1;
   font-family: var(--font-pixel);
+}
+
+.score-team__avg {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 10px;
+  opacity: 0.75;
 }
 
 /* ป้ายแจ้งบนกระดานเมื่อทีมถูกข้ามกลางตา (อยู่ใน .board ไม่เพิ่มความสูง) */
@@ -4565,6 +4576,57 @@ select[class] {
 
 .kick-btn:active {
   transform: translate(1px, 1px);
+}
+
+/* ปุ่มขอสลับตัว (ไอคอนเล็กข้างชื่อผู้เล่นทีมอื่น) ขนาด/ตำแหน่งเหมือน kick-btn แต่สีกลาง ไม่ใช่สีแดง (ไม่ใช่การกระทำทำลายล้าง) */
+.swap-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid var(--ink);
+  background: var(--white);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.swap-btn:active {
+  transform: translate(1px, 1px);
+}
+
+.swap-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* แถบแจ้งคำขอสลับตัวที่มีคนส่งมาหาเรา — เด่นชัด อยู่เหนือรายชื่อผู้เล่น */
+.lb-swap-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: var(--border-thick);
+  border-color: var(--yellow);
+  background: var(--cream);
+  box-shadow: var(--shadow-xs);
+  font-family: var(--font-body);
+}
+
+.lb-swap-banner__actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.lb-swap-banner__actions .btn {
+  min-height: 36px;
+  padding: 4px 14px;
 }
 
 /* ป้ายของผู้เล่นอยู่ชิดขวา เรียงเป็นแถวเดียว */

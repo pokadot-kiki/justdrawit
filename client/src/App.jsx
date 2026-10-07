@@ -278,7 +278,7 @@ export default function App() {
       )}
 
       {roomReady && !inGame && (
-        <WaitingRoom room={room} me={me} messages={game.messages} onSend={sendGuess} onLeave={handleLeave} />
+        <WaitingRoom room={room} me={me} messages={game.messages} onSend={sendGuess} onLeave={handleLeave} onToast={showToast} />
       )}
 
       {showGame && (

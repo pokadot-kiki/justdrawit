@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { socket } from "../socket";
 import Avatar from "../components/Avatar";
 import Logo from "../components/Logo";
@@ -11,6 +11,7 @@ import { markRulesSeen, rulesSeen } from "../prefs";
 import { Icon } from "../components/Icons";
 import { copyText, inviteUrl } from "../invite";
 import ChallengeCards from "../components/ChallengeCards";
+import { errorText } from "../messages";
 import { ROOM_DIFFICULTY_CHOICES, MAX_PLAYER_CHOICES, DEFAULT_MAX_PLAYERS, VISIBILITY_CHOICES, DEFAULT_CHALLENGES } from "../roomOptions";
 
 // ค่าที่ server ยอมรับ ตาม events.md (ค่าอื่น server จะเมิน)
@@ -20,8 +21,9 @@ const TEAM_CODES = ["A", "B", "C", "D"]; // รหัสทีมข้างใ
 const TEAM_COUNT_CHOICES = [2, 3, 4];
 const TEAM_MIN = 2; // โหมดทีมต้องมีทีมละอย่างน้อย 2 คน (server เช็คซ้ำ)
 const TEAM_NAME_MAX = 16;
+const TEAM_BALANCE_MAX_DIFF = 1; // ทีมใหญ่สุดกับเล็กสุดห่างกันได้ไม่เกินเท่านี้คน (server เช็คซ้ำเสมอ)
 
-export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }) {
+export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, onToast }) {
   const [linkCopied, setLinkCopied] = useState(false);
   // กล่องกติกาโชว์เองครั้งแรกที่เข้าห้อง (จำไว้ในเบราว์เซอร์) ครั้งต่อไปกดดูเองได้จากปุ่ม ℹ️ ในหน้าเกม
   const [showRules, setShowRules] = useState(() => !rulesSeen());
@@ -36,6 +38,64 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }
   const teamSize = (t) => room.players.filter((p) => p.team === t).length;
   const teamsReady = teams.every((t) => teamSize(t) >= TEAM_MIN);
   const myTeam = room.players.find((p) => p.id === me?.playerId)?.team ?? null;
+  // ทีมใหญ่สุดกับเล็กสุดห่างกันไม่เกิน 1 คนไหม (server เช็คซ้ำเสมอ ฝั่งนี้แค่ช่วยโชว์เหตุผล/ปิดปุ่ม)
+  const teamSizes = teams.map(teamSize);
+  const teamsBalanced = teamSizes.length === 0 || Math.max(...teamSizes) - Math.min(...teamSizes) <= TEAM_BALANCE_MAX_DIFF;
+
+  // ย้ายทีมเอง (ปุ่ม "ย้ายมาทีม X") ได้ไหม: ต้องเป็นทีมที่คนน้อยกว่าทีมตัวเองเท่านั้น และย้ายแล้วทุกทีมยังห่างกันไม่เกิน 1
+  function canMoveTo(t) {
+    if (myTeam == null) return true;
+    const counts = Object.fromEntries(teams.map((x) => [x, teamSize(x)]));
+    if (!(counts[t] < counts[myTeam])) return false;
+    const sim = { ...counts };
+    sim[myTeam]--;
+    sim[t]++;
+    const vals = Object.values(sim);
+    return Math.max(...vals) - Math.min(...vals) <= TEAM_BALANCE_MAX_DIFF;
+  }
+
+  // ── ขอสลับตัวกับคนทีมอื่น ──
+  const [incomingSwap, setIncomingSwap] = useState(null); // { fromId, fromName, expiresAt } — คำขอที่มีคนส่งมาหาเรา
+  const [pendingSwapTo, setPendingSwapTo] = useState(null); // playerId ที่เรากำลังรอคำตอบอยู่
+  useEffect(() => {
+    const onSwapRequest = (data) => setIncomingSwap(data);
+    const onSwapResult = (data) => {
+      if (data.fromId !== me?.playerId && data.targetId !== me?.playerId) return;
+      setIncomingSwap((cur) => (cur && cur.fromId === data.fromId ? null : cur));
+      setPendingSwapTo((cur) => (cur === data.targetId || cur === data.fromId ? null : cur));
+      const otherName = data.fromId === me?.playerId ? data.targetName : data.fromName;
+      if (onToast) {
+        if (data.accepted === true) onToast(`สลับทีมกับ ${otherName} แล้ว`);
+        else if (data.accepted === null) onToast(`คำขอสลับตัวกับ ${otherName} หมดอายุแล้ว`);
+        else if (data.fromId === me?.playerId) onToast(`${otherName} ปฏิเสธคำขอสลับตัว`);
+      }
+    };
+    socket.on("swap_request", onSwapRequest);
+    socket.on("swap_result", onSwapResult);
+    return () => {
+      socket.off("swap_request", onSwapRequest);
+      socket.off("swap_result", onSwapResult);
+    };
+  }, [me?.playerId, onToast]);
+
+  function requestSwap(targetId) {
+    setPendingSwapTo(targetId);
+    socket.timeout(4000).emit("request_swap", { targetId }, (err, res) => {
+      if (err || !res?.ok) {
+        setPendingSwapTo(null);
+        if (onToast) onToast(errorText(res?.error ?? "SERVER_ERROR"));
+      }
+    });
+  }
+
+  function respondSwap(accept) {
+    const req = incomingSwap;
+    setIncomingSwap(null);
+    socket.timeout(4000).emit("respond_swap", { accept }, (err, res) => {
+      if ((err || !res?.ok) && onToast) onToast(errorText(res?.error ?? "SERVER_ERROR"));
+      if (err || !res?.ok) setIncomingSwap(req); // ตอบไม่สำเร็จจริงๆ (เช่นต่อ server ไม่ติด) เอากลับมาให้ลองใหม่
+    });
+  }
 
   // แก้ชื่อทีม: เฉพาะสมาชิกของทีมนั้นเอง หัวห้องไม่มีสิทธิ์พิเศษเรื่องนี้เลย (เปลี่ยนจากรอบก่อน) · server ตรวจซ้ำอีกชั้นเสมอ (ยาว 1-16 ไม่ซ้ำ ไม่มีอักขระควบคุม ไม่มีคำไม่เหมาะสม)
   const canRenameTeam = (t) => myTeam === t;
@@ -53,7 +113,7 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }
   const others = room.players.filter((p) => p.id !== room.hostId);
   const allReady = others.length > 0 && others.every((p) => p.ready);
   const enoughPlayers = teamMode ? teamsReady : room.players.length >= 2;
-  const canStart = enoughPlayers && allReady;
+  const canStart = enoughPlayers && allReady && (!teamMode || teamsBalanced);
 
   // ลิงก์เชิญ: เพื่อนเปิดแล้วหน้าแรกเติมรหัสห้องให้เอง
   async function copyLink() {
@@ -112,6 +172,19 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }
             <Icon name="x" size={16} />
           </button>
         )}
+        {/* ขอสลับตัวกับคนทีมอื่น — คนละหนึ่งคำขอค้าง (ปุ่มกดไม่ได้ถ้ากำลังรอคำตอบของคำขออื่นอยู่) */}
+        {teamMode && !isMe && myTeam != null && player.team !== myTeam && (
+          <button
+            type="button"
+            className="swap-btn"
+            disabled={pendingSwapTo != null || incomingSwap != null}
+            aria-label={pendingSwapTo === player.id ? `รอ ${player.name} ตอบคำขอสลับตัว` : `ขอสลับตัวกับ ${player.name}`}
+            title={pendingSwapTo === player.id ? "รอคำตอบ..." : `ขอสลับตัวกับ ${player.name}`}
+            onClick={() => requestSwap(player.id)}
+          >
+            <Icon name="redo" size={14} />
+          </button>
+        )}
       </div>
     );
   }
@@ -147,12 +220,16 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }
       ? teamMode
         ? `ต้องมีทีมละอย่างน้อย ${TEAM_MIN} คน (ตอนนี้ ${teams.map((t) => `${teamLabel(t)} ${teamSize(t)}`).join(" · ")})`
         : "ต้องมีผู้เล่นอย่างน้อย 2 คนจึงเริ่มได้"
-      : !allReady
-        ? 'รอผู้เล่นคนอื่นกด "พร้อม" ให้ครบ'
-        : "ทุกคนพร้อมแล้ว เริ่มเกมได้เลย!"
+      : teamMode && !teamsBalanced
+        ? "ทีมยังไม่สมดุล (ต่างกันเกิน 1 คน) — กดปุ่ม \"จัดทีมให้สมดุล\" หรือย้ายคนเอง"
+        : !allReady
+          ? 'รอผู้เล่นคนอื่นกด "พร้อม" ให้ครบ'
+          : "ทุกคนพร้อมแล้ว เริ่มเกมได้เลย!"
     : teamMode && !teamsReady
       ? `โหมดทีมต้องมีทีมละอย่างน้อย ${TEAM_MIN} คน`
-      : "รอหัวห้องเริ่มเกม";
+      : teamMode && !teamsBalanced
+        ? "ทีมยังไม่สมดุล (ต่างกันเกิน 1 คน) รอหัวห้องจัดทีมให้สมดุล"
+        : "รอหัวห้องเริ่มเกม";
 
   return (
     <div className="screen screen--lb">
@@ -252,12 +329,34 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }
                 <span className="lb-count">
                   {room.players.length}/{s.maxPlayers ?? DEFAULT_MAX_PLAYERS} คน
                 </span>
+                {teamMode && isHost && !teamsBalanced && (
+                  <button type="button" className="btn lb-rules-btn" onClick={() => socket.emit("balance_teams")}>
+                    <Icon name="users" size={16} /> จัดทีมให้สมดุล
+                  </button>
+                )}
                 {teamMode && (
                   <button type="button" className="btn lb-rules-btn" onClick={() => setShowTeamRules(true)}>
                     <Icon name="info" size={16} /> กติกาทีม
                   </button>
                 )}
               </div>
+
+              {/* มีคนขอสลับตัวกับเรา — ต้องตอบก่อนหมดเวลา 20 วิ ไม่งั้น server ยกเลิกให้เอง */}
+              {incomingSwap && (
+                <div className="lb-swap-banner" role="alert">
+                  <span>
+                    <b>{incomingSwap.fromName}</b> ขอสลับตัวกับคุณ
+                  </span>
+                  <span className="lb-swap-banner__actions">
+                    <button type="button" className="btn btn--primary" onClick={() => respondSwap(true)}>
+                      รับ
+                    </button>
+                    <button type="button" className="btn" onClick={() => respondSwap(false)}>
+                      ปฏิเสธ
+                    </button>
+                  </span>
+                </div>
+              )}
 
               <div className="lb-roster__list">
                 {teamMode ? (
@@ -302,7 +401,13 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }
                           {teamSize(t) === 0 && <p className="team-col__empty">ยังไม่มีใคร</p>}
                         </div>
                         {myTeam !== t && (
-                          <button type="button" className="btn team-col__join" onClick={() => socket.emit("set_team", { team: t })}>
+                          <button
+                            type="button"
+                            className="btn team-col__join"
+                            disabled={!canMoveTo(t)}
+                            title={canMoveTo(t) ? "" : "ย้ายได้เฉพาะทีมที่คนน้อยกว่าทีมตัวเอง และห้ามทำให้ทีมต่างกันเกิน 1 คน"}
+                            onClick={() => socket.emit("set_team", { team: t })}
+                          >
                             ย้ายมา{teamLabel(t)}
                           </button>
                         )}

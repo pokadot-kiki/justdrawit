@@ -197,7 +197,9 @@ async function startServer() {
     env: { ...process.env, PORT: TEST_PORT, SCORES_FILE, AI_MODE: "mock", AI_MOCK_CHANCE: "1", AI_TIME_OVERRIDE: "2", AI_NEXT_DELAY_MS: "300", ANTHROPIC_API_KEY: SECRET_KEY,
       // Mini Challenge: ปิดกฎตาแรก/ไม่ติดกัน + โอกาส 60% + ข้ามป้ายใหญ่ เพื่อให้ข้อ 16–18 สุ่มชนิดที่ต้องการได้เร็วและวาดได้ทันที
       // (จังหวะจริงของกติกาเทสในข้อ 29 กับ server ตัวที่สองที่ไม่ตั้งสามค่านี้)
-      CHALLENGE_NO_PACING: "1", CHALLENGE_ODDS: "0.6", CHALLENGE_INTRO_MS: "0" },
+      CHALLENGE_NO_PACING: "1", CHALLENGE_ODDS: "0.6", CHALLENGE_INTRO_MS: "0",
+      // ข้อ 42 ใช้ set_team พร้อม force:true จัดทีมเองให้ตรงเป๊ะ (ข้อ 44 ไม่ส่ง force เลย จึงยังเจอกฎห่างไม่เกิน 1 คนจริง)
+      TEST_ALLOW_FORCE_TEAM: "1" },
   });
   const collect = (buf) => serverLog.push(buf.toString().trimEnd());
   child.stdout.on("data", collect);
@@ -1981,8 +1983,7 @@ async function main() {
     check("หัวห้องเลือก mode team → settings.mode และมี teamScores", [st.settings.mode, st.teamScores], ["team", { A: 0, B: 0 }]);
     check("คนที่มีอยู่แล้วถูกจัดทีมสมดุล (A,B)", st.players.map((p) => p.team), ["A", "B"]);
     const { P: P3 } = await join(code, "A3");
-    const { P: P4 } = await join(code, "B4");
-    check("คนเข้าใหม่เข้าทีมที่คนน้อยกว่า: A3→A, B4→B", [teamOf(H, P3.socket.id), teamOf(H, P4.socket.id)], ["A", "B"]);
+    check("คนเข้าใหม่เข้าทีมที่คนน้อยกว่า: A3→A", teamOf(H, P3.socket.id), "A");
     P2.socket.emit("update_settings", { mode: "classic" });
     check("ไม่ใช่หัวห้องสลับโหมด → NOT_HOST", (await P2.tryWait("game_error", (e) => e.code === "NOT_HOST", 800)) !== null, true);
     H.socket.emit("update_settings", { mode: "banana" });
@@ -1991,13 +1992,12 @@ async function main() {
 
     P3.socket.emit("set_team", { team: "C" });
     P3.socket.emit("set_team", null);
-    P3.socket.emit("set_team", { team: "B" });
-    await wait(200);
-    check("set_team ค่าผิดถูกเมิน · ค่าถูกเปลี่ยนทีมได้", teamOf(H, P3.socket.id), "B");
-    // ทีม A เหลือคนเดียว → เริ่มไม่ได้
+    await wait(150);
+    check("set_team ค่าผิดถูกเมิน ยังอยู่ทีม A", teamOf(H, P3.socket.id), "A");
+    // ทีม B มีแค่ P2 คนเดียว (ยังไม่ครบ 2 คน เพราะงานทีมต้องสมดุลไม่เกิน 1 คน จึงยังไม่ให้ P4 เข้ามาตอนนี้) → เริ่มไม่ได้
     H.socket.emit("start_game");
     checkOk("ทีมไม่ครบ 2 คน → เริ่มเกมไม่ได้ (NOT_ENOUGH_PLAYERS)", (await H.tryWait("game_error", (e) => e.code === "NOT_ENOUGH_PLAYERS", 1000)) !== null);
-    P3.socket.emit("set_team", { team: "A" });
+    const { P: P4 } = await join(code, "B4");
     await wait(150);
     check("กลับมาสมดุล 2 ต่อ 2", [teamOf(H, H.socket.id), teamOf(H, P2.socket.id), teamOf(H, P3.socket.id), teamOf(H, P4.socket.id)], ["A", "B", "A", "B"]);
 
@@ -2125,7 +2125,8 @@ async function main() {
     check("คนวาดได้ 50 ต่อคนที่ทายถูกในทีมตัวเอง (A มี 2 คน, B มี 1)", [gain(H.socket.id), gain(P2.socket.id)], [100, 50]);
     await wait(200);
     st = last(H, "room_update");
-    check("teamScores = ผลรวมคะแนนสมาชิก", st.teamScores, { A: tA, B: tB });
+    // teamScores เป็นค่าเฉลี่ยต่อสมาชิก (ปัดจำนวนเต็ม) ไม่ใช่ผลรวม — ทีม A มี 3 คน (H,P3,P5) ทีม B มี 2 คน (P2,P4)
+    check("teamScores = ค่าเฉลี่ยต่อสมาชิก (ปัดจำนวนเต็ม) ไม่ใช่ผลรวม", st.teamScores, { A: Math.round(tA / 3), B: Math.round(tB / 2) });
     check("คะแนนรายคนตรงกับที่ได้", st.players.map((p) => p.score), [gain(H.socket.id), gain(P2.socket.id), gain(P3.socket.id), gain(P4.socket.id), gain(P5.socket.id)]);
 
     // ---------- ตาที่ 2: หมุนคนวาดในทีม · คนวาดทีม A หลุดตอนเลือกคำ → ข้ามทีม A ----------
@@ -3610,7 +3611,7 @@ async function main() {
     await wait(150);
     // จัดทีมเองให้ชัดเจน 2 คนต่อทีมพอดี (ไม่พึ่งผลการจัดอัตโนมัติ กันเทสเปราะ)
     for (const [P, t] of [[H, "A"], [P2, "A"], [P3, "B"], [P4, "B"], [P5, "C"], [P6, "C"], [P7, "D"], [P8, "D"]]) {
-      P.socket.emit("set_team", { team: t });
+      P.socket.emit("set_team", { team: t, force: true }); // force: ปลดกฎห่างไม่เกิน 1 คนชั่วคราว (เทสนี้ทดสอบชื่อทีม/กำแพงกั้น ไม่ได้ทดสอบกฎนี้ — กฎนี้มีเทสของตัวเองในข้อ 44)
     }
     await wait(200);
     st = last(H, "room_update");
@@ -3635,7 +3636,7 @@ async function main() {
     H.socket.emit("update_settings", { teamCount: 4 });
     await wait(150);
     for (const [P, t] of [[H, "A"], [P2, "A"], [P3, "B"], [P4, "B"], [P5, "C"], [P6, "C"], [P7, "D"], [P8, "D"]]) {
-      P.socket.emit("set_team", { team: t });
+      P.socket.emit("set_team", { team: t, force: true }); // force: ปลดกฎห่างไม่เกิน 1 คนชั่วคราว (เทสนี้ทดสอบชื่อทีม/กำแพงกั้น ไม่ได้ทดสอบกฎนี้ — กฎนี้มีเทสของตัวเองในข้อ 44)
     }
     await wait(200);
     st = last(H, "room_update");
@@ -3811,6 +3812,204 @@ async function main() {
     H.socket.disconnect();
     G.socket.disconnect();
     S.socket.disconnect();
+  });
+
+  await runPart("44. ทีมต้องสมดุล (ห่างไม่เกิน 1 คน) · ปุ่มจัดทีมให้สมดุล · ขอสลับตัว · คะแนนทีมเป็นค่าเฉลี่ย", async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const mk = async () => track(await connect());
+    const last = (P, name) => P.dump().filter((e) => e.name === name).at(-1)?.args[0];
+    const people = [];
+    const join = async (code, name) => {
+      const P = await mk(); people.push(P);
+      await emitAck(P.socket, "join_room", { code, name, avatar: 0 });
+      await wait(100);
+      return P;
+    };
+    const sizes = (st, teams) => teams.map((t) => st.players.filter((p) => p.team === t).length);
+    const teamSizeOf = (st, pid) => { const t = st.players.find((p) => p.id === pid).team; return st.players.filter((p) => p.team === t).length; };
+    const teamOfId = (st, pid) => st.players.find((p) => p.id === pid).team;
+
+    // ========== ส่วน A: 3 ทีม 7 คน (3-2-2) — ย้ายเองได้แค่ไปทีมที่คนน้อยกว่า และห้ามทำให้ห่างเกิน 1 ==========
+    // ไม่บังคับจัดทีมเอง (ไม่ส่ง force) — ให้ธรรมชาติของ autoTeam จัดตอนเข้าห้องแทน ซึ่งคน 7 คนลง 3 ทีมจะได้ 3-2-2 เสมอ
+    // (ตรวจด้วยขนาดทีม ไม่ตรวจว่าใครอยู่ทีมไหน เพราะลำดับเข้าห้องไม่ได้การันตีว่าใครจะได้ทีมไหน)
+    const H = await mk(); people.push(H);
+    const created = await emitAck(H.socket, "create_room", { name: "Hh", avatar: 0, mode: "team", teamCount: 3 });
+    const code = created.code;
+    await wait(150);
+    const P2 = await join(code, "P2"), P3 = await join(code, "P3"), P4 = await join(code, "P4");
+    const P5 = await join(code, "P5"), P6 = await join(code, "P6"), P7 = await join(code, "P7");
+    const roster = [H, P2, P3, P4, P5, P6, P7];
+    await wait(150);
+    let st = last(H, "room_update");
+    const sz0 = sizes(st, ["A", "B", "C"]);
+    check("7 คนเข้าห้อง 3 ทีม จัดอัตโนมัติได้ 3-2-2 (เรียงจากมากไปน้อย)", [...sz0].sort((a, b) => b - a), [3, 2, 2]);
+
+    const bigTeam = ["A", "B", "C"].find((t) => st.players.filter((p) => p.team === t).length === 3);
+    const smallTeams = ["A", "B", "C"].filter((t) => t !== bigTeam);
+    const [teamY, teamZ] = smallTeams; // ทั้งสองทีมเล็กมีคนเท่ากัน (2 คน)
+
+    // ย้ายจากทีมเล็ก(teamY, 2 คน) ไปอีกทีมเล็ก(teamZ, 2 คน) — เท่ากัน ไม่ใช่ "น้อยกว่า" → ต้องถูกปัด
+    const fromY = roster.find((P) => teamOfId(st, P.socket.id) === teamY);
+    fromY.socket.emit("set_team", { team: teamZ });
+    checkOk("ย้ายไปทีมที่เท่ากัน (ไม่ใช่น้อยกว่าจริง) → TEAM_UNBALANCED", (await fromY.tryWait("game_error", (e) => e.code === "TEAM_UNBALANCED", 1000)) !== null);
+    await wait(150);
+    check("ไม่มีอะไรเปลี่ยน (ย้ายไม่สำเร็จ)", sizes(last(H, "room_update"), ["A", "B", "C"]).sort((a, b) => b - a), [3, 2, 2]);
+
+    // ย้ายจากทีมใหญ่ (bigTeam, 3 คน) ไปทีมเล็ก teamY (2 คน) — น้อยกว่าจริง ย้ายแล้วยังห่างไม่เกิน 1 → ต้องสำเร็จ
+    const fromBig = roster.find((P) => teamOfId(st, P.socket.id) === bigTeam);
+    fromBig.socket.emit("set_team", { team: teamY });
+    await wait(150);
+    st = last(H, "room_update");
+    check("ย้ายไปทีมที่น้อยกว่าจริงและยังสมดุล → สำเร็จ", teamOfId(st, fromBig.socket.id), teamY);
+    check("ขนาดทีมหลังย้าย ยังเป็น 3-2-2 สลับกัน (bigTeam เหลือ 2, teamY เป็น 3)", [sizes(st, [bigTeam])[0], sizes(st, [teamY])[0], sizes(st, [teamZ])[0]], [2, 3, 2]);
+
+    // ---------- คนหลุดจนห่างเกิน 1 แล้วลองย้าย: เป้าหมายน้อยกว่าต้นทางจริง แต่ทีมอื่นยังห่างเกิน 1 → ก็ถูกปัดเหมือนกัน ----------
+    // ตอนนี้: bigTeam=2, teamY=3, teamZ=2 (ไม่นับ fromBig/fromY ที่ย้ายไปแล้ว) — ตัดคนจาก teamZ ออกหนึ่งคน → teamZ เหลือ 1 (ห่างจาก teamY ถึง 2)
+    const fromZ = roster.find((P) => teamOfId(st, P.socket.id) === teamZ);
+    fromZ.socket.disconnect();
+    await wait(300);
+    st = last(H, "room_update");
+    check(`${teamZ} เหลือ 1 คนหลัง fromZ หลุด (ห่างจาก ${teamY} ถึง 2)`, sizes(st, [teamZ])[0], 1);
+    // ย้ายคนจาก bigTeam(2) ไป teamZ(1): เป้าหมายน้อยกว่าต้นทางจริง แต่ย้ายแล้ว bigTeam=1 ยังห่างจาก teamY(3) ถึง 2 → ต้องถูกปัด
+    const fromBig2 = roster.find((P) => P !== fromZ && st.players.some((p) => p.id === P.socket.id) && teamOfId(st, P.socket.id) === bigTeam);
+    fromBig2.socket.emit("set_team", { team: teamZ });
+    checkOk("เป้าหมายน้อยกว่าต้นทางจริง แต่ย้ายแล้วทีมอื่นยังห่างเกิน 1 → ก็ถูกปัดเหมือนกัน", (await fromBig2.tryWait("game_error", (e) => e.code === "TEAM_UNBALANCED", 1000)) !== null);
+
+    // ========== ส่วน B: ปุ่ม "จัดทีมให้สมดุล" (หัวห้องเท่านั้น) · เริ่มเกมไม่ได้ถ้าไม่สมดุล ==========
+    fromBig2.socket.emit("balance_teams"); // ไม่ใช่หัวห้อง → ไม่มีผล (H เท่านั้นที่เป็นหัวห้อง)
+    checkOk("ไม่ใช่หัวห้องกดจัดทีมให้สมดุล → NOT_HOST", (await fromBig2.tryWait("game_error", (e) => e.code === "NOT_HOST", 1000)) !== null);
+    H.socket.emit("balance_teams");
+    await wait(200);
+    st = last(H, "room_update");
+    const szAfterBalance = sizes(st, ["A", "B", "C"]);
+    checkOk("หัวห้องกดจัดทีมให้สมดุล → ทุกทีมห่างกันไม่เกิน 1 คน", Math.max(...szAfterBalance) - Math.min(...szAfterBalance) <= 1);
+    checkOk("ยังมี 6 คนครบ (ไม่มีใครหายไประหว่างจัดสมดุล)", szAfterBalance.reduce((a, b) => a + b, 0) === 6);
+
+    // ทำให้ไม่สมดุลแบบคุมได้แน่นอน: 7 คนเข้าห้อง 2 ทีมใหม่ (ธรรมชาติจะได้ 4-3) แล้วตัดคนจากทีมเล็กออกอีกคน → 4-2 (ห่าง 2 แต่ทั้งสองทีมยังมี ≥2 คน กันไม่ให้ชนกฎ NOT_ENOUGH_PLAYERS โดยไม่ได้ตั้งใจ)
+    const H2 = await mk(); people.push(H2);
+    const created2 = await emitAck(H2.socket, "create_room", { name: "H2", avatar: 0, mode: "team" }); // teamCount เริ่มต้น = 2
+    const code2 = created2.code;
+    await wait(150);
+    const Q = [];
+    for (let i = 0; i < 6; i++) Q.push(await join(code2, `Q${i}`));
+    await wait(200);
+    let st2 = last(H2, "room_update");
+    const szNat = sizes(st2, ["A", "B"]);
+    checkOk("7 คนเข้าทีม 2 ทีมธรรมชาติ ได้ 4-3 (ห่างแค่ 1 สมดุลตามกฎ)", Math.abs(szNat[0] - szNat[1]) === 1 && szNat[0] + szNat[1] === 7);
+    const smallerTeam = szNat[0] < szNat[1] ? "A" : "B";
+    const victim = st2.players.find((p) => p.team === smallerTeam && p.id !== H2.socket.id);
+    const victimP = [H2, ...Q].find((P) => P.socket.id === victim.id);
+    victimP.socket.disconnect();
+    await wait(300);
+    st2 = last(H2, "room_update");
+    const sz1 = sizes(st2, ["A", "B"]);
+    checkOk("ตัดคนจากทีมเล็กอีกคน → ห่างกัน 2 คน ทั้งสองทีมยังมีคนอยู่ ≥ 2", Math.abs(sz1[0] - sz1[1]) === 2 && Math.min(...sz1) >= 2);
+    H2.socket.emit("start_game");
+    checkOk("เริ่มเกมไม่ได้ตอนทีมไม่สมดุล (ห่างเกิน 1) → TEAM_UNBALANCED", (await H2.tryWait("game_error", (e) => e.code === "TEAM_UNBALANCED", 1000)) !== null);
+    check("status ยังเป็น lobby ไม่ได้เริ่มเกมจริง", last(H2, "room_update").status, "lobby");
+    H2.socket.emit("balance_teams");
+    await wait(200);
+    st2 = last(H2, "room_update");
+    const sz2 = sizes(st2, ["A", "B"]);
+    checkOk("จัดทีมให้สมดุลแล้วห่างไม่เกิน 1", Math.max(...sz2) - Math.min(...sz2) <= 1);
+    H2.socket.emit("start_game");
+    checkOk("จัดสมดุลแล้วเริ่มเกมได้", (await H2.tryWait("game_started", null, 2000)) !== null);
+
+    // ========== ส่วน C: คะแนนทีมเป็นค่าเฉลี่ยต่อสมาชิก (ไม่ใช่ผลรวม) ==========
+    // H2 ทีมใดทีมหนึ่งมีคนทายถูกคนหนึ่ง (สมาชิก 3 คน) ได้คะแนน > 0 ส่วนอีกทีมไม่มีใครได้เลย (0)
+    // teamScores ของทีมที่ได้คะแนนต้อง = round(ผลรวมคะแนนจริงของสมาชิก / จำนวนสมาชิก) ไม่ใช่ตัวผลรวมตรงๆ
+    const chH2 = await H2.wait("choose_word");
+    H2.socket.emit("word_chosen", { word: chH2.options[0] });
+    const word2 = chH2.options[0];
+    const rs2 = await H2.wait("round_start");
+    const drawerTeam = rs2.team;
+    const teammates = st2.players.filter((p) => p.team === drawerTeam);
+    const guesserOnTeam = [H2, ...Q].find((P) => teammates.some((p) => p.id === P.socket.id) && P.socket.id !== H2.socket.id);
+    checkOk("มีเพื่อนร่วมทีมคนวาดอยู่จริงให้ทดสอบทายถูก", Boolean(guesserOnTeam));
+    if (guesserOnTeam) {
+      guesserOnTeam.socket.emit("guess", { text: word2 });
+      await guesserOnTeam.tryWait("correct_guess", null, 1500);
+      await wait(200);
+      const stAfter = last(H2, "room_update");
+      const drawerTeamSize = teammates.length;
+      const sumScore = stAfter.players.filter((p) => p.team === drawerTeam).reduce((a, p) => a + p.score, 0);
+      const otherTeam = drawerTeam === "A" ? "B" : "A";
+      checkOk("ทีมที่ทายถูกได้คะแนนรวมจริง > 0", sumScore > 0);
+      check("teamScores ของทีมที่ได้คะแนน = ค่าเฉลี่ยต่อสมาชิก ปัดจำนวนเต็ม (ไม่ใช่ผลรวม)",
+        stAfter.teamScores[drawerTeam], Math.round(sumScore / drawerTeamSize));
+      checkOk("ค่าเฉลี่ยที่ได้ไม่เท่ากับผลรวมตรงๆ (พิสูจน์ว่าไม่ใช่ sum)", stAfter.teamScores[drawerTeam] !== sumScore);
+      check("ทีมที่ไม่มีใครทายถูกเลย ยังเป็น 0", stAfter.teamScores[otherTeam], 0);
+    }
+    for (const P of [H2, ...Q]) P.socket.disconnect();
+
+    // ========== ส่วน D: ขอสลับตัวกับคนทีมอื่น (รับ/ปฏิเสธ/หมดอายุ/จำกัดความถี่/ส่งแทนคนอื่นไม่ได้) ==========
+    const H3 = await mk(); people.push(H3);
+    const created3 = await emitAck(H3.socket, "create_room", { name: "H3", avatar: 0, mode: "team" });
+    const code3 = created3.code;
+    await wait(150);
+    const R2 = await join(code3, "R2"), R3 = await join(code3, "R3"), R4 = await join(code3, "R4");
+    await wait(150);
+    for (const [P, t] of [[H3, "A"], [R2, "A"], [R3, "B"], [R4, "B"]]) P.socket.emit("set_team", { team: t, force: true });
+    await wait(200);
+    const teamOf3 = (P) => last(H3, "room_update").players.find((p) => p.id === P.socket.id).team;
+    check("ตั้งทีม H3/R2 = A, R3/R4 = B สำเร็จ", [teamOf3(H3), teamOf3(R2), teamOf3(R3), teamOf3(R4)], ["A", "A", "B", "B"]);
+
+    // ส่งคำขอแทนคนอื่นไม่ได้ (server หาจาก socket.data.pid เสมอ ไม่ได้อ่าน fromId ที่ client ส่งมา)
+    let ack = await emitAck(H3.socket, "request_swap", { targetId: R3.socket.id, fromId: R2.socket.id });
+    check("request_swap ตอบ ok (ผู้ส่งจริงคือ H3 แม้ส่ง fromId ปลอมมาด้วย)", ack.ok, true);
+    const gotReq = await R3.tryWait("swap_request", null, 1000);
+    check("swap_request ที่ R3 ได้รับ fromId เป็น H3 จริง (ไม่ใช่ fromId ปลอมที่ H3 ส่งมา)", gotReq?.fromId, H3.socket.id);
+
+    // คนที่ไม่ใช่เป้าหมายตอบไม่ได้
+    const ackWrong = await emitAck(R4.socket, "respond_swap", { accept: true });
+    check("คนที่ไม่ใช่เป้าหมายของคำขอตอบไม่ได้ → NO_PENDING_REQUEST", ackWrong, { ok: false, error: "NO_PENDING_REQUEST" });
+
+    // มีคำขอค้างแล้ว ส่งคำขอใหม่ไม่ได้ (ทั้งฝั่งคนขอเดิมและฝั่งเป้าหมาย)
+    const ackDup1 = await emitAck(H3.socket, "request_swap", { targetId: R4.socket.id });
+    check("มีคำขอค้างอยู่แล้ว (เป็นฝ่ายขอ) ส่งคำขอใหม่ไม่ได้ → ALREADY_PENDING", ackDup1, { ok: false, error: "ALREADY_PENDING" });
+    const ackDup2 = await emitAck(R3.socket, "request_swap", { targetId: R2.socket.id });
+    check("มีคำขอค้างอยู่แล้ว (เป็นฝ่ายถูกขอ) ส่งคำขอใหม่ไม่ได้ → ALREADY_PENDING", ackDup2, { ok: false, error: "ALREADY_PENDING" });
+
+    // R3 รับคำขอ → สลับทีมจริง ทั้งสองฝั่งได้ swap_result accepted:true
+    const respAck = await emitAck(R3.socket, "respond_swap", { accept: true });
+    check("respond_swap (accept) ตอบ ok", respAck.ok, true);
+    await wait(150);
+    check("สลับทีมจริง: H3→B, R3→A", [teamOf3(H3), teamOf3(R3)], ["B", "A"]);
+    const resH3 = await H3.tryWait("swap_result", null, 1000);
+    const resR3 = await R3.tryWait("swap_result", null, 1000);
+    check("ทั้งสองฝั่งได้ swap_result accepted:true ตรงกัน", [resH3?.accepted, resR3?.accepted], [true, true]);
+
+    // ขอใหม่แล้วปฏิเสธ — ไม่มีการสลับทีม
+    const teamBefore = [teamOf3(H3), teamOf3(R2), teamOf3(R3), teamOf3(R4)];
+    await emitAck(R4.socket, "request_swap", { targetId: R2.socket.id });
+    await R2.tryWait("swap_request", null, 1000);
+    await emitAck(R2.socket, "respond_swap", { accept: false });
+    await wait(150);
+    check("ปฏิเสธคำขอ → ไม่มีการสลับทีมเกิดขึ้น", [teamOf3(H3), teamOf3(R2), teamOf3(R3), teamOf3(R4)], teamBefore);
+    const resDecline = await R4.tryWait("swap_result", null, 1000);
+    check("ฝั่งที่ถูกปฏิเสธได้ swap_result accepted:false", resDecline?.accepted, false);
+
+    // เลือกคนในทีมตัวเอง → SAME_TEAM
+    const h3Team = teamOf3(H3);
+    const sameTeamMate = [R2, R3, R4].find((P) => teamOf3(P) === h3Team);
+    const ackSame = await emitAck(H3.socket, "request_swap", { targetId: sameTeamMate.socket.id });
+    check("เลือกคนในทีมตัวเอง → SAME_TEAM", ackSame, { ok: false, error: "SAME_TEAM" });
+    // targetId ไม่มีอยู่จริง → TARGET_NOT_FOUND
+    const ackMissing = await emitAck(H3.socket, "request_swap", { targetId: "ไม่มีจริง" });
+    check("targetId ไม่มีอยู่จริง → TARGET_NOT_FOUND", ackMissing, { ok: false, error: "TARGET_NOT_FOUND" });
+
+    // ---------- จำกัดความถี่ (ไม่เกิน 5 ครั้ง/10 วิ) — ใช้ห้อง/socket ใหม่ล้วนๆ กันชนโควตากับที่ใช้ไปแล้วข้างบน ----------
+    const H4 = await mk(); people.push(H4);
+    const created4 = await emitAck(H4.socket, "create_room", { name: "H4", avatar: 0, mode: "team" });
+    const code4 = created4.code;
+    await wait(150);
+    const S2 = await join(code4, "S2");
+    await wait(150);
+    for (let i = 0; i < 5; i++) await emitAck(H4.socket, "request_swap", { targetId: "ไม่มีจริง" }); // ผิดกติกาทุกครั้งแต่ยังกินโควตา (เหมือน guess ที่กินโควตาไม่ว่าทายถูกหรือผิด)
+    const ackOverQuota = await emitAck(H4.socket, "request_swap", { targetId: S2.socket.id });
+    check("ขอสลับถี่เกิน 5 ครั้ง/10วิ ครั้งที่ 6 → TOO_MANY_ATTEMPTS", ackOverQuota, { ok: false, error: "TOO_MANY_ATTEMPTS" });
+
+    for (const P of people) P.socket.disconnect();
   });
 
   // ปิดทุก socket เพื่อให้โปรเซสจบได้
