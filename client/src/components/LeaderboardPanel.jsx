@@ -15,10 +15,10 @@ const BOARDS = [
   { id: "solo", label: "แข่งกับ AI", icon: "robot", note: "คะแนนจากโหมด Solo แข่งกับ AI" },
 ];
 
-// "2026-10" → "ตุลาคม 2569" (ปี พ.ศ. ตามที่คนไทยคุ้น)
+// "2026-10" → "ตุลาคม" (แสดงเฉพาะเดือน ไม่ต้องแสดงปี)
 function monthLabel(key) {
   const [y, m] = key.split("-").map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString("th-TH", { month: "long", year: "numeric" });
+  return new Date(y, m - 1, 1).toLocaleDateString("th-TH", { month: "long" });
 }
 
 // มกราคมถึงเดือนปัจจุบันของปีนี้ เรียงเดือนปัจจุบันไว้แรกสุด (ตัวเลือกแรก = ค่าเริ่มต้น)

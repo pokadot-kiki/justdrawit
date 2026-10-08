@@ -79,3 +79,73 @@ export function markRulesSeen() {
     /* ไม่เป็นไร */
   }
 }
+
+// ── Economy & Rewards Persistence (Requires Authentication) ──
+const COINS_KEY = "jdi.userCoins";
+const UNLOCKED_AVATARS_KEY = "jdi.unlockedAvatars";
+const AUTH_KEY = "jdi.userAuth";
+
+export function getUserAuth() {
+  try {
+    const raw = localStorage.getItem(AUTH_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setUserAuth(user) {
+  try {
+    if (!user) localStorage.removeItem(AUTH_KEY);
+    else localStorage.setItem(AUTH_KEY, JSON.stringify(user));
+  } catch {}
+}
+
+export function getCoins() {
+  try {
+    const auth = getUserAuth();
+    if (!auth) return 0; // Guest gets 0 coins
+    return Number(localStorage.getItem(`${COINS_KEY}.${auth.username}`) || 0);
+  } catch {
+    return 0;
+  }
+}
+
+export function addCoins(amount) {
+  try {
+    const auth = getUserAuth();
+    if (!auth || amount <= 0) return 0;
+    const current = getCoins();
+    const updated = current + amount;
+    localStorage.setItem(`${COINS_KEY}.${auth.username}`, String(updated));
+    return updated;
+  } catch {
+    return 0;
+  }
+}
+
+export function getUnlockedAvatars() {
+  try {
+    const auth = getUserAuth();
+    if (!auth) return [0, 1]; // Default free avatars for guests
+    const raw = localStorage.getItem(`${UNLOCKED_AVATARS_KEY}.${auth.username}`);
+    return raw ? JSON.parse(raw) : [0, 1];
+  } catch {
+    return [0, 1];
+  }
+}
+
+export function unlockAvatar(idx) {
+  try {
+    const auth = getUserAuth();
+    if (!auth) return false;
+    const unlocked = getUnlockedAvatars();
+    if (!unlocked.includes(idx)) {
+      unlocked.push(idx);
+      localStorage.setItem(`${UNLOCKED_AVATARS_KEY}.${auth.username}`, JSON.stringify(unlocked));
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}

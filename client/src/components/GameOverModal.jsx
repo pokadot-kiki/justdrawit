@@ -4,6 +4,7 @@ import Mascot from "./Mascot";
 import Confetti from "./Confetti";
 import YouTag from "./YouTag";
 import { Icon } from "./Icons";
+import { addCoins, getUserAuth } from "../prefs";
 
 const MEDALS = ["medal1", "medal2", "medal3"];
 
@@ -26,6 +27,19 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
 
   // เรียงให้ที่ 1 อยู่กลาง เวลาตกแต่งด้วย CSS จะได้เหมือนแท่นรางวัลจริง
   const podiumOrder = [top3[1], top3[0], top3[2]].filter(Boolean);
+
+  const auth = getUserAuth();
+  const baseCoins = 100;
+  const myPlayer = ranking.find((p) => p.playerId === meId);
+  const score = myPlayer?.score || 0;
+  const totalEarned = auth ? baseCoins + Math.floor(score / 5) : 0;
+
+  useEffect(() => {
+    if (auth && totalEarned > 0) {
+      addCoins(totalEarned);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <Modal labelledBy="game-over-title">
@@ -83,6 +97,20 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
           ))}
         </ul>
       )}
+
+      {/* ── Economy & Reward System Breakdown (ข้อ 6) ── */}
+      <div style={{ margin: "16px 0", padding: "12px", background: "#fefce8", border: "1px solid #fef08a", borderRadius: "8px", textAlign: "center" }}>
+        <h3 style={{ margin: 0, fontSize: "14px", color: "#a16207" }}>💰 สรุปเหรียญรางวัลประจำรอบ (Coin Rewards)</h3>
+        {auth ? (
+          <p style={{ margin: "6px 0 0 0", fontSize: "13px", color: "#854d0e" }}>
+            คุณได้รับ <b>+{totalEarned}</b> เหรียญ! (เหรียญพื้นฐาน 100 + คะแนนผลงาน)
+          </p>
+        ) : (
+          <p style={{ margin: "6px 0 0 0", fontSize: "12px", color: "#dc2626" }}>
+            ⚠️ คุณเล่นในโหมด Guest (0 เหรียญ) — กรุณาล็อกอินเข้าสู่ระบบเพื่อสะสมเหรียญ
+          </p>
+        )}
+      </div>
 
       <div className="modal__actions">
         <button className="btn btn--primary" type="button" onClick={onBackToLobby}>
