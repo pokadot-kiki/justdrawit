@@ -1,5 +1,7 @@
-// Word Suggestion Engine inspired by predictive-keyboard
-// (https://github.com/dogterbox/predictive-keyboard)
+// Word Suggestion Engine — แรงบันดาลใจทั่วไปจากแนวคิด predictive-keyboard
+// (https://github.com/dogterbox/predictive-keyboard) แต่คลังคำ (GAME_WORDS) และโค้ดจับคู่คำด้านล่าง
+// เป็นงานเขียนเองทั้งหมด (prefix/substring matching ธรรมดา ไม่ได้ใช้โค้ดหรือข้อมูลจาก repo ที่อ้างถึง)
+// ไม่มีสัญญาอนุญาตจากภายนอกเกี่ยวข้อง
 
 const GAME_WORDS = [
   "แมว", "หมา", "ปลา", "นก", "งู", "ช้าง", "เป็ด", "ไก่", "กบ", "เต่า",

@@ -162,7 +162,12 @@ export default function Chat({ messages = [], meId, disabled = false, onSend, fo
               color: listening ? "#ffffff" : "#374151",
               border: "1px solid #d1d5db",
             }}
-            title={listening ? "กำลังฟังเสียง..." : "ตอบด้วยเสียง (Speech-to-Text)"}
+            title={
+              listening
+                ? "กำลังฟังเสียง... (ใช้ระบบรู้จำเสียงในตัวเบราว์เซอร์)"
+                : "ตอบด้วยเสียง — ใช้ระบบรู้จำเสียงในตัวเบราว์เซอร์ (Web Speech API) ไม่ใช่ของโปรเจกต์นี้เอง"
+            }
+            aria-label={listening ? "กำลังฟังเสียง ใช้ระบบรู้จำเสียงของเบราว์เซอร์" : "ตอบด้วยเสียง ใช้ระบบรู้จำเสียงของเบราว์เซอร์"}
             onClick={toggleListening}
           >
             🎤
