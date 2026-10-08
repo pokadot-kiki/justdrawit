@@ -11,7 +11,6 @@ import { DIFFICULTY_CHOICES, ROOM_DIFFICULTY_CHOICES, VISIBILITY_CHOICES } from 
 // ค่าที่เลือกส่งไปกับ create_room (events.md §1) server เช็คซ้ำ ค่าไม่ถูกจะใช้ค่าเริ่มต้น
 const ROUND_CHOICES = [1, 2, 3, 4, 5];
 const TIME_CHOICES = [30, 45, 60, 90];
-const TEAM_COUNT_CHOICES = [2, 3, 4];
 
 // ตัวเลขของโหมด Solo ที่โชว์ในกล่องข้อมูล — คัดลอกมาจากค่าจริงที่ server ใช้ ห้ามเดา/คิดเอง
 // SOLO_LIVES (server/index.js) และ LEVEL_TIME + "ยากขึ้นทุก 2 ด่าน" (server/ai.js levelConfig) ถ้าแก้ตัวเลขฝั่ง server ต้องแก้ที่นี่ด้วย
@@ -27,8 +26,8 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
   // ส่วน Solo คือ "จุดเริ่มต้น" แล้วยากขึ้นเอง) สลับไปมาระหว่างโหมดจึงจำค่าของแต่ละฝั่งไว้คนละตัว ไม่ทับกัน
   const [soloLevel, setSoloLevel] = useState("easy");
   const [visibility, setVisibility] = useState("private");
-  const [teamCount, setTeamCount] = useState(2); // เฉพาะโหมดแข่งทีม (2-4 ทีม) — ปรับต่อได้อีกในห้องรอ
   // Challenge เลือกเปิด/ปิดทีละใบในห้องรอ (การ์ด 4 ใบ) ไม่ตั้งที่นี่แล้ว — ห้องเริ่มด้วยชุดเริ่มต้นของ server
+  // จำนวนทีม: ไม่เลือกที่หน้านี้แล้ว — ห้องโหมดทีมเริ่มที่ 2 ทีมเสมอ (ค่าเริ่มต้นฝั่ง server) หัวห้องปรับต่อได้ในห้องรอ
   const { busy, enter } = useEnterRoom({ connected, onEntered, onError });
   const { name, avatar } = profile;
 
@@ -41,9 +40,10 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
       return;
     }
     const who = name.trim() || randomName(); // กันกรณีชื่อว่าง
+    // ไม่ส่ง teamCount ไปเลย — ห้องโหมดทีมจึงเริ่มที่ 2 ทีมเสมอ (ค่าเริ่มต้นฝั่ง server) หัวห้องค่อยปรับในห้องรอ
     enter(
       "create_room",
-      { name: who, avatar, mode, rounds, drawTime, difficulty, visibility, teamCount },
+      { name: who, avatar, mode, rounds, drawTime, difficulty, visibility },
       { name: who, avatar }
     );
   }
@@ -174,20 +174,12 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
             <span className="mode-card__desc">ทุกคนแข่งกันเอง ผลัดกันวาด คนอื่นพิมพ์ทาย ทายถูกเร็วได้คะแนนเยอะ</span>
           </button>
 
-          {/* การ์ดนี้เป็น <div role="radio"> แทน <button> เพราะต้องมีปุ่ม "จำนวนทีม" ซ้อนอยู่ข้างใน
-              (ปุ่มในปุ่มเป็น HTML ที่ผิดกติกา เบราว์เซอร์จะดีดปุ่มข้างในออกมานอกการ์ดเอง) — onKeyDown เติม Enter/Space ให้ทำงานเหมือนปุ่มจริงกับคีย์บอร์ด */}
-          <div
+          <button
+            type="button"
             role="radio"
-            tabIndex={0}
             aria-checked={mode === "team"}
-            className={mode === "team" ? "mode-card mode-card--team mode-card--active" : "mode-card mode-card--team"}
+            className={mode === "team" ? "mode-card mode-card--active" : "mode-card"}
             onClick={() => setMode("team")}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setMode("team");
-              }
-            }}
           >
             <span className="mode-card__art mode-card__art--team" aria-hidden="true">
               <span className="mode-card__side mode-card__side--A">
@@ -201,28 +193,9 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
               </span>
             </span>
             <span className="mode-card__title">แข่งทีม</span>
-            <span className="mode-card__desc">แบ่ง 2-4 ทีม วาดคำเดียวกันพร้อมกัน ทีมไหนทายถูกก่อนได้โบนัส (ทีมละอย่างน้อย 2 คน)</span>
-            {/* โผล่เฉพาะตอนเลือกการ์ดนี้อยู่แล้ว · หยุด event ไม่ให้ลอยขึ้นไปโดน onClick ของการ์ด (ไม่งั้นนับเป็นการกดเลือกโหมดซ้ำ) */}
-            {mode === "team" && (
-              // แถวเดียว (หัวเล็ก "จำนวนทีม" + ปุ่มเรียงข้างกัน) แทนสองบรรทัดเดิม — ประหยัดความสูงให้พอดีกับที่ว่างที่มีจริงในการ์ด
-              <div className="mode-card__teamcount" onClick={(e) => e.stopPropagation()} role="group" aria-label="จำนวนทีม">
-                <span className="mode-card__teamcount-head">จำนวนทีม</span>
-                <div className="segmented">
-                  {TEAM_COUNT_CHOICES.map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      className={teamCount === n ? "seg seg--active" : "seg"}
-                      aria-pressed={teamCount === n}
-                      onClick={() => setTeamCount(n)}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+            {/* บอกชัดว่าเลือกจำนวนทีมที่ไหน เพราะหน้านี้ไม่มีปุ่มจำนวนทีมแล้ว (เลือกได้ในห้องรอหลังสร้างห้อง) */}
+            <span className="mode-card__desc">แบ่ง 2–4 ทีม เลือกจำนวนทีมได้ในห้องรอ วาดคำเดียวกันพร้อมกัน ทีมไหนทายถูกก่อนได้โบนัส (ทีมละอย่างน้อย 2 คน)</span>
+          </button>
 
           <button
             type="button"

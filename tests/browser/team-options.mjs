@@ -45,19 +45,20 @@ try {
   await sleep(1200);
   for (let i = 0; i < 50; i++) { try { const r = await fetch(`${base}/`); if (r.ok) break; } catch {} await sleep(200); }
 
-  // ── หัวห้อง: ไปหน้า SET UP เลือกแข่งทีม + 4 ทีม แล้วสร้างห้อง ──
+  // ── หัวห้อง: ไปหน้า SET UP เลือกแข่งทีมแล้วสร้างห้อง (ไม่มีปุ่มจำนวนทีมที่หน้านี้แล้ว — เลือกในห้องรอ) ──
   const H = await newTab(`${base}/`);
   await H.ev(`localStorage.setItem("jdi.rulesSeen","1");localStorage.setItem("jdi.teamRulesSeen","1");localStorage.setItem("jdi.music","0");localStorage.setItem("jdi.name","Host")`);
   await act(H);
   await H.send("Page.navigate", { url: `${base}/setup` }); await sleep(900);
+  ck("หน้า SET UP ไม่มีปุ่มจำนวนทีมเลย (ย้ายไปห้องรอแล้ว)", await H.ev(`!document.querySelector(".mode-card__teamcount")`));
   await click(H, ".mode-card", "แข่งทีม"); await sleep(250);
-  // ป้าย "จำนวนทีม" เป็น aria-label ล้วน (ไม่ใช่ข้อความที่มองเห็น กันไม่ให้กินที่อีกบรรทัดในหน้า SET UP ที่สูงจำกัดอยู่แล้ว)
-  ck("เลือกแข่งทีมแล้วขึ้นตัวเลือกจำนวนทีม", await H.ev(`!![...document.querySelectorAll('[role="group"]')].find(e=>e.getAttribute("aria-label")?.includes("จำนวนทีม"))`));
-  await click(H, ".mode-card__teamcount .seg", "4"); await sleep(150);
   await click(H, ".setup__create"); await sleep(900);
   ck("สร้างห้องสำเร็จ เข้าห้องรอ", await waitFor(H, `document.querySelector(".screen--lb")`, 8000));
   const code = await H.ev(`document.querySelector(".lb-codechip b")?.textContent`);
-  ck("ห้องรอ: มีคอลัมน์ทีมครบ 4 ทีม", await H.ev(`document.querySelectorAll(".lb-teams .team-col").length === 4`));
+  ck("ห้องทีมเริ่มที่ 2 ทีมเสมอ (ไม่ได้เลือกจากหน้า SET UP)", await H.ev(`document.querySelectorAll(".lb-teams .team-col").length === 2`));
+  // หัวห้องปรับจำนวนทีมเป็น 4 จากกล่อง "จำนวนทีม" ของห้องรอเอง (เหมือนเดิมก่อนงานนี้)
+  await click(H, `[aria-label="จำนวนทีม"] .seg`, "4 ทีม"); await sleep(300);
+  ck("ห้องรอ: ปรับเป็น 4 ทีมจากกล่องในห้องรอได้ มีคอลัมน์ทีมครบ 4 ทีม", await waitFor(H, `document.querySelectorAll(".lb-teams .team-col").length === 4`, 3000));
 
   // ── อีก 7 แท็บเข้าห้องเดียวกัน ──
   const guests = [];

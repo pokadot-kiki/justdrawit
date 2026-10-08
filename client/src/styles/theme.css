@@ -3184,11 +3184,6 @@ select[class] {
   gap: 6px;
 }
 
-/* ตอนเลือกการ์ดนี้อยู่ ต้องเผื่อที่ให้กล่องจำนวนทีมด้านล่าง — ย่อความสูงรูปภาพลงนิดหน่อย (ยังเห็น VS ชัดเจน) แทนที่จะปล่อยให้การ์ดทั้งใบสูงเกินการ์ด "แข่งเดี่ยว" ข้างๆ */
-.mode-card--active .mode-card__art--team {
-  min-height: 168px;
-}
-
 .mode-card__title {
   font-family: var(--font-head);
   font-weight: 600;
@@ -3201,39 +3196,6 @@ select[class] {
   color: var(--muted);
 }
 
-/* จำนวนทีม — อยู่ในการ์ด "แข่งทีม" เอง ใต้คำอธิบาย โผล่เฉพาะตอนเลือกการ์ดนี้
-   margin-top: auto ดันลงไปใช้ที่ว่างด้านล่างที่มีอยู่แล้ว (การ์ดนี้ถูกยืดสูงเท่าการ์ด "แข่งเดี่ยว" ข้างๆ อยู่แล้วจาก grid row stretch)
-   จึงไม่ทำให้การ์ดสูงขึ้นกว่าเดิม — ปุ่มใช้คลาส .seg/.segmented ชุดเดียวกับที่อื่นทั้งแอป หน้าตาเลยเหมือนกันทุกที่โดยอัตโนมัติ */
-.mode-card__teamcount {
-  margin-top: auto;
-  padding-top: 2px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.mode-card__teamcount-head {
-  flex: none;
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.mode-card__teamcount .segmented {
-  flex: 1;
-  flex-wrap: nowrap;
-  gap: 4px;
-}
-
-.mode-card__teamcount .seg {
-  flex: 1;
-  min-width: 0;
-  min-height: 22px;
-  padding: 1px 4px;
-  font-size: 12px;
-}
-
 /* กดไม่ให้ขอบฟ้าค้างหลังคลิกเมาส์ — โชว์กรอบโฟกัสเฉพาะตอนกดคีย์บอร์ด (:focus-visible) เท่านั้น */
 .mode-card:focus,
 .seg:focus {
@@ -3244,12 +3206,6 @@ select[class] {
 .seg:focus-visible {
   outline: 3px solid var(--blue);
   outline-offset: 2px;
-}
-
-/* การ์ด "แข่งทีม" มีลูกเพิ่มมา 1 ชิ้น (กล่องจำนวนทีม) ตอนเลือกอยู่ — ปริภูมิ gap ปกติ (8px) ของ .mode-card
-   คูณ 3 ช่อง (แทนที่จะเป็น 2 ช่องแบบการ์ดอื่น) ทำให้สูงเกินการ์ด "แข่งเดี่ยว" ข้างๆ ย่อ gap เฉพาะตอนนี้ให้พอดี */
-.mode-card--team.mode-card--active {
-  gap: 4px;
 }
 
 .setup__create {
