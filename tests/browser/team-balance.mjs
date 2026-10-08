@@ -74,7 +74,7 @@ try {
     guests.push(c);
     nameOf.set(c, nm);
   }
-  await sleep(800);
+  await sleep(1200);
   const ALL = [H, ...guests];
   // คลิกปุ่ม "ขอสลับ" (.swap-btn) เฉพาะที่อยู่ในแถวของผู้เล่นชื่อ targetName (กันคลิกโดนคนผิดเมื่อมีปุ่มขอสลับหลายปุ่มในจอ)
   const clickSwapFor = (c, targetName) => c.ev(`(()=>{const row=[...document.querySelectorAll(".lb-player")].find(r=>r.textContent.includes(${JSON.stringify(targetName)}));const btn=row?.querySelector(".swap-btn");if(!btn)return false;btn.scrollIntoView({block:"center"});btn.click();return true})()`);
@@ -105,6 +105,9 @@ try {
   let memberSmall = null;
   for (const c of ALL) { if ((await ownTeam(c)) === smallTeams[0]) { memberSmall = c; break; } }
   ck("หาสมาชิกทีมเล็กอีกฝั่งได้จาก DOM", Boolean(memberSmall));
+  // การ์ดทีมตอนนี้สูงกว่าเดิม (เต็มพื้นที่ที่มี) ทำให้เลย์เอาต์ตั้งตัวนานขึ้นเล็กน้อยหลังผู้เล่น 7 คนเข้าครบ
+  // ไม่พักตรงนี้แล้วกดปุ่มขอสลับทันที เจอว่าหาแถวผู้เล่นเป้าหมายไม่ถูกเป็นพักๆ (เทสรอบนี้)
+  await sleep(500);
   await act(memberBig);
   ck("มีปุ่มขอสลับข้างชื่อผู้เล่นทีมอื่น", await memberBig.ev(`!!document.querySelector(".swap-btn")`));
   ck("กดปุ่มขอสลับตัวกับผู้เล่นที่เลือกไว้สำเร็จ", await clickSwapFor(memberBig, nameOf.get(memberSmall)));

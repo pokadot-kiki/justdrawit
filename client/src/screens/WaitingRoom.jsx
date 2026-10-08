@@ -338,67 +338,71 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
               )}
 
               <div className="lb-roster__list">
-                {/* 4 ทีม: จัดเป็นตาราง 2×2 แทนสี่คอลัมน์เรียงกัน (ทุกทีมได้ความกว้างเท่า 2 ทีม อ่านชื่อทีมได้ง่ายกว่าคอลัมน์แคบจัดเดียว) */}
+                {/* ตารางทีมใช้ 2 คอลัมน์เสมอไม่ว่าจำนวนทีม: 2 ทีม = แถวเดียว · 4 ทีม = 2×2 ธรรมดา
+                    3 ทีม (จำนวนคี่) = ทีมสุดท้ายกว้างเต็มแถวล่าง (team-col--span2) + รายชื่อข้างในจัดเป็น 2 คอลัมน์ด้วย */}
                 {teamMode ? (
-                  <div className={`lb-teams${teams.length === 4 ? " lb-teams--grid2x2" : ""}`} style={{ "--team-cols": teams.length === 4 ? 2 : teams.length }}>
-                    {teams.map((t) => (
-                      <section className={`team-col team-col--${t}`} key={t} aria-label={teamLabel(t)}>
-                        <h3 className="team-col__title">
-                          {editingTeam === t ? (
-                            <input
-                              className="team-col__name-input"
-                              autoFocus
-                              maxLength={TEAM_NAME_MAX}
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              onBlur={() => submitEditTeam(t)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") submitEditTeam(t);
-                                if (e.key === "Escape") setEditingTeam(null);
-                              }}
-                            />
-                          ) : (
-                            <span className="team-col__name">
-                              {/* กดชื่อทีมเพื่อเปลี่ยนชื่อได้เลย (เดิมเป็นปุ่มดินสอแยก — เอาออกเพื่อคืนที่ให้ตัวอักษรชื่อทีม อย่างน้อย 6 ตัวก่อนตัด ...) */}
-                              {canRenameTeam(t) ? (
-                                <button
-                                  type="button"
-                                  className="team-col__name-text team-col__name-text--edit"
-                                  aria-label={`เปลี่ยนชื่อ${teamLabel(t)}`}
-                                  title="กดเพื่อเปลี่ยนชื่อทีม"
-                                  onClick={() => startEditTeam(t)}
-                                >
-                                  {teamLabel(t)}
-                                </button>
-                              ) : (
-                                <span className="team-col__name-text" title={teamLabel(t)}>
-                                  {teamLabel(t)}
-                                </span>
-                              )}
-                              {/* แทนคำว่า "(ทีมคุณ)" ด้วยป้ายเล็ก "คุณ" — ป้ายเดียวกับที่ใช้ชี้แถวตัวเองทุกที่ในแอป */}
-                              {myTeam === t && <YouTag />}
-                            </span>
+                  <div className={`lb-teams${teams.length > 2 ? " lb-teams--2rows" : ""}`}>
+                    {teams.map((t, i) => {
+                      const spanFull = teams.length % 2 === 1 && i === teams.length - 1;
+                      return (
+                        <section className={`team-col team-col--${t}${spanFull ? " team-col--span2" : ""}`} key={t} aria-label={teamLabel(t)}>
+                          <h3 className="team-col__title">
+                            {editingTeam === t ? (
+                              <input
+                                className="team-col__name-input"
+                                autoFocus
+                                maxLength={TEAM_NAME_MAX}
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onBlur={() => submitEditTeam(t)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") submitEditTeam(t);
+                                  if (e.key === "Escape") setEditingTeam(null);
+                                }}
+                              />
+                            ) : (
+                              <span className="team-col__name">
+                                {/* กดชื่อทีมเพื่อเปลี่ยนชื่อได้เลย (เดิมเป็นปุ่มดินสอแยก — เอาออกเพื่อคืนที่ให้ตัวอักษรชื่อทีม อย่างน้อย 6 ตัวก่อนตัด ...) */}
+                                {canRenameTeam(t) ? (
+                                  <button
+                                    type="button"
+                                    className="team-col__name-text team-col__name-text--edit"
+                                    aria-label={`เปลี่ยนชื่อ${teamLabel(t)}`}
+                                    title="กดเพื่อเปลี่ยนชื่อทีม"
+                                    onClick={() => startEditTeam(t)}
+                                  >
+                                    {teamLabel(t)}
+                                  </button>
+                                ) : (
+                                  <span className="team-col__name-text" title={teamLabel(t)}>
+                                    {teamLabel(t)}
+                                  </span>
+                                )}
+                                {/* แทนคำว่า "(ทีมคุณ)" ด้วยป้ายเล็ก "คุณ" — ป้ายเดียวกับที่ใช้ชี้แถวตัวเองทุกที่ในแอป */}
+                                {myTeam === t && <YouTag />}
+                              </span>
+                            )}
+                            {/* ชื่อ ป้ายคุณ จำนวนคน อยู่บรรทัดเดียวกันเสมอ (nowrap) — ชื่อทีมมีขั้นต่ำ 6 ตัวอักษรก่อนตัด ... (ดู CSS min-width: 6ch) */}
+                            <span className="team-col__count">{teamSize(t)} คน</span>
+                          </h3>
+                          <div className="lb-plist">
+                            {room.players.filter((p) => p.team === t).map(renderPlayer)}
+                            {teamSize(t) === 0 && <p className="team-col__empty">ยังไม่มีใคร</p>}
+                          </div>
+                          {myTeam !== t && (
+                            <button
+                              type="button"
+                              className="btn team-col__join"
+                              disabled={!canMoveTo(t)}
+                              title={canMoveTo(t) ? "" : "ย้ายได้เฉพาะทีมที่คนน้อยกว่าทีมตัวเอง และห้ามทำให้ทีมต่างกันเกิน 1 คน"}
+                              onClick={() => socket.emit("set_team", { team: t })}
+                            >
+                              ย้ายมา{teamLabel(t)}
+                            </button>
                           )}
-                          {/* ชื่อทีมมีที่ขั้นต่ำ 6 ตัวอักษรก่อนตัด ... (ดู CSS min-width: 6ch) — ถ้าคอลัมน์แคบจนไม่พอจริง แถวนี้จะตกไปบรรทัดใหม่เอง (flex-wrap) ไม่บีบชื่อต่อ */}
-                          <span className="team-col__count">{teamSize(t)} คน</span>
-                        </h3>
-                        <div className="lb-plist">
-                          {room.players.filter((p) => p.team === t).map(renderPlayer)}
-                          {teamSize(t) === 0 && <p className="team-col__empty">ยังไม่มีใคร</p>}
-                        </div>
-                        {myTeam !== t && (
-                          <button
-                            type="button"
-                            className="btn team-col__join"
-                            disabled={!canMoveTo(t)}
-                            title={canMoveTo(t) ? "" : "ย้ายได้เฉพาะทีมที่คนน้อยกว่าทีมตัวเอง และห้ามทำให้ทีมต่างกันเกิน 1 คน"}
-                            onClick={() => socket.emit("set_team", { team: t })}
-                          >
-                            ย้ายมา{teamLabel(t)}
-                          </button>
-                        )}
-                      </section>
-                    ))}
+                        </section>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="lb-plist">{room.players.map(renderPlayer)}</div>

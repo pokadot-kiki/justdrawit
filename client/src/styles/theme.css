@@ -2336,13 +2336,26 @@ select[class] {
   margin-top: 12px;
 }
 
+/* flex column (ไม่ใช่ grid) เพราะต้องให้ .lb-plist (รายชื่อ) ยืด flex:1 กินที่ที่เหลือทั้งหมด
+   ส่วนหัวการ์ดกับปุ่ม "ย้ายมา..." คงขนาดตามเนื้อหา — การ์ดจึงเต็มความสูงที่แถวในตารางให้มา ไม่มีที่ว่างโหว่ด้านล่าง */
 .team-col {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
-  align-content: start;
   padding: 8px;
   border: var(--border);
   min-width: 0;
+  min-height: 0;
+}
+
+/* ทีมที่ "คี่" (ตอนนี้มีแค่กรณี 3 ทีม) ทีมสุดท้ายกว้างเต็มแถว (ทั้งสองคอลัมน์) — ดู .lb-teams
+   รายชื่อผู้เล่นข้างในจัดเป็น 2 คอลัมน์ด้วย เพราะการ์ดนี้กว้างเป็นสองเท่าของการ์ดอื่น */
+.team-col--span2 {
+  grid-column: 1 / -1;
+}
+
+.team-col--span2 .lb-plist {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .team-col--A {
@@ -2380,15 +2393,15 @@ select[class] {
   white-space: nowrap;
 }
 
+/* ชื่อทีม ป้าย "คุณ" และจำนวนคน ต้องอยู่บรรทัดเดียวกันเสมอ (nowrap) — ชื่อทีมยาวตัดด้วย ... เอง (min-width: 6ch
+   บน .team-col__name-text กันชื่อทีมหดจนอ่านไม่ออก) แทนที่จะปล่อยให้ "จำนวนคน" ตกบรรทัดใหม่แบบรอบก่อน */
 .team-col__title {
   display: flex;
-  /* เดิม nowrap แล้วบีบชื่อทีมจนสั้นกว่าที่อ่านได้ — ตอนนี้ปล่อยให้ "จำนวนคน" ตกไปบรรทัดใหม่เองได้
-     ถ้าแถวไม่พอจริงๆ (ชื่อกินขั้นต่ำ 6 ตัวอักษรแล้ว + ป้ายคุณ) ไม่ต้องบีบชื่อทีมต่อให้สั้นกว่า 6 ตัว */
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: space-between;
   align-items: center;
-  gap: 2px 6px;
-  min-width: 0; /* เป็น grid item ของ .team-col (display:grid) เองก็มี min-width:auto โดยปริยาย ถ้าไม่ตั้งเป็น 0 แถวนี้จะกว้างเกินคอลัมน์แคบๆ แล้วล้นทับคอลัมน์ข้างๆ แทนที่จะยอมหด */
+  gap: 6px;
+  min-width: 0; /* .team-col ตอนนี้เป็น flex column เองก็มี min-width:auto โดยปริยาย ถ้าไม่ตั้งเป็น 0 แถวนี้จะกว้างเกินคอลัมน์แคบๆ แล้วล้นทับคอลัมน์ข้างๆ แทนที่จะยอมหด */
   margin: 0;
   font-family: var(--font-head);
   font-weight: 600;
@@ -2482,8 +2495,13 @@ select[class] {
   color: var(--muted);
 }
 
+/* ปุ่มบรรทัดเดียวท้ายการ์ด ไม่กินที่ทั้งการ์ด — flex:none กันไม่ให้ขึ้นมายืดตาม .team-col ที่เป็น flex column แล้ว
+   (เดิม 44px ตามกฎปุ่มสูงอย่างน้อย 44px ทั่วไป แต่การ์ดทีมพื้นที่จำกัดกว่าปุ่มหลักของเกมมาก จึงยอมลดเฉพาะปุ่มนี้) */
 .team-col__join {
-  min-height: 44px;
+  flex: none;
+  min-height: 34px;
+  padding: 2px 10px;
+  font-size: 13px;
 }
 
 @media (max-width: 620px) {
