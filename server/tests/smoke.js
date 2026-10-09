@@ -13,6 +13,10 @@ const fs = require("fs");
 const { spawn } = require("child_process");
 
 const SERVER_DIR = path.join(__dirname, "..");
+process.env.NODE_ENV = "test";
+process.env.JDI_TEST_AUTH_BYPASS = "1";
+const authSession = require(path.join(SERVER_DIR, "auth-session"));
+const firebaseAuth = require(path.join(SERVER_DIR, "firebase-auth"));
 
 // ข้อ 19-20 (Leaderboard) ใช้ไฟล์คะแนนชั่วคราว ไม่แตะ server/data/scores.json ของจริง
 // ต้องตั้งก่อน require("../leaderboard") และส่งต่อให้ server ตอน spawn ด้วย ทั้งสองฝั่งจะได้ใช้ไฟล์เดียวกัน
@@ -228,7 +232,92 @@ async function getBoard(query = "") {
 
 // ================= เทส =================
 async function main() {
+  await runPart("0. Firebase token และ session helpers", async () => {
+    const secret = "test-auth-session-secret-with-at-least-32-bytes";
+    const session = authSession.signSession(
+      { sub: "firebase-uid", email: "player@example.com", name: "Player" },
+      secret,
+      1000,
+    );
+    check("session ที่เซ็นด้วย secret ถูกต้องอ่านได้", authSession.readSession(session, secret, 1001), {
+      sub: "firebase-uid", email: "player@example.com", name: "Player",
+    });
+    check("แก้ token แล้วตรวจไม่ผ่าน", authSession.readSession(`${session}x`, secret, 1001), null);
+    check("session หมดอายุแล้วตรวจไม่ผ่าน", authSession.readSession(session, secret, 1000 + authSession.SESSION_TTL_MS), null);
+    check("อ่าน cookie ที่มีเครื่องหมายเท่ากับได้ครบ", authSession.parseCookies("a=1; jdi_session=abc.def==").jdi_session, "abc.def==");
+
+    const validTokenResponse = async (_url, options) => {
+      check("ส่ง Firebase ID token ไปตรวจแบบ POST", [options.method, JSON.parse(options.body).idToken], ["POST", "valid-test-token-123456"]);
+      return {
+        ok: true,
+        json: async () => ({ users: [{ localId: "firebase-uid", email: "player@example.com", emailVerified: true, displayName: "Player" }] }),
+      };
+    };
+    check("ยอมรับเฉพาะบัญชีที่ Firebase ยืนยันอีเมลแล้ว", await firebaseAuth.verifyIdToken(
+      "valid-test-token-123456",
+      "public-firebase-api-key",
+      validTokenResponse,
+    ), { sub: "firebase-uid", email: "player@example.com", name: "Player" });
+
+    let failure = null;
+    try {
+      await firebaseAuth.verifyIdToken("valid-test-token-123456", "public-firebase-api-key", async () => ({
+        ok: true,
+        json: async () => ({ users: [{ localId: "firebase-uid", email: "player@example.com", emailVerified: false }] }),
+      }));
+    } catch (error) {
+      failure = error.code;
+    }
+    check("ปฏิเสธบัญชีที่ยังไม่ยืนยันอีเมล", failure, "EMAIL_NOT_VERIFIED");
+
+    failure = null;
+    try {
+      await firebaseAuth.verifyIdToken("invalid-test-token-123456", "public-firebase-api-key", async () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({ error: { message: "INVALID_ID_TOKEN" } }),
+      }));
+    } catch (error) {
+      failure = error.code;
+    }
+    check("ปฏิเสธ token ที่ Firebase ไม่รับรอง", failure, "INVALID_TOKEN");
+
+    failure = null;
+    try {
+      await firebaseAuth.verifyIdToken("valid-test-token-123456", "public-firebase-api-key", async () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({ error: { message: "API_KEY_INVALID" } }),
+      }));
+    } catch (error) {
+      failure = error.code;
+    }
+    check("แยก API key Firebase ผิดออกจาก token ผู้เล่นผิด", failure, "PROVIDER_UNAVAILABLE");
+
+    failure = null;
+    try {
+      await firebaseAuth.verifyIdToken("short", "public-firebase-api-key", async () => {
+        throw new Error("should not request");
+      });
+    } catch (error) {
+      failure = error.code;
+    }
+    check("ปฏิเสธ token ผิดรูปแบบก่อนเรียก Firebase", failure, "INVALID_TOKEN");
+  });
+
   await startServer();
+
+  await runPart("0. สถานะล็อกอินใน test server", async () => {
+    const response = await fetch(`${URL}/api/auth/me`);
+    const result = await response.json();
+    check("test bypass มีไว้ให้ชุดทดสอบเท่านั้น", [response.status, result.enabled, result.user?.email], [200, true, "test@example.com"]);
+    const login = await fetch(`${URL}/api/auth/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: "valid-test-token-123456" }),
+    });
+    check("ไม่มี Firebase config แล้วออก session ไม่ได้", [login.status, await login.json()], [503, { error: "AUTH_NOT_CONFIGURED" }]);
+  });
 
   // คำทุกคำที่ server สุ่มมาให้คนวาดเลือก สะสมไว้ใช้เช็คตอนท้าย (ข้อ 8)
   const drawnOptions = [];
@@ -4016,6 +4105,60 @@ async function main() {
 
   // ปิดทุก socket เพื่อให้โปรเซสจบได้
   for (const rec of [A, B, C, ...others]) rec.socket.disconnect();
+
+  await runPart("45. server ปฏิเสธ socket ที่ไม่มี Firebase session", async () => {
+    const authUrl = `http://localhost:${ALT_PORT}`;
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const authServer = spawn(process.execPath, ["index.js"], {
+      cwd: SERVER_DIR,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+        JDI_TEST_AUTH_BYPASS: "0",
+        PORT: ALT_PORT,
+        AI_MODE: "mock",
+        FIREBASE_API_KEY: "",
+        AUTH_SESSION_SECRET: "",
+      },
+    });
+    try {
+      let ready = false;
+      for (let i = 0; i < 80; i++) {
+        if (await fetch(`${authUrl}/healthz`).then((r) => r.ok).catch(() => false)) {
+          ready = true;
+          break;
+        }
+        await wait(100);
+      }
+      check("server ที่ไม่มี Firebase config ยังสตาร์ทและรายงานสุขภาพได้", ready, true);
+      if (!ready) return;
+      const status = await fetch(`${authUrl}/api/auth/me`).then((r) => r.json());
+      check("ไม่มี Firebase config แล้ว login ถูกปิด ไม่ได้เปิดเล่นแบบ guest", status.enabled, false);
+
+      const result = await new Promise((resolve) => {
+        const socket = io(authUrl, { transports: ["websocket"], reconnection: false, timeout: 3000 });
+        const timer = setTimeout(() => {
+          socket.close();
+          resolve("TIMEOUT");
+        }, 4000);
+        socket.on("connect_error", (error) => {
+          clearTimeout(timer);
+          socket.close();
+          resolve(error.message);
+        });
+        socket.on("connect", () => {
+          clearTimeout(timer);
+          socket.close();
+          resolve("CONNECTED");
+        });
+      });
+      check("Socket.IO ที่ไม่มี session และยังไม่ตั้ง OAuth ถูกปฏิเสธ", result, "AUTH_NOT_CONFIGURED");
+    } finally {
+      authServer.kill();
+      await wait(300);
+    }
+  });
 }
 
 // กันเทสค้าง: ถ้าเกิน 300 วิให้หยุด (ข้อ 29 เพิ่มราว 20 วิ) (ไม่หน่วงไม่ให้โปรเซสปิดตัว)

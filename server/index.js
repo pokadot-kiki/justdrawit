@@ -9,6 +9,8 @@ const path = require("path");
 const { Server } = require("socket.io");
 const { cleanName } = require("./clean");
 const { hasBadWord } = require("./profanity");
+const authSession = require("./auth-session");
+const firebaseAuth = require("./firebase-auth");
 const leaderboard = require("./leaderboard");
 const ai = require("./ai");
 const aiDrawings = require("./ai-drawings");
@@ -64,19 +66,49 @@ const io = new Server(server, {
   allowRequest: (req, cb) => cb(null, originOk(req)),
 });
 
+const FIREBASE_API_KEY = String(process.env.FIREBASE_API_KEY || "").trim();
+const AUTH_SESSION_SECRET = String(process.env.AUTH_SESSION_SECRET || "");
+const TEST_AUTH_BYPASS = process.env.NODE_ENV === "test" && process.env.JDI_TEST_AUTH_BYPASS === "1";
+
+const AUTH_CONFIGURED = Boolean(FIREBASE_API_KEY && Buffer.byteLength(AUTH_SESSION_SECRET) >= 32);
+const AUTH_MISSING = [
+  !FIREBASE_API_KEY && "FIREBASE_API_KEY",
+  Buffer.byteLength(AUTH_SESSION_SECRET) < 32 && "AUTH_SESSION_SECRET (อย่างน้อย 32 bytes)",
+].filter(Boolean);
+
+function requestUsesHttps(req) {
+  return req.secure || String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() === "https";
+}
+
+function sessionCookieOptions(req, maxAge) {
+  return `Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${requestUsesHttps(req) ? "; Secure" : ""}`;
+}
+
+function requestUser(req) {
+  if (TEST_AUTH_BYPASS) return { sub: "test-firebase-user", email: "test@example.com", name: "ผู้ทดสอบ" };
+  const token = authSession.parseCookies(req.headers.cookie)[authSession.SESSION_COOKIE];
+  return authSession.readSession(token, AUTH_SESSION_SECRET);
+}
+
 // ── ตัวตนผู้เล่นแบบถาวร (playerId) ──
 // socket.id เปลี่ยนทุกครั้งที่รีเฟรชหน้า จึงใช้เป็น "ตัวตน" ไม่ได้ ถ้าใช้ รีเฟรชทีเดียวก็กลายเป็นคนใหม่
-// client เก็บ "กุญแจลับ" (playerKey) ไว้ในเบราว์เซอร์ แล้วส่งมาตอนต่อ socket ทุกครั้ง (handshake.auth)
-// server แปลงกุญแจเป็น playerId ด้วย SHA-256 → กุญแจเดิม = playerId เดิมเสมอ
+// client เก็บ "กุญแจลับ" (playerKey) ไว้ในแท็บ แล้วส่งมาตอนต่อ socket ทุกครั้ง (handshake.auth)
+// server ผูกกุญแจกับ Firebase UID ก่อนแปลงเป็น playerId ด้วย SHA-256
 // ทำไมไม่ใช้กุญแจเป็น playerId ตรงๆ: playerId ถูกส่งให้ทุกคนในห้อง (อยู่ใน room_update)
 // ถ้ามันคือกุญแจด้วย ใครก็เอา id ของเพื่อนไป rejoin สวมรอยได้ · แปลงทางเดียวแล้วย้อนกลับไปหากุญแจไม่ได้
 // ไม่ส่งกุญแจมา (test.html / สคริปต์เทส) = ใช้ socket.id เหมือนเดิม และไม่มีสิทธิ์ rejoin
 const PLAYER_KEY_RE = /^[A-Za-z0-9_-]{16,64}$/;
 io.use((socket, next) => {
+  const cookie = authSession.parseCookies(socket.handshake.headers.cookie)[authSession.SESSION_COOKIE];
+  const user = TEST_AUTH_BYPASS
+    ? { sub: "test-firebase-user", email: "test@example.com", name: "ผู้ทดสอบ" }
+    : authSession.readSession(cookie, AUTH_SESSION_SECRET);
+  if (!user) return next(new Error(AUTH_CONFIGURED ? "AUTH_REQUIRED" : "AUTH_NOT_CONFIGURED"));
+  socket.data.user = user;
   const key = socket.handshake.auth?.playerKey;
   socket.data.persistent = typeof key === "string" && PLAYER_KEY_RE.test(key);
   socket.data.pid = socket.data.persistent
-    ? crypto.createHash("sha256").update(key).digest("hex").slice(0, 20)
+    ? crypto.createHash("sha256").update(`${user.sub}:${key}`).digest("hex").slice(0, 20)
     : socket.id;
   next();
 });
@@ -91,8 +123,45 @@ if (process.env.FORCE_HTTPS === "1") {
   });
 }
 
+app.use(express.json({ limit: "12kb" }));
+
 // เช็คสุขภาพ: ตอบเร็วที่สุด ไม่แตะข้อมูลใดๆ (Render ใช้ดูว่า server พร้อมรับคนหรือยัง)
 app.get("/healthz", (req, res) => res.type("text").send("ok"));
+
+app.get("/api/auth/me", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  if (TEST_AUTH_BYPASS) {
+    return res.json({ enabled: true, user: { name: "ผู้ทดสอบ", email: "test@example.com" } });
+  }
+  const user = requestUser(req);
+  res.json({
+    enabled: AUTH_CONFIGURED,
+    user: user ? { name: user.name, email: user.email } : null,
+  });
+});
+
+app.post("/api/auth/session", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  if (!AUTH_CONFIGURED) return res.status(503).json({ error: "AUTH_NOT_CONFIGURED" });
+  if (typeof req.body?.idToken !== "string") return res.status(400).json({ error: "INVALID_TOKEN" });
+  try {
+    const user = await firebaseAuth.verifyIdToken(req.body.idToken, FIREBASE_API_KEY);
+    const session = authSession.signSession(user, AUTH_SESSION_SECRET);
+    res.append("Set-Cookie", `jdi_session=${session}; ${sessionCookieOptions(req, Math.floor(authSession.SESSION_TTL_MS / 1000))}`);
+    res.json({ user: { name: user.name, email: user.email } });
+  } catch (error) {
+    if (error.code === "EMAIL_NOT_VERIFIED") return res.status(403).json({ error: error.code });
+    if (error.code === "INVALID_TOKEN") return res.status(401).json({ error: error.code });
+    console.warn("Firebase Auth: ตรวจ token ไม่สำเร็จ", error?.code || "Error");
+    return res.status(503).json({ error: "AUTH_PROVIDER_UNAVAILABLE" });
+  }
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.append("Set-Cookie", `jdi_session=; ${sessionCookieOptions(req, 0)}`);
+  res.status(204).end();
+});
 
 app.use(express.static(__dirname + "/public"));
 
@@ -2254,6 +2323,9 @@ Promise.all([ai.init(), leaderboard.init()]).then(() => {
   const listenArgs = process.env.HOST ? [PORT, process.env.HOST] : [PORT];
   server.listen(...listenArgs, () => {
     console.log(`server พร้อมแล้ว ที่ http://localhost:${PORT}`);
+    if (!AUTH_CONFIGURED && !TEST_AUTH_BYPASS) {
+      console.warn(`🔒 Firebase login ยังไม่พร้อม — ตั้งค่า ${AUTH_MISSING.join(", ")}`);
+    }
     const ips = lanAddresses();
     if (ips.length) {
       console.log("ให้เพื่อนในวง Wi-Fi เดียวกันพิมพ์ที่อยู่นี้ในเบราว์เซอร์:");

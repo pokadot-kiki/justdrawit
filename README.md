@@ -34,6 +34,25 @@ npm run setup
 รันซ้ำได้ปลอดภัย (ของที่มีแล้วจะข้าม) — **ถ้าดาวน์โหลดโมเดลไม่ได้** (ไม่มีเน็ตหรือโดนบล็อก) ตัวติดตั้งจะเตือนแล้วทำต่อ
 เกมเปิดได้ปกติ โหมด Solo จะใช้ "โหมดจำลอง" (AI เดาสุ่ม) ภายหลังต่อเน็ตแล้วรัน `cd server && npm run get-model` เพื่อได้ AI ตัวจริง
 
+## ตั้งค่า Firebase Login (จำเป็นก่อนเล่น)
+
+เกมต้องเข้าสู่ระบบด้วย Google หรืออีเมล/รหัสผ่านก่อนสร้าง/เข้าห้องหรือเริ่ม Solo และบัญชีอีเมลต้องยืนยันก่อนเล่น
+
+1. สร้างโปรเจกต์ใน Firebase Console แล้วเพิ่ม **Web app**
+2. ใน **Authentication → Sign-in method** เปิด **Email/Password** และ **Google**; ใน **Settings → Authorized domains** ตรวจว่ามี `localhost` และโดเมนเว็บที่จะ deploy
+3. คัดลอก Web config จาก Firebase ไปใส่ใน `client/.env.local`:
+   ```env
+   VITE_FIREBASE_API_KEY=...
+   VITE_FIREBASE_AUTH_DOMAIN=...firebaseapp.com
+   VITE_FIREBASE_PROJECT_ID=...
+   VITE_FIREBASE_APP_ID=...
+   ```
+4. คัดลอก [server/.env.example](./server/.env.example) เป็น `server/.env` แล้วตั้ง `FIREBASE_API_KEY` ให้เป็นค่าเดียวกับ `VITE_FIREBASE_API_KEY`
+5. สร้าง `AUTH_SESSION_SECRET` ยาวอย่างน้อย 32 bytes ด้วย `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` แล้วใส่ใน `server/.env`
+6. เริ่ม server ใหม่ด้วย `npm start` (ตอนพัฒนา Vite ให้เปิดด้วย `npm run dev` หลังตั้งค่าตัวแปรทั้งสองฝั่งแล้ว)
+
+Firebase Web API key เป็นค่าตั้งค่าเว็บ ไม่ใช่รหัสผ่าน แต่ `AUTH_SESSION_SECRET` ต้องเก็บไว้ฝั่ง server เท่านั้น ห้าม commit · server ตรวจ Firebase ID token และออกคุกกี้ `HttpOnly` สำหรับ session; Firebase client ใช้ in-memory persistence ไม่เก็บการล็อกอินถาวรใน browser · ตั้งค่า Render ดู [DEPLOY.md](./DEPLOY.md)
+
 ## เปิดเกม
 
 ```bash
