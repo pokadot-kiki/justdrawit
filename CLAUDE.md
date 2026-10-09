@@ -59,6 +59,7 @@ justdrawit/
 │  ├─ index.js          ← server หลัก (ทำไว้แล้ว ดู "สถานะงาน")
 │  ├─ leaderboard.js    ← คะแนนบน Upstash Redis เป็นหลัก ไฟล์ scores.json เป็นทางสำรอง (`saveScore` `getLeaderboard`) ไม่ผูกกับ socket
 │  ├─ clean.js          ← `cleanName` ใช้ร่วมกันระหว่าง index.js กับ leaderboard.js
+│  ├─ text-check.js     ← กันโกงเขียนตัวหนังสือบนกระดาน: วาดเส้นเป็นภาพ (sharp) + ตัวกรองรูปร่างเส้น + OCR (Gemini) · ไม่รู้คำตอบ ไม่ผูกกับ socket
 │  ├─ profanity.js      ← ตัวกรองคำไม่เหมาะสม (`hasBadWord` `normalize`) ใช้กับชื่อเล่น+ชื่อทีม ไม่ผูกกับ socket
 │  ├─ scripts/seed-scores.js ← ใส่คะแนนตัวอย่าง (`npm run seed`)
 │  ├─ public/test.html  ← หน้าทดสอบผ่าน Console (มีคำสั่ง create join start pick say) ⚠️ เปิดอยู่เสมอแม้บน production ยังไม่ได้ซ่อน (พบตอนตรวจความปลอดภัยข้อ 9 ความเสี่ยงต่ำ ไม่มีความลับหลุด)
@@ -1321,6 +1322,15 @@ server แยกฟังก์ชัน `applySettings(room, data)` ใช้�
 · **`balance.mjs` 45/45** (ยืนยันหน้าแรกกลับมาไม่เลื่อนที่ 1366×768 และ 1024×768 แล้ว — ก่อนซ่อนปุ่มร้านค้าอยู่ที่ 43/45)
 · ปิด Chrome/server ทดสอบและลบโปรไฟล์ชั่วคราวครบ (เช็คด้วย `lsof`/`pgrep`/`find` — ไม่มีอะไรค้าง)
 · **ยังไม่ได้ push และยังไม่ได้ merge เข้า `main`** ตามที่สั่ง
+
+### เสร็จแล้ว (กันโกงเขียนคำตอบเป็นตัวหนังสือบนกระดาน — branch `feature/anti-cheat` · แตะ server + client นิดเดียว + `events.md` · ยังไม่ commit)
+**สัญญากลางถูกแก้** (`events.md` §4 + 1 บรรทัดในตาราง): event ใหม่ `rule_violation` S→ห้อง/เลน `{ drawerId, strike, penalty }` · `canvas_history` จังหวะที่ 3 (ล้างภาพ) · **ไม่เพิ่ม library** (ใช้ `sharp` ที่มีอยู่ + `fetch`)
+- ผู้ใช้เลือก **Gemini vision** เป็น OCR (`GEMINI_API_KEY` ที่ server เท่านั้น · `GEMINI_MODEL` ค่าเริ่มต้น `gemini-3.1-flash-lite` · `OCR_PROVIDER` ไว้เสียบตัวอื่น) และโทษ "ครั้งแรกล้างภาพ+เตือน · ครั้งต่อไปล้างภาพ+หัก 100 (ไม่ติดลบ) ตาเล่นต่อ"
+- `server/text-check.js`: `opsToSvg`/`renderPng` วาด `canvasOps` เป็น PNG 640×480 · `shapeCheck`/`looksLikeText` (≥ 2 เส้นขนาดไหนก็ได้ หรือเส้นเดียวยาว ≥ 1 ความกว้างกระดาน — เดิมนับแค่เส้น < 0.45 ทำให้ตัวใหญ่ครึ่งกระดานถูกกรองทิ้ง เจอตอนทดสอบจริง) เป็นตัวกรองประหยัดโควตา ไม่ใช่ตัวตัดสิน · timeout 15 วิ · OCR ไม่ได้ผล = ลองใหม่ใน 3 วิ · โดน 429 = นัดตรวจใหม่ตอนพัก 1 นาทีจบ (เดิมทิ้งภาพนั้น) · (โหมดดีบัก `TEXT_CHECK_DEBUG=1` ที่ใช้หาสาเหตุตอนทดสอบกับ Gemini จริง ลบออกแล้ว) · `readText` ไม่ throw (ไม่มี key/429/500/JSON เสีย = null) · เพดานทั้ง server 12 ครั้ง/นาที + 450 ครั้ง/วัน (ต่ำกว่าโควตาฟรีของ gemini-3.1-flash-lite) · 429 พัก 1 นาที
+- `server/index.js`: `resetTextCheck` (ทุกตา · ทุกเลน) · `scheduleTextCheck` หลัง `stroke_end`/`draw_shape` (รอหยุด 1 วิ · ห่าง ≥ 3 วิ · ≤ 6 ครั้ง/ตา · ทีละครั้ง · ภาพไม่เปลี่ยนไม่ตรวจซ้ำ) · `runTextCheck` เทียบด้วย `normalize` + substring · มั่นใจ ≥ 0.9 ลงโทษทันที · 0.7–0.9 ต้อง **สองครั้งติดกัน** · `punishTextCheat` ล้างทั้งภาพและประวัติ (`resetCanvas` — undo เอาคืนไม่ได้) · `stopTimer` เลิกนัดตรวจที่ค้าง · log ไม่มีคำ/ข้อความที่อ่านได้
+- client: `useGame` รับ `rule_violation` → ข้อความระบบในแชท ชนิด `violation` (พื้นแดงอ่อน กรอบแดงเข้ม ไอคอนดินสอ `.note--violation`) · คนวาดเห็นคำเตือน คนอื่นเห็น "คนวาดทำผิดกติกา"
+- env สำหรับเทสเท่านั้น: `TEXT_CHECK=off` (smoke.js ตั้งให้ทุก server) · `GEMINI_API_URL` · `TEXT_CHECK_PAUSE_MS` `TEXT_CHECK_GAP_MS` `TEXT_CHECK_MAX_PER_TURN`
+- **ข้อจำกัด**: ไม่มี key บน Render ตอนนี้ = ไม่ตรวจ · **ยังไม่ได้ทดสอบกับ Gemini จริง** (เทสใช้ Gemini ปลอม ความแม่นกับลายมือไทยจริงยังไม่รู้) · Solo ไม่ได้ตรวจ · ถังสีไม่ถูกวาดลงภาพที่ส่ง OCR
 
 ### ยังไม่ได้ทำ (ตามลำดับใน PROMPTS.md)
 - (ไม่มีแล้ว — ข้อ 8 เสร็จ)

@@ -20,6 +20,8 @@ const KINDS = {
   timeout: "clock",
   hint: "bulb",
   pen: "pen",
+  violation: "pen", // คนวาดเขียนตัวหนังสือบนกระดาน (rule_violation) — ไอคอนดินสอเหมือนเดิม แต่กรอบแดง
+
   team: "flag",
   info: "info",
 };
