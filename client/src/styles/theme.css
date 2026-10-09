@@ -2251,6 +2251,17 @@ select[class] {
   background: color-mix(in srgb, var(--purple) 12%, white);
 }
 
+/* คนวาดเขียนตัวหนังสือบนกระดาน (rule_violation) — พื้นแดงอ่อนเหมือน "หมดเวลา!" แต่กรอบแดงเข้มรอบกล่อง ให้เด่นกว่า
+   ใช้ --red ตัวเดิม (ไม่มีตัวแปรแดงเข้ม จึงผสมดำ 25%) · ตัวหนังสือสีเข้มปกติ อ่านง่าย · ขึ้นบรรทัดใหม่ได้บนจอเล็ก */
+.note--violation {
+  border: 1px solid var(--red); /* เบราว์เซอร์เก่าที่ไม่รู้จัก color-mix ใช้บรรทัดนี้ */
+  border: 1px solid color-mix(in srgb, var(--red) 75%, black);
+  border-left-width: 4px;
+  background: color-mix(in srgb, var(--red) 14%, white);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 /* ---- พลุกระดาษ ---- */
 .podium-stage {
   position: relative;
