@@ -1487,6 +1487,14 @@ async function main() {
     check("API เห็นคะแนนที่เพิ่งบันทึก เรียงถูก", r.body?.top.map((t) => t.name), ["Mew", "ชื่อยาวมากเกินยี่สิบตัวอักษรแน่นอน".slice(0, 20), "<b>x</b>"]);
     check("ไม่มีไฟล์ชั่วคราวค้าง (.tmp)", fs.readdirSync(SCORES_DIR).filter((f) => f.endsWith(".tmp")), []);
 
+    const accountId = "a".repeat(64);
+    saveScore({ name: "ชื่อเดิม", score: 1500, levelReached: 5, accountId });
+    saveScore({ name: "ชื่อใหม่", score: 400, levelReached: 2, accountId });
+    const renamedBoard = await getBoard(`?month=${month}`);
+    const renamedEntry = renamedBoard.body?.top.find((entry) => entry.name === "ชื่อใหม่");
+    check("เปลี่ยนชื่อแล้วใช้คะแนนสูงสุดเดิมของบัญชีเดียวกัน", [renamedEntry?.name, renamedEntry?.score, renamedEntry?.levelReached], ["ชื่อใหม่", 1500, 5]);
+    check("API Leaderboard ไม่เปิดเผย accountId", JSON.stringify(renamedBoard.body).includes(accountId), false);
+
     // ไฟล์เสีย → เก็บสำรองไว้ แล้วเริ่มรายการใหม่
     fs.writeFileSync(SCORES_FILE, "[{ เสีย");
     const after = saveScore({ name: "Joy", score: 700, levelReached: 4 });
@@ -1500,7 +1508,7 @@ async function main() {
   const TINY_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
   const readRows = () => JSON.parse(fs.readFileSync(SCORES_FILE, "utf8"));
 
-  await runPart("21. Leaderboard หนึ่งชื่อหนึ่งแถว · rankOf", async () => {
+  await runPart("21. Leaderboard หนึ่งบัญชีหนึ่งแถว · rankOf", async () => {
     const { rankOf } = require("../leaderboard");
     const now = new Date();
     const pad2 = (n) => String(n).padStart(2, "0");
@@ -1529,8 +1537,22 @@ async function main() {
     check("rankOf: 1000 คะแนนตามหลัง Tar กับ Mew = อันดับ 3", rankOf({ name: "New", score: 1000, levelReached: 1 }), 3);
     check("rankOf: คะแนนเท่ากันแต่ด่านน้อยกว่า ตามหลังคนเดิม", rankOf({ name: "New", score: 1300, levelReached: 5 }), 3);
     check("rankOf: ไม่นับตัวเอง (Mew 1300/6 ได้อันดับ 2 ไม่ใช่ 3)", rankOf({ name: "Mew", score: 1300, levelReached: 6 }), 2);
+    check("rankOf: ไม่นับบัญชีตัวเองแม้เปลี่ยนชื่อเล่น", rankOf({ name: "Mew-บัญชีเดิม", score: 1300, levelReached: 6, accountId: "c".repeat(64) }), 3);
     check("rankOf: ไม่นับ OldChamp (2000 คะแนน) เพราะอยู่เดือนก่อน — 1600 เดือนนี้ชนะทุกคนจึงได้อันดับ 1",
       rankOf({ name: "New", score: 1600, levelReached: 1 }), 1);
+    const accountId = "c".repeat(64);
+    const accountAt = (day) => `${CUR_MONTH}-${day} 10:00`;
+    const rows = readRows();
+    rows.push(
+      { id: 8, name: "Mew-บัญชีเดิม", score: 1400, levelReached: 6, playedAt: accountAt("06"), accountId },
+      { id: 9, name: "Mew-บัญชีล่าสุด", score: 900, levelReached: 4, playedAt: accountAt("07"), accountId },
+    );
+    fs.writeFileSync(SCORES_FILE, JSON.stringify(rows));
+    const accountBoard = await getBoard(`?month=${CUR_MONTH}`);
+    const accountEntry = accountBoard.body?.top.find((entry) => entry.name === "Mew-บัญชีล่าสุด");
+    check("Leaderboard รวมชื่อเก่า/ใหม่เป็นบัญชีเดียวและใช้ชื่อเล่นล่าสุด", [accountEntry?.name, accountEntry?.score], ["Mew-บัญชีล่าสุด", 1400]);
+    check("API Leaderboard ไม่ส่ง accountId", JSON.stringify(accountBoard.body).includes(accountId), false);
+    check("rankOf ไม่นับบัญชีตัวเองแม้เปลี่ยนชื่อเล่น", rankOf({ name: "Mew-บัญชีล่าสุด", score: 1300, levelReached: 6, accountId }), 3);
     check("rankOf: ไฟล์ว่างได้อันดับ 1", (fs.rmSync(SCORES_FILE, { force: true }), rankOf({ name: "A", score: 0, levelReached: 1 })), 1);
   });
 

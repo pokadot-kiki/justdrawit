@@ -100,13 +100,19 @@ function requestUser(req) {
 const PLAYER_KEY_RE = /^[A-Za-z0-9_-]{16,64}$/;
 io.use((socket, next) => {
   const cookie = authSession.parseCookies(socket.handshake.headers.cookie)[authSession.SESSION_COOKIE];
+  const key = socket.handshake.auth?.playerKey;
+  const persistent = typeof key === "string" && PLAYER_KEY_RE.test(key);
   const user = TEST_AUTH_BYPASS
-    ? { sub: "test-firebase-user", email: "test@example.com", name: "ผู้ทดสอบ" }
+    ? {
+        sub: `test-${persistent ? crypto.createHash("sha256").update(key).digest("hex") : socket.id}`,
+        email: "test@example.com",
+        name: "ผู้ทดสอบ",
+      }
     : authSession.readSession(cookie, AUTH_SESSION_SECRET);
   if (!user) return next(new Error(AUTH_CONFIGURED ? "AUTH_REQUIRED" : "AUTH_NOT_CONFIGURED"));
   socket.data.user = user;
-  const key = socket.handshake.auth?.playerKey;
-  socket.data.persistent = typeof key === "string" && PLAYER_KEY_RE.test(key);
+  socket.data.accountId = crypto.createHash("sha256").update(`jdi:score-account:v1:${user.sub}`).digest("hex");
+  socket.data.persistent = persistent;
   socket.data.pid = socket.data.persistent
     ? crypto.createHash("sha256").update(`${user.sub}:${key}`).digest("hex").slice(0, 20)
     : socket.id;
@@ -1243,7 +1249,15 @@ function endGame(room) {
   // บันทึกคะแนนของทุกคนลงกระดาน "เล่นกับเพื่อน" — server บันทึกเอง client ส่งคะแนนมาไม่ได้
   // คนที่ได้ 0 ไม่บันทึก (ไม่ได้เล่นจริง) · saveScore ไม่ throw จึงไม่ทำให้จบเกมพัง
   for (const p of room.players) {
-    if (p.score > 0) leaderboard.saveScore({ name: p.name, score: p.score, levelReached: 0, board: "multi" });
+    if (p.score > 0) {
+      leaderboard.saveScore({
+        name: p.name,
+        score: p.score,
+        levelReached: 0,
+        board: "multi",
+        accountId: room.scoreAccountIds.get(p.id),
+      });
+    }
   }
   io.to(room.code).emit("game_end", endedPayload(room));
   io.to(room.code).emit("room_update", roomState(room));
@@ -1409,6 +1423,7 @@ function removePlayer(room, pid) {
   }
   io.in(pid).socketsLeave([code, ...TEAM_CODES.map((t) => `${code}:${t}`)]);
   room.players = room.players.filter((p) => p.id !== pid);
+  room.scoreAccountIds?.delete(pid);
 
   if (room.players.length === 0) {
     for (const t of room.dropTimers?.values() ?? []) clearTimeout(t);
@@ -1686,11 +1701,12 @@ function endSoloGame(socket, solo) {
   solo.over = true;
   forgetSolo(solo);
   socket.data.solo = null;
-  leaderboard.saveScore(result);
+  const scoreResult = { ...result, accountId: solo.accountId };
+  leaderboard.saveScore(scoreResult);
   socket.emit("ai_game_end", {
     totalScore: result.score,
     levelReached: result.levelReached,
-    rank: leaderboard.rankOf(result),
+    rank: leaderboard.rankOf(scoreResult),
   });
 }
 
@@ -1795,6 +1811,7 @@ io.on("connection", (socket) => {
       hostId: socket.data.pid,
       status: "lobby",
       players: [{ id: socket.data.pid, name, avatar: cleanAvatar(data.avatar), score: 0, isHost: true, team: null, connected: true, ready: false }],
+      scoreAccountIds: new Map([[socket.data.pid, socket.data.accountId]]),
       settings: { mode: "classic", rounds: 3, drawTime: 60, difficulty: "mixed", maxPlayers: MAX_PLAYERS, visibility: "private", challenges: [...DEFAULT_CHALLENGES], teamCount: 2, teamNames: { ...TEAM_DEFAULT_NAMES } },
       swapRequests: [], // คำขอสลับตัวที่ค้างอยู่ (โหมดทีม)
     };
@@ -1829,6 +1846,7 @@ io.on("connection", (socket) => {
     const joiner = { id: socket.data.pid, name, avatar: cleanAvatar(data.avatar), score: 0, isHost: false, team: null, connected: true, ready: false };
     if (isTeamMode(room)) joiner.team = autoTeam(room); // โหมดทีม: เข้าทีมที่คนน้อยกว่าอัตโนมัติ (รวมคนเข้ากลางเกม)
     room.players.push(joiner);
+    room.scoreAccountIds.set(socket.data.pid, socket.data.accountId);
     socket.join(code);
     socket.data.roomCode = code;
     syncTeamRoom(room, joiner);
@@ -2272,7 +2290,7 @@ io.on("connection", (socket) => {
       name, difficulty: LEVELS.includes(data?.difficulty) ? data.difficulty : null, level: 1, lives: SOLO_LIVES, totalScore: 0, usedWords: new Set(), roundId: 0,
       over: false, drawing: false, busy: false, roundTimer: null, nextTimer: null,
       guessing: false, drawNext: false, passed: false, strokeTimers: [],
-      pid: socket.data.pid, replies: [], sentStrokes: [], hintSent: false,
+      pid: socket.data.pid, accountId: socket.data.accountId, replies: [], sentStrokes: [], hintSent: false,
     };
     solo.port = makeSoloPort(solo);
     socket.data.solo = solo;

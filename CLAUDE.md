@@ -1346,6 +1346,11 @@ server แยกฟังก์ชัน `applySettings(room, data)` ใช้�
 - เพิ่มเทสตรวจ session, Firebase ID token/อีเมลยืนยัน และ server ที่ไม่มี Firebase config · test bypass ยังเปิดได้เฉพาะ `NODE_ENV=test` พร้อม `JDI_TEST_AUTH_BYPASS=1`
 - **ข้อจำกัด:** ต้องสร้าง/ตั้งค่า Firebase project และเปิด Email/Password กับ Google provider ก่อนใช้งานจริง · ยังไม่ได้ทดสอบกับ Firebase project ของผู้ใช้ · ร้านค้า/เหรียญยังปิดไว้ เพราะการเก็บเหรียญใน localStorage ไม่ server-authoritative
 
+### แก้ Leaderboard รวมคะแนนตามบัญชี Firebase แม้เปลี่ยนชื่อเล่น
+- คะแนนใหม่จัดกลุ่มด้วยค่าแฮชของ Firebase UID ที่ server สร้างเอง ไม่รับ identity จาก client และไม่ส่ง accountId ออกใน Leaderboard API
+- หนึ่งบัญชีมีหนึ่งแถวต่อกระดาน/เดือน: แสดงชื่อเล่นที่ใช้ล่าสุด แต่ใช้คะแนนเกมที่ดีที่สุด · ใช้กับทั้ง Solo และเกมห้อง
+- คะแนนที่มีอยู่ก่อนการเปลี่ยนนี้ไม่มี accountId จึงยังถูกจัดกลุ่มด้วยชื่อเดิมและไม่สามารถผูกย้อนหลังเข้าบัญชีอย่างน่าเชื่อถือโดยอัตโนมัติ
+
 ### ยังไม่ได้ทำ (ตามลำดับใน PROMPTS.md)
 - (ไม่มีแล้ว — ข้อ 8 เสร็จ)
 
