@@ -105,7 +105,7 @@ const decode = async (c, sel = ".board") => { await act(c); return c.ev(`(async(
 const setSize = (c, v) => c.ev(`(()=>{const i=document.querySelector("input[aria-label='ขนาดแปรง']");const s=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;s.call(i,${v});i.dispatchEvent(new Event("input",{bubbles:true}));i.dispatchEvent(new Event("change",{bubbles:true}))})()`);
 const tool = async (c, label) => { const r = await c.ev(`(()=>{const b=document.querySelector(${JSON.stringify('.toolbar button[aria-label="' + label + '"]')});if(!b)return false;b.click();return true})()`); if (!r) console.log("(ไม่พบปุ่มเครื่องมือ)", label); return r; };
 try {
-  server = spawn("node", ["index.js"], { cwd: `${ROOT}/server`, env: { ...process.env, PORT: String(PORT), SCORES_FILE: `${SP}/scores-c.json`, AI_MODE: "mock", AI_MOCK_CHANCE: "0", CHALLENGE_ODDS: "0" }, stdio: "ignore" });
+  server = spawn("node", ["index.js"], { cwd: `${ROOT}/server`, env: { ...process.env, NODE_ENV: "test", JDI_TEST_AUTH_BYPASS: "1", PORT: String(PORT), SCORES_FILE: `${SP}/scores-c.json`, AI_MODE: "mock", AI_MOCK_CHANCE: "0", CHALLENGE_ODDS: "0" }, stdio: "ignore" });
   chrome = spawn((process.env.CHROME_BIN || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"), [`--remote-debugging-port=${DBG}`, `--user-data-dir=${PROFILE}`, "--headless=new", "--mute-audio", "--no-first-run", "--window-size=1500,1000", "about:blank"], { stdio: "ignore" });
   for (let i = 0; i < 50; i++) { try { await fetch(`http://127.0.0.1:${DBG}/json/version`); break; } catch { await sleep(200); } }
   await sleep(1500);

@@ -66,17 +66,29 @@
 ## 1. ระบบห้อง
 เจ้าของ server: คนที่ 1 · เจ้าของหน้าจอ: คนที่ 2
 
+### Firebase Login และ session
+ก่อนใช้ Socket.IO ผู้เล่นต้องเข้าสู่ระบบผ่าน Firebase Authentication ได้ทั้ง Google และอีเมล/รหัสผ่าน
+client ส่ง Firebase ID token ให้ `POST /api/auth/session`; server ตรวจ token กับ Firebase Identity Toolkit และยอมรับเฉพาะบัญชีที่มี UID, อีเมล และยืนยันอีเมลแล้ว
+ไม่เพิ่ม event Socket.IO สำหรับ login
+
+- session เป็นคุกกี้ `jdi_session` ที่ server เซ็นด้วย `AUTH_SESSION_SECRET` อายุ 7 วัน · ตั้ง `HttpOnly; SameSite=Lax; Path=/` และ `Secure` เมื่อเป็น HTTPS
+- `GET /api/auth/me` ตอบ `{ enabled: boolean, user: null | { name, email } }` · `POST /api/auth/logout` ล้างคุกกี้และตอบ `204`
+- `POST /api/auth/session` รับ `{ idToken }` และตอบ `{ user: { name, email } }` เมื่อสำเร็จ · token ผิดตอบ `401 INVALID_TOKEN` · อีเมลยังไม่ยืนยันตอบ `403 EMAIL_NOT_VERIFIED` · ตั้งค่าไม่ครบตอบ `503 AUTH_NOT_CONFIGURED`
+- ถ้าขาด config หน้าเว็บแจ้งว่าระบบยังไม่พร้อม และ server **ปฏิเสธการเชื่อมต่อ Socket.IO** ไม่เปิดให้เล่นแบบ guest
+- ไม่เข้าสู่ระบบ/คุกกี้หมดอายุ → Socket.IO `connect_error` message `AUTH_REQUIRED` · server ยังตั้งค่า Firebase ไม่ครบ → `AUTH_NOT_CONFIGURED`
+- หน้า Leaderboard เปิดดูได้โดยไม่ต้อง login แต่ Lobby/SET UP/ห้อง/Solo และทุกการเชื่อมต่อเกมต้องผ่าน session
+
 ### ตัวตนผู้เล่น (playerId ถาวร)
 `socket.id` เปลี่ยนทุกครั้งที่รีเฟรชหน้าหรือเน็ตหลุด จึงใช้เป็นตัวตนไม่ได้
 client สุ่ม **กุญแจลับ** (`playerKey` ตัวอักษร `A-Z a-z 0-9 _ -` ยาว 16–64) เก็บใน `sessionStorage` ของแท็บ แล้วส่งตอนต่อ socket ทุกครั้ง
 ```js
 io({ auth: { playerKey: "3f9a…" } })
 ```
-server แปลงกุญแจเป็น `playerId` ด้วย SHA-256 (20 ตัวแรก) — กุญแจเดิมได้ `playerId` เดิมเสมอ
+server ผูก `playerKey` กับ Firebase UID (`sub`) แล้วแปลง `${sub}:${playerKey}` เป็น `playerId` ด้วย SHA-256 (20 ตัวแรก) — กุญแจเดิมในบัญชีเดิมได้ `playerId` เดิมเสมอ · บัญชีต่างกันใช้กุญแจแท็บเดียวกันก็ได้คนละ id
 - **`playerId` เป็นของเปิดเผย** (อยู่ใน `room_update` ทุกคนเห็น) · **กุญแจเป็นความลับ** ไม่เคยถูกส่งออกใน event ใด
   แปลงทางเดียวจึงเอา `playerId` ของเพื่อนไปสวมรอยไม่ได้ (มีเทสตรวจ)
 - ทุกช่องที่เป็น id ของผู้เล่น (`Player.id` `hostId` `drawerId` `nextDrawerId` `guessedIds` `playerId` ใน event ต่างๆ) คือ `playerId` นี้
-- ไม่ส่งกุญแจมา (`test.html` · สคริปต์เทส) → ใช้ `socket.id` เป็น id เหมือนเดิม และ **ไม่มีสิทธิ์ rejoin** (หลุดแล้วถูกลบทันที)
+- ไม่ส่งกุญแจมา → ใช้ `socket.id` เป็น id เหมือนเดิม และ **ไม่มีสิทธิ์ rejoin** (หลุดแล้วถูกลบทันที) แต่ยังต้องมี Google session
 - เก็บใน `sessionStorage` ไม่ใช่ `localStorage` เพราะ `localStorage` ใช้ร่วมกันทุกแท็บ: เปิดสองแท็บในเบราว์เซอร์เดียวจะกลายเป็นผู้เล่นคนเดียวกัน
 
 ### `create_room` C → S
@@ -672,7 +684,7 @@ server เรียก `saveScore` เองตอนจบ client ส่งค�
 ## 7. Leaderboard
 เจ้าของ server: คนที่ 1 · เจ้าของหน้าจอ: คนที่ 2
 
-**หนึ่งชื่อหนึ่งแถว** แสดงเกมที่ดีที่สุดของแต่ละชื่อ (ชื่อตรงกันทุกตัวอักษรนับเป็นคนเดียวกัน) ของเดือนที่เลือก
+**หนึ่งบัญชีหนึ่งแถว** สำหรับคะแนนใหม่ server จัดกลุ่มด้วยรหัสบัญชี Firebase แบบแฮช (ไม่ส่งรหัสนี้ใน API) ชื่อเล่นที่แสดงเป็นชื่อที่ใช้ล่าสุด ส่วนคะแนนเป็นเกมที่ดีที่สุดของบัญชีนั้นในเดือนที่เลือก · คะแนนเก่าที่ยังไม่มีรหัสบัญชีจะจัดกลุ่มด้วยชื่อเล่นเดิม
 `scores.json` ยังเก็บทุกเกมในปีปัจจุบันเป็นประวัติ แค่ตอนแสดงอันดับจึงเลือกเกมดีสุดต่อชื่อ
 
 **แสดงได้แค่ปีปัจจุบันเท่านั้น** ไม่มีตัวเลือก "ตลอดกาล" แล้ว (ทั้งหน้าแรกและหน้า Leaderboard เต็ม ทั้งสองกระดาน) — ตอน server สตาร์ท จะลบแถวของปีก่อนทิ้งจากที่เก็บเองอัตโนมัติ (`purgeOldYears` ใน `server/leaderboard.js`) ทำงานทั้งโหมดไฟล์และ Upstash ไม่แตะของปีปัจจุบัน
@@ -692,12 +704,13 @@ server เรียก `saveScore` เองตอนจบ client ส่งค�
 |---|---|
 | `id` | 1 |
 | `name` | "mh" |
+| `accountId` | ค่าแฮชของบัญชี (มีเฉพาะคะแนนใหม่ · ใช้ภายใน server ไม่ส่งผ่าน Leaderboard API) |
 | `score` | 1320 |
 | `levelReached` | 6 |
 | `playedAt` | 2026-10-05 20:14 |
 
 `playedAt` เป็นเวลาท้องถิ่นของ server รูปแบบ `YYYY-MM-DD HH:mm` server ใส่เองตอนบันทึก ไม่รับจาก client
-คนบันทึกคะแนนคือ `saveScore({ name, score, levelReached })` ใน `server/leaderboard.js` (Solo เรียกตอนจบเกม)
+คนบันทึกคะแนนคือ `saveScore({ name, score, levelReached, accountId })` ใน `server/leaderboard.js` (server ใส่ accountId จาก session เองทั้ง Solo และเกมห้อง)
 ชื่อผ่าน `cleanName` เหมือนระบบห้อง · ชื่อว่างไม่บันทึก · คะแนนและด่านเป็นจำนวนเต็มไม่ติดลบ
 
 ### ขอดูอันดับ `GET /api/leaderboard?board=multi&month=2026-10`
@@ -881,6 +894,8 @@ socket.emit("respond_swap", { accept: true }, callback)
 | `ALREADY_PENDING` | `request_swap` ตอนตัวเองหรือเป้าหมายมีคำขอสลับตัวค้างอยู่แล้ว |
 | `NO_PENDING_REQUEST` | `respond_swap` ตอนไม่มีคำขอที่ส่งถึงตัวเอง (อาจหมดอายุไปแล้ว) |
 
+การปฏิเสธตัวตนเกิดตั้งแต่ Socket.IO handshake ไม่ใช่ `game_error`: client ได้ `connect_error` ที่มี message `AUTH_REQUIRED` หรือ `AUTH_NOT_CONFIGURED`
+
 ---
 
 ## บันทึกการแก้ไข
@@ -891,6 +906,7 @@ socket.emit("respond_swap", { accept: true }, callback)
 |  |  | ร่างแรก |
 |  |  | ร่างที่ 2 เปลี่ยนชื่อโหมด solo เป็น classic เพิ่ม fill, Solo แข่งกับ AI, Leaderboard, กติกาหลายห้อง |
 |  |  | ร่างที่ 3 เปลี่ยนเจ้าของตามแผน 7 วัน leaderboard เก็บเป็น JSON ตัด Team Mode และ shapes_only |
+| 9 ต.ค. | Claude | เพิ่ม Google OAuth แบบ server-side, session cookie และกำหนดให้ต้อง login ก่อนเชื่อมต่อเกม (รุ่นแรก ถูกแทนที่ด้วย Firebase Authentication) |
 | 30 ก.ย. | Mew | เพิ่ม error INVALID_NAME |
 | 30 ก.ย. | Mew | เปลี่ยน event error เป็น game_error |
 | 30 ก.ย. | Mew | round_start ใช้ hint แบบช่องวรรณยุกต์แทน wordLength และ time เป็นเวลาที่เหลือ |
@@ -936,6 +952,8 @@ socket.emit("respond_swap", { accept: true }, callback)
 | 5 ต.ค. | Claude | **Mini Challenge เมื่อปิด Standard** — ปิด `none` = ทุกตามี challenge ตั้งแต่ตาแรก สุ่มจากแบบที่เปิด ติดกันได้ (เปิดหลายแบบเลี่ยงแบบซ้ำติดกัน) · จังหวะ (ตาแรกไม่มี · ~1/3 · ไม่ติดกัน) ใช้เฉพาะเมื่อเปิด Standard ด้วย · เปิดแค่ Standard = ไม่มีเลย · ทับกติกา 3 ต.ค. ที่ว่า "จังหวะใช้เสมอไม่ว่าเปิด none หรือไม่" (ทำให้ปิด Standard แล้วยังมีตาธรรมดา) · ย้ำกติกาห้ามปิดหมด |
 | 6 ต.ค. | Claude | **Leaderboard แค่ปีปัจจุบัน** — เอาตัวเลือก "ตลอดกาล" ออก (หน้าแรก/หน้า Leaderboard เต็ม/ทั้งสองกระดาน) · เลือกเดือนได้แค่มกราคมถึงเดือนปัจจุบันของปีนี้ ค่าเริ่มต้น = เดือนปัจจุบัน · `GET /api/leaderboard` ไม่ใส่ `month` หรือใส่ปีอื่น = ใช้เดือนปัจจุบันแทนเงียบๆ (ไม่ error) รูปแบบผิดยัง 400 เหมือนเดิม คำตอบไม่มี `month: null` อีกแล้ว · server ลบคะแนนปีก่อนออกจากที่เก็บ (ไฟล์และ Upstash) ตอนสตาร์ททุกครั้ง ไม่แตะของปีปัจจุบัน |
 | 7 ต.ค. | Claude | **`ai_game_end.rank` เปลี่ยนความหมาย** จาก "อันดับตลอดกาล" เป็น "อันดับของเดือนปัจจุบัน" (กระดาน `solo`) ให้ตรงกับหน้า Leaderboard ที่แสดงได้แค่เดือนปัจจุบันแล้ว — เลขช่องยังชื่อ `rank` เหมือนเดิม เปลี่ยนแค่วิธีคำนวณ |
+| 9 ต.ค. | Claude | **Leaderboard รวมตามบัญชี Firebase** — คะแนนใหม่ใช้ accountId แบบแฮชที่ server สร้างและไม่ส่งออกทาง API · เปลี่ยนชื่อเล่นแล้วยังรวมเป็นบัญชีเดียว โดยแสดงชื่อที่ใช้ล่าสุดกับคะแนนที่ดีที่สุด · คะแนนเก่าที่ยังไม่มี accountId ยังคงจัดกลุ่มตามชื่อ |
 | 7 ต.ค. | Claude | **แข่งทีมรองรับ 2-4 ทีม + ตั้งชื่อทีมเอง** — `settings.teamCount` (2/3/4) และ `settings.teamNames` (ป้ายแสดงผล รหัสทีม A-D ข้างในไม่เปลี่ยน) · event ใหม่ `set_team_name` C→S · error ใหม่ `INVALID_TEAM_NAME` `TEAM_NAME_TAKEN` · `TOO_MANY_ATTEMPTS` ใช้ร่วมกับการเปลี่ยนชื่อทีมด้วย · `teamScores`/`drawerIds`/`round_end.teamGained`/`game_end.teamRanking` ครบทุกทีมที่ใช้งานจริง (ไม่ใช่แค่ A/B อีกต่อไป) · `maxPlayers ≥ 2 × teamCount` ถูกเช็คทุกครั้งที่ตั้งค่า |
 | 7 ต.ค. | Claude | **เปลี่ยนสิทธิ์ตั้งชื่อทีม + ตัวกรองคำไม่เหมาะสม** — `set_team_name`: หัวห้องไม่มีสิทธิ์พิเศษอีกต่อไป เปลี่ยนได้เฉพาะสมาชิกของทีมนั้นเอง · สำเร็จแล้วส่ง `chat_message` แจ้งในแชทห้องรอด้วยว่าใครเปลี่ยนเป็นอะไร (ไม่เพิ่ม event ใหม่) · error ใหม่ `INAPPROPRIATE_NAME` ใช้กับชื่อเล่น (`create_room`/`join_room`/`ai_start`) และชื่อทีม (`set_team_name`) — ดูหัวข้อ "ตัวกรองคำไม่เหมาะสม" ในหัวข้อ 8 |
 | 7 ต.ค. | Claude | **ทีมต้องสมดุล + ขอสลับตัว + คะแนนทีมเป็นค่าเฉลี่ย** — ทีมใหญ่สุด/เล็กสุดห่างกันได้ไม่เกิน 1 คน (`set_team` ปัดการย้ายที่ทำให้ห่างเกิน พร้อม error `TEAM_UNBALANCED`) · event ใหม่ `balance_teams` (หัวห้องจัดทีมให้สมดุล) และ `request_swap`/`respond_swap`/`swap_request`/`swap_result` (ขอสลับตัวกับคนทีมอื่น หมดอายุ 20 วิ) · `start_game` เช็คความสมดุลด้วย ไม่งั้น `TEAM_UNBALANCED` · `teamScores`/`game_end.teamRanking` เปลี่ยนจากผลรวมเป็น **ค่าเฉลี่ยต่อสมาชิก (ปัดจำนวนเต็ม)** ส่วน `round_end.teamGained` ยังเป็นผลรวมเหมือนเดิม (คนละความหมาย) · error ใหม่ `NOT_IN_TEAM_MODE` `TARGET_NOT_FOUND` `SAME_TEAM` `ALREADY_PENDING` `NO_PENDING_REQUEST` |
+| 9 ต.ค. | Claude | เปลี่ยน Google OAuth ที่เขียนเองเป็น Firebase Authentication (Google + อีเมล/รหัสผ่าน), ตรวจ ID token ฝั่ง server และบังคับยืนยันอีเมล |

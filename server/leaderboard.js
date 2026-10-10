@@ -207,11 +207,13 @@ function cleanCount(value) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+const ACCOUNT_ID_RE = /^[a-f0-9]{64}$/;
+
 // บันทึกคะแนนหนึ่งเกม — ข้อ 7 (Solo) เรียกตอนจบเกม **server เป็นคนเรียกเท่านั้น** client ส่งคะแนนเองไม่ได้
 // เวลาเล่น (playedAt) server ใส่เอง ไม่รับจากข้างนอก
 // คืนแถวที่บันทึก หรือ null ถ้าชื่อว่าง/บันทึกไม่สำเร็จ (ไม่ throw ให้เกมล่ม)
 // board: "multi" = คะแนนจากเกมห้อง (index.js เรียกตอน endGame) · ไม่ใส่ = solo
-function saveScore({ name, score, levelReached, board } = {}, playedAt = new Date()) {
+function saveScore({ name, score, levelReached, board, accountId } = {}, playedAt = new Date()) {
   const cleanedName = cleanName(name);
   if (!cleanedName) return null;
   try {
@@ -224,6 +226,7 @@ function saveScore({ name, score, levelReached, board } = {}, playedAt = new Dat
       levelReached: cleanCount(levelReached),
       playedAt: formatPlayedAt(playedAt),
     };
+    if (typeof accountId === "string" && ACCOUNT_ID_RE.test(accountId)) row.accountId = accountId;
     if (board === "multi") row.board = "multi"; // solo ไม่ใส่ช่องนี้ แถวจึงหน้าตาเหมือนเดิมทุกตัวอักษร
     rows.push(row);
     writeScores(rows);
@@ -248,18 +251,29 @@ function compareRows(a, b) {
   );
 }
 
-// หนึ่งชื่อหนึ่งแถว: เอาเกมที่ดีที่สุดของแต่ละชื่อ (ชื่อตรงกันทุกตัวอักษรนับเป็นคนเดียวกัน)
+// หนึ่งบัญชีหนึ่งแถว; คะแนนเก่าที่ยังไม่มี accountId จัดกลุ่มด้วยชื่อเดิมไปก่อน
 // เรียงตามกติกาเดียวกับ compareRows · month = "YYYY-MM" หรือ null (ตลอดกาล)
 // ถ้าใส่ month จะเลือก "เกมที่ดีที่สุดในเดือนนั้น" ไม่ใช่ของตลอดกาล
-function bestPerName(month = null, board = "solo") {
-  const best = new Map();
+function bestPerAccount(month = null, board = "solo") {
+  const groups = new Map();
   for (const r of loadScores()) {
     if (boardOf(r) !== board) continue; // คนละกระดาน ไม่เอามาปนกัน
     if (month && !r.playedAt.startsWith(month + "-")) continue;
-    const cur = best.get(r.name);
-    if (!cur || compareRows(r, cur) < 0) best.set(r.name, r);
+    const key = typeof r.accountId === "string" && ACCOUNT_ID_RE.test(r.accountId)
+      ? `account:${r.accountId}`
+      : `name:${r.name}`;
+    const group = groups.get(key) || { best: null, latest: null };
+    if (!group.best || compareRows(r, group.best) < 0) group.best = r;
+    if (
+      !group.latest ||
+      r.playedAt > group.latest.playedAt ||
+      (r.playedAt === group.latest.playedAt && (Number(r.id) || 0) > (Number(group.latest.id) || 0))
+    ) group.latest = r;
+    groups.set(key, group);
   }
-  return [...best.values()].sort(compareRows);
+  return [...groups.values()]
+    .map(({ best, latest }) => ({ ...best, name: latest.name }))
+    .sort(compareRows);
 }
 
 // 20 อันดับแรก · อันดับไม่ซ้ำกัน นับ 1, 2, 3...
@@ -268,7 +282,7 @@ function getLeaderboard(month = null, board = "solo") {
     month,
     board,
     // ส่งเฉพาะ 4 ช่องที่หน้าจอใช้ ไม่ส่ง id กับเวลาเล่น
-    top: bestPerName(month, board)
+    top: bestPerAccount(month, board)
       .slice(0, TOP_LIMIT)
       .map((r, i) => ({ rank: i + 1, name: r.name, score: r.score, levelReached: r.levelReached })),
   };
@@ -277,10 +291,17 @@ function getLeaderboard(month = null, board = "solo") {
 // อันดับของเกมหนึ่งเกม "ในกระดานเดือนปัจจุบัน" (ตรงกับที่หน้า Leaderboard โชว์ได้จริง ไม่ใช่ตลอดกาลอีกต่อไป)
 // = 1 + จำนวน "คนอื่น" ที่เกมดีที่สุดของเขาในเดือนนี้ดีกว่าหรือเท่าเกมนี้ (เท่ากันทุกอย่าง คนที่ทำได้ก่อนอยู่เหนือ)
 // ใช้ตอนจบเกม Solo หลัง saveScore แล้ว (กระดาน "solo" เท่านั้น)
-function rankOf({ name, score, levelReached }) {
-  const me = { name: cleanName(name), score: cleanCount(score), levelReached: cleanCount(levelReached) };
-  const ahead = bestPerName(resolveMonth(), "solo").filter(
-    (r) => r.name !== me.name && (r.score > me.score || (r.score === me.score && r.levelReached >= me.levelReached))
+function rankOf({ name, score, levelReached, accountId }) {
+  const me = {
+    name: cleanName(name),
+    score: cleanCount(score),
+    levelReached: cleanCount(levelReached),
+    accountId: typeof accountId === "string" && ACCOUNT_ID_RE.test(accountId) ? accountId : null,
+  };
+  const ahead = bestPerAccount(resolveMonth(), "solo").filter(
+    (r) =>
+      (me.accountId ? r.accountId !== me.accountId : r.name !== me.name) &&
+      (r.score > me.score || (r.score === me.score && r.levelReached >= me.levelReached))
   );
   return ahead.length + 1;
 }

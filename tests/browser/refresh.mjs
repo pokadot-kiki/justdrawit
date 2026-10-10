@@ -103,7 +103,7 @@ const stay = async (c, code, name, cond, ms = 8000) => {
   return ok;
 };
 try {
-  server = spawn("node", ["index.js"], { cwd: `${ROOT}/server`, env: { ...process.env, PORT: String(PORT), SCORES_FILE: `${SP}/scores-r.json`, AI_MODE: "mock", CHALLENGE_ODDS: process.argv[4] ?? "0", CHALLENGE_NO_PACING: "1", LOBBY_RETURN_MS: "15000", CHALLENGE_INTRO_MS: process.argv[4] === "1" ? "2500" : "0" }, stdio: "ignore" });
+  server = spawn("node", ["index.js"], { cwd: `${ROOT}/server`, env: { ...process.env, NODE_ENV: "test", JDI_TEST_AUTH_BYPASS: "1", PORT: String(PORT), SCORES_FILE: `${SP}/scores-r.json`, AI_MODE: "mock", CHALLENGE_ODDS: process.argv[4] ?? "0", CHALLENGE_NO_PACING: "1", LOBBY_RETURN_MS: "15000", CHALLENGE_INTRO_MS: process.argv[4] === "1" ? "2500" : "0" }, stdio: "ignore" });
   chrome = spawn((process.env.CHROME_BIN || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"), [`--remote-debugging-port=${DBG}`, `--user-data-dir=${PROFILE}`, "--headless=new", "--mute-audio", "--no-first-run", "--window-size=1500,1000", "about:blank"], { stdio: "ignore" });
   for (let i = 0; i < 50; i++) { try { await fetch(`http://127.0.0.1:${DBG}/json/version`); break; } catch { await sleep(200); } }
   await sleep(1500);
