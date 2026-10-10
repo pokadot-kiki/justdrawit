@@ -17,7 +17,7 @@ export default function RoomInfo({ code, settings, roundNo, totalRounds, challen
         </div>
         <div>
           <dt>โหมด</dt>
-          <dd>{teamMode ? "ทีม A vs B" : "แข่งเดี่ยว"}</dd>
+          <dd>{teamMode ? "แข่งเป็นทีม" : "แข่งเดี่ยว"}</dd>
         </div>
         <div>
           <dt>รอบ</dt>

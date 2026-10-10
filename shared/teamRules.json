@@ -1,0 +1,5 @@
+{
+  "ids": ["A", "B", "C", "D", "E"],
+  "minTeams": 2,
+  "capacity": 2
+}

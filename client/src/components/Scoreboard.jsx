@@ -16,9 +16,9 @@ import { Icon } from "./Icons";
 // "กำลังวาด/วาดคนถัดไป" โชว์เฉพาะตอนกำลังวาด (drawing) เพราะระหว่างพักตา drawerId ยังเป็นคนเก่าค้างอยู่
 // nextDrawerId มาจาก server (round_start) client เดาไม่ได้ · เช็คว่ายังอยู่ในห้องก่อนโชว์ เพราะอาจออกไประหว่างตา
 //
-// โหมดทีม (teamScores มีค่า): จัดกลุ่มตามทีม A / B หัวกลุ่มบอกคะแนนทีม (ผลรวมสมาชิก) · ในทีมเรียงตามคะแนนเหมือนเดิม
+// โหมดทีม (teamScores มีค่า): จัดกลุ่มตามทีมที่ server ส่ง หัวกลุ่มบอกคะแนนทีม (ผลรวมสมาชิก) · ในทีมเรียงตามคะแนนเหมือนเดิม
 // หมายเหตุ: ใน round_start ของโหมดทีม drawerId/nextDrawerId เป็นของ "ทีมเรา" เท่านั้น
-//   ป้าย ✏️ ของทีมอื่นจึงอาศัย drawerIds (คนวาดของทั้งสองทีม) ซึ่ง server ส่งมาให้
+//   ป้าย ✏️ ของทีมอื่นจึงอาศัย drawerIds (คนวาดของทุกทีม) ซึ่ง server ส่งมาให้
 export default function Scoreboard({
   players,
   drawerId,
@@ -36,7 +36,7 @@ export default function Scoreboard({
   if (teamScores) {
     return (
       <div className="score-teams">
-        {["A", "B"].map((t) => (
+        {Object.keys(teamScores).map((t) => (
           <section className={`score-team score-team--${t}`} key={t} aria-label={`ทีม ${t}`}>
             <h3 className="score-team__head">
               <span>

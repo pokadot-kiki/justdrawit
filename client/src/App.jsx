@@ -3,6 +3,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { socket } from "./socket";
 import { errorText } from "./messages";
 import { useGame } from "./hooks/useGame";
+import { useMpAi } from "./hooks/useMpAi";
+import MpAiGame from "./screens/MpAiGame";
 import Lobby from "./screens/Lobby";
 import { initialName, saveName } from "./playerName";
 import WaitingRoom from "./screens/WaitingRoom";
@@ -78,6 +80,8 @@ export default function App() {
     askHint,
     bindCanvas,
   } = useGame();
+  // โหมด Multiplayer vs AI: ผูก event ไว้ที่ App เหมือน useGame (event แรกมาก่อนหน้าจอเกมจะเกิด)
+  const { mp, sendSnapshot: mpSnapshot } = useMpAi(me?.playerId);
 
   function showToast(text) {
     setToast({ text, id: Date.now() });
@@ -281,7 +285,22 @@ export default function App() {
         <WaitingRoom room={room} me={me} messages={game.messages} onSend={sendGuess} onLeave={handleLeave} />
       )}
 
-      {showGame && (
+      {showGame && room.settings.mode === "mpai" && (
+        <MpAiGame
+          room={room}
+          meId={me.playerId}
+          mp={mp}
+          sendSnapshot={mpSnapshot}
+          sendGuess={sendGuess}
+          game={game}
+          startGame={startGame}
+          backToLobby={backToLobby}
+          onLeave={handleLeave}
+          onToast={showToast}
+        />
+      )}
+
+      {showGame && room.settings.mode !== "mpai" && (
         <Game
           room={room}
           meId={me.playerId}

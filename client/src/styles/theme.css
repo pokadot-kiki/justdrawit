@@ -909,6 +909,18 @@ input {
   pointer-events: none;
 }
 
+/* Don't Lift Pen: หลังยกปากกา เครื่องมืออื่นยังล็อก แต่ Clear เริ่มเส้นใหม่ได้ */
+.toolbar--locked.toolbar--clear-only {
+  opacity: 1;
+  pointer-events: auto;
+}
+.toolbar--clear-only .toolbar__group--history,
+.toolbar--clear-only .toolbar__group--colors,
+.toolbar--clear-only .toolbar__group--size,
+.toolbar--clear-only .tool:disabled {
+  opacity: 0.45;
+}
+
 /* กลุ่มที่กติกาล็อกไว้ทั้งกลุ่ม (colour_fix ล็อกสี) — จางลง แต่ยังใช้ตัว disabled จริงคุมการกด
    ไม่ใช้ pointer-events: none แบบ .toolbar--locked เพราะที่นี่เฉพาะ "บางกลุ่ม" ยังกดได้ (ปากกา ยางลบ ขนาด) */
 .toolbar__group--off {
@@ -1278,14 +1290,13 @@ input {
   list-style: none;
   margin: 12px 0 0;
   padding: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: flex-end;
-  justify-content: center;
   gap: 8px;
 }
 
 .podium__item {
-  flex: 1;
   display: grid;
   justify-items: center;
   gap: 4px;
@@ -1296,12 +1307,27 @@ input {
 
 /* ตั้งใจให้ที่ 1 สูงที่สุด เหมือนแท่นรางวัลจริง */
 .podium__item--1 {
-  padding-top: 26px;
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 200px;
   background: #fff3c4;
+  border-color: #c69212;
 }
 
 .podium__item--2 {
-  padding-top: 14px;
+  grid-column: 1;
+  grid-row: 1;
+  min-height: 175px;
+  background: #edf0f4;
+  border-color: #929ba8;
+}
+
+.podium__item--3 {
+  grid-column: 3;
+  grid-row: 1;
+  min-height: 150px;
+  background: #f5dfcb;
+  border-color: #ab7652;
 }
 
 .podium__medal {
@@ -1318,6 +1344,100 @@ input {
 .podium__score {
   font-family: var(--font-pixel);
   font-size: 16px;
+}
+
+/* เล่นสองคน: ไม่มีที่ 3 → สองคอลัมน์จัดกลาง (ที่ 2 ซ้าย · ที่ 1 ขวาของคู่ แต่ยังสูงกว่า) ไม่เหลือช่องว่างข้างขวา */
+.podium--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 66%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Multiplayer vs AI: คะแนนวาด/ทายในการ์ดและแถวของคนนั้นเอง */
+.podium__split {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* อันดับจบเกมรายคนใช้ลำดับเดียวกับแท่นรางวัล; ทั้งกล่อง modal เลื่อนได้เมื่อรายชื่อยาว */
+.match-ranking {
+  margin-top: 18px;
+  text-align: left;
+}
+
+.match-ranking__title {
+  margin: 0 0 8px;
+  font-family: var(--font-head);
+  font-size: 18px;
+}
+
+.match-ranking__list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.match-ranking__row {
+  display: grid;
+  grid-template-columns: 2.5ch 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: var(--border);
+  background: var(--white);
+}
+
+.match-ranking__row--me {
+  border-color: var(--blue);
+}
+
+.match-ranking__place {
+  font-family: var(--font-pixel);
+  text-align: right;
+}
+
+.match-ranking__avatar {
+  width: 32px;
+  height: 32px;
+}
+
+.match-ranking__identity {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.match-ranking__name {
+  font-family: var(--font-head);
+  overflow-wrap: anywhere;
+}
+
+.match-ranking__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.match-ranking__badges .tag,
+.match-ranking__left {
+  font-size: 12px;
+}
+
+.match-ranking__left {
+  color: var(--muted);
+}
+
+.match-ranking__score {
+  font-family: var(--font-pixel);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- จอแท็บเล็ตแนวนอน (ไอแพด 1024–1366): ย่อคอลัมน์ข้างทั้งสอง เพื่อคืนที่ให้กระดาน ----
@@ -1790,6 +1910,30 @@ select[class] {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+.solo-ai__history {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.solo-ai__history-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  background: var(--tab-idle);
+  overflow-wrap: anywhere;
+}
+
+.solo-ai__history-item--ok {
+  background: var(--green-soft);
+  color: var(--green);
+  font-weight: 600;
 }
 
 .ai-box__guess {
@@ -2322,6 +2466,12 @@ select[class] {
   --team-a-soft: #fde3e1;
   --team-b: #1e6fe8;
   --team-b-soft: #dce9fc;
+  --team-c: #7b5ce0;
+  --team-c-soft: #eee8ff;
+  --team-d: #228a50;
+  --team-d-soft: #d9f2e2;
+  --team-e: #b05b14;
+  --team-e-soft: #fff0d7;
 }
 
 /* ห้องรอ: สองคอลัมน์ข้างกัน (มือถือเรียงลง) */
@@ -2350,6 +2500,10 @@ select[class] {
   background: var(--team-b-soft);
   border-color: var(--team-b);
 }
+
+.team-col--C { background: var(--team-c-soft); border-color: var(--team-c); }
+.team-col--D { background: var(--team-d-soft); border-color: var(--team-d); }
+.team-col--E { background: var(--team-e-soft); border-color: var(--team-e); }
 
 .team-col .player-list {
   margin-top: 0;
@@ -2384,6 +2538,10 @@ select[class] {
   color: var(--team-b);
 }
 
+.team-col--C .team-col__title { color: var(--team-c); }
+.team-col--D .team-col__title { color: var(--team-d); }
+.team-col--E .team-col__title { color: var(--team-e); }
+
 .team-col__count {
   font-size: 14px;
   color: var(--muted);
@@ -2412,6 +2570,15 @@ select[class] {
   justify-content: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.topbar:has(.team-vs) {
+  flex-wrap: wrap;
+}
+
+.topbar .team-vs {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .team-vs__item {
@@ -2452,10 +2619,126 @@ select[class] {
   border-color: var(--team-b);
 }
 
+.team-vs__chip--C { background: var(--team-c-soft); border-color: var(--team-c); }
+.team-vs__chip--D { background: var(--team-d-soft); border-color: var(--team-d); }
+.team-vs__chip--E { background: var(--team-e-soft); border-color: var(--team-e); }
+
 /* ทีมของเรา ขอบหนากว่า + เงา */
 .team-vs__chip--mine {
   border-width: 4px;
   box-shadow: var(--shadow-xs);
+}
+
+/* เฉลยโหมดทีม: ช่องกลางเปลี่ยนจากกระดานเป็นภาพจริงของทุกทีมหลังจบตา */
+.team-gallery {
+  --team-gallery-min-card: 220px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: 4 / 3;
+  padding: 12px;
+  overflow: auto;
+  border: var(--border-thick);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow);
+  background: var(--white);
+}
+
+.team-gallery__card {
+  --team-gallery-accent: var(--ink);
+  flex: 0 0 var(--team-gallery-card-width, 100%);
+  min-width: 0;
+  margin: 0;
+  padding: 10px;
+  border: 3px solid var(--team-gallery-accent);
+  border-radius: var(--r-sm);
+  background: var(--cream);
+  color: var(--ink);
+  box-shadow: var(--shadow-xs);
+}
+
+.team-gallery__card--A { --team-gallery-accent: var(--team-a); }
+.team-gallery__card--B { --team-gallery-accent: var(--team-b); }
+.team-gallery__card--C { --team-gallery-accent: var(--team-c); }
+.team-gallery__card--D { --team-gallery-accent: var(--team-d); }
+.team-gallery__card--E { --team-gallery-accent: var(--team-e); }
+.team-gallery__card--mine { box-shadow: 0 0 0 3px var(--blue), var(--shadow-xs); }
+
+.team-gallery__caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 8px;
+  margin-bottom: 8px;
+}
+
+.team-gallery__team {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--team-gallery-accent);
+}
+
+.team-gallery__mine {
+  font-size: 11px;
+  color: var(--blue);
+  font-weight: 700;
+}
+
+.team-gallery__drawer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.team-gallery__drawer > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-gallery__art {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: var(--border);
+  border-radius: var(--r-sm);
+  background: var(--white);
+  color: var(--muted);
+}
+
+.team-gallery__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+@media (min-width: 1001px) {
+  .game--team-gallery .team-gallery {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 1000px) {
+  .game--team-gallery .team-gallery { order: 1; }
+}
+
+@media (min-width: 700px) and (max-width: 1000px) {
+  .game--team-gallery .team-gallery {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
 }
 
 /* แถบคะแนนจัดกลุ่มตามทีม */
@@ -2493,6 +2776,10 @@ select[class] {
   border-color: var(--team-b);
   color: var(--team-b);
 }
+
+.score-team--C .score-team__head { background: var(--team-c-soft); border-color: var(--team-c); color: var(--team-c); }
+.score-team--D .score-team__head { background: var(--team-d-soft); border-color: var(--team-d); color: var(--team-d); }
+.score-team--E .score-team__head { background: var(--team-e-soft); border-color: var(--team-e); color: var(--team-e); }
 
 .score-team__total {
   font-family: var(--font-pixel);
@@ -2545,11 +2832,236 @@ select[class] {
   border-color: var(--team-b);
 }
 
+.team-winner--C { background: var(--team-c-soft); border-color: var(--team-c); }
+.team-winner--D { background: var(--team-d-soft); border-color: var(--team-d); }
+.team-winner--E { background: var(--team-e-soft); border-color: var(--team-e); }
+
 .team-winner__title {
   margin: 0;
   font-family: var(--font-head);
   font-weight: 600;
   font-size: 24px;
+}
+
+/* จบเกมทีม: ตารางคะแนนใช้ผลจาก server; กล่องเดิมเลื่อนทั้งใบเพื่อเข้าถึงปุ่มล่าง */
+.modal__panel--team-over {
+  max-width: 860px;
+  background: var(--stage, var(--purple));
+  color: var(--white);
+}
+
+.modal__panel--team-over .modal__note {
+  color: var(--white);
+}
+
+.team-over__headline {
+  font-size: 30px;
+  animation: team-win-enter 550ms ease-out both;
+}
+
+@keyframes team-win-enter {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.team-over__winner {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  margin: 0 auto 18px;
+  padding: 12px;
+  border: var(--border-thick);
+  background: var(--cream);
+  color: var(--ink);
+  box-shadow: var(--shadow-xs);
+}
+
+.team-over__winner-name {
+  font-family: var(--font-head);
+  font-size: 24px;
+  overflow-wrap: anywhere;
+}
+
+.team-over__winner-members {
+  overflow-wrap: anywhere;
+}
+
+.team-over__winner-score {
+  font-family: var(--font-pixel);
+  font-size: 20px;
+}
+
+.team-podium {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.team-podium--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 580px;
+  margin-inline: auto;
+}
+
+.team-podium__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 8px;
+  border: var(--border-thick);
+  background: var(--white);
+  color: var(--ink);
+  box-shadow: var(--shadow-xs);
+}
+
+.team-podium__item--1 {
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 330px;
+  border-color: var(--yellow);
+  box-shadow: inset 0 0 0 3px var(--yellow), var(--shadow-xs);
+}
+
+.team-podium__item--2 {
+  grid-column: 1;
+  grid-row: 1;
+  min-height: 295px;
+  border-color: var(--muted);
+  background: var(--tab-idle);
+}
+
+.team-podium__item--3 {
+  grid-column: 3;
+  grid-row: 1;
+  min-height: 260px;
+  border-color: var(--team-e);
+  background: var(--team-e-soft);
+}
+
+.team-podium__name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  max-width: 100%;
+  font-family: var(--font-head);
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+
+.team-podium__members {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+
+.team-podium__member {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  text-align: left;
+}
+
+.team-podium__member > span:last-child {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.team-podium__score {
+  margin-top: auto;
+  font-family: var(--font-pixel);
+  font-size: 20px;
+  white-space: nowrap;
+}
+
+.team-standings {
+  margin-top: 18px;
+  text-align: left;
+}
+
+.team-standings__title {
+  margin: 0 0 8px;
+  font-family: var(--font-head);
+  font-size: 20px;
+}
+
+.team-standings__list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.team-standings__row {
+  display: grid;
+  grid-template-columns: 3ch minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px;
+  border: var(--border);
+  background: var(--white);
+  color: var(--ink);
+}
+
+.team-standings__rank,
+.team-standings__score {
+  font-family: var(--font-pixel);
+  white-space: nowrap;
+}
+
+.team-standings__identity {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.team-standings__identity .team-vs__chip {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.team-standings__members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  min-width: 0;
+}
+
+.team-standings__member {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 620px) {
+  .modal__panel--team-over { padding: 14px; }
+  .team-over__headline { font-size: 24px; }
+  .team-podium { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .team-podium__item--1 { grid-column: 1 / -1; grid-row: 1; min-height: 270px; }
+  .team-podium__item--2 { grid-column: 1; grid-row: 2; min-height: 250px; }
+  .team-podium__item--3 { grid-column: 2; grid-row: 2; min-height: 230px; }
+  .team-podium--two .team-podium__item--2 { grid-column: 1 / -1; width: min(100%, 260px); justify-self: center; }
+  .team-podium__name { font-size: 17px; }
+  .team-podium__score { font-size: 16px; }
+  .team-standings__row { gap: 6px; padding: 7px; }
 }
 
 /* ไอแพดแนวนอน/จอแคบ: คะแนนทีมในแถบบนลงบรรทัดเดียวกับคำใบ้ได้ แถวคะแนนทีมเรียงข้างกัน */
@@ -2611,6 +3123,11 @@ select[class] {
   border: 3px solid var(--blue);
   background: #eaf1fd;
   font-weight: 600;
+}
+
+.podium-stage ~ .gains .gains__row--me {
+  background: var(--white);
+  font-weight: normal;
 }
 
 .podium__item--me {
@@ -2679,6 +3196,10 @@ select[class] {
   background: var(--team-b);
 }
 
+.team-me--C { background: var(--team-c); }
+.team-me--D { background: var(--team-d); }
+.team-me--E { background: var(--team-e); }
+
 .team-me-banner {
   margin: 12px 0 0;
   padding: 8px 12px;
@@ -2695,6 +3216,10 @@ select[class] {
 .team-me-banner--B {
   background: var(--team-b);
 }
+
+.team-me-banner--C { background: var(--team-c); }
+.team-me-banner--D { background: var(--team-d); }
+.team-me-banner--E { background: var(--team-e); }
 
 /* ==========================================================================
    รอบ 3A — ไอคอนพิกเซล · หน้าแรกแบบใหม่ · หน้า SET UP
@@ -2950,92 +3475,6 @@ select[class] {
   overflow-wrap: anywhere;
 }
 
-.mode-cards {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 18px;
-}
-
-.mode-card {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  padding: 14px;
-  border: var(--border-thick);
-  background: var(--cream);
-  box-shadow: var(--shadow-sm);
-  color: var(--ink);
-  font-family: var(--font-body);
-  text-align: left;
-  cursor: pointer;
-  opacity: 0.8;
-}
-
-.mode-card--active {
-  opacity: 1;
-  background: var(--white);
-  border-color: var(--blue);
-  box-shadow: 6px 6px 0 var(--blue);
-}
-
-.mode-card__art {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 190px;
-  border: var(--border);
-  background: var(--tab-idle);
-}
-
-.mode-card__art--classic {
-  background: var(--yellow);
-}
-
-.mode-card__frame {
-  display: grid;
-  place-items: center;
-  padding: 8px;
-  border: var(--border);
-  background: var(--white);
-}
-
-.mode-card__side {
-  display: grid;
-  grid-template-columns: repeat(2, auto);
-  gap: 4px;
-  padding: 8px;
-  border: var(--border);
-}
-
-.mode-card__side--A { background: var(--team-a); }
-.mode-card__side--B { background: var(--team-b); }
-
-.mode-card__vs {
-  font-family: var(--font-pixel);
-  font-size: 20px;
-  color: var(--white);
-  text-shadow: 2px 2px 0 var(--ink);
-}
-
-.mode-card__art--team {
-  background: var(--purple);
-  gap: 6px;
-}
-
-.mode-card__title {
-  font-family: var(--font-head);
-  font-weight: 600;
-  font-size: 20px;
-}
-
-.mode-card__desc {
-  font-size: 14px;
-  line-height: 1.4;
-  color: var(--muted);
-}
-
 .setup__create {
   width: 100%;
   max-width: 940px;
@@ -3070,10 +3509,6 @@ select[class] {
     min-height: 52px;
   }
 
-  .mode-card__art {
-    min-height: 150px;
-  }
-
   .screen--setup {
     gap: 12px;
   }
@@ -3092,12 +3527,6 @@ select[class] {
 
 @media (max-width: 760px) {
   .lobby {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 560px) {
-  .mode-cards {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -4365,21 +4794,6 @@ select[class] {
   z-index: 1;
 }
 
-/* ---- SET UP: การ์ดโหมดที่ 3 "แข่งกับ AI" เต็มความกว้างใต้สองการ์ดบน (classic + team) ---- */
-.mode-card--ai {
-  grid-column: 1 / -1;
-}
-
-.mode-card__art--ai {
-  min-height: 110px;
-}
-
-@media (max-width: 760px) {
-  .mode-card--ai {
-    grid-column: auto;
-  }
-}
-
 /* ==========================================================================
    ปุ่ม Ready + สถานะ READY/WAITING + ปุ่มเตะออก (ห้องรอ)
    ========================================================================== */
@@ -4555,16 +4969,6 @@ select[class] {
    → ย่อรูปหน้าปกการ์ดโหมดและช่องไฟ (ปุ่ม/ตัวหนังสือไม่เล็กลง ปุ่มสูง ≥ 44px เหมือนเดิม)
    ========================================================================== */
 @media (min-width: 1001px) and (max-height: 820px) {
-  .mode-card__art {
-    min-height: 0;
-    height: 92px;
-  }
-
-  .mode-card__art--ai {
-    min-height: 0;
-    height: 70px;
-  }
-
   .screen--setup {
     padding-top: 14px;
   }
@@ -4891,14 +5295,6 @@ select[class] {
     font-size: 24px;
   }
 
-  .mode-card__art {
-    height: 70px;
-  }
-
-  .mode-card__art--ai {
-    height: 56px;
-  }
-
   .setup__opts {
     gap: 6px;
   }
@@ -5028,8 +5424,69 @@ select[class] {
 
 .game__players-list {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
+}
+
+/* ห้องเล่นจริง: ให้ป้ายสถานะขึ้นบรรทัดได้และให้คะแนนอยู่ครบเสมอ */
+.game:not(.game--solo) .score-row {
+  min-width: 0;
+  height: auto;
+  min-height: 68px;
+}
+
+.game:not(.game--solo) .score-row__tags {
+  flex-wrap: wrap;
+  height: auto;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.game:not(.game--solo) .score-row__score {
+  white-space: nowrap;
+}
+
+@media (min-width: 1001px) and (max-width: 1400px) {
+  .game:not(.game--solo) {
+    --players-w: clamp(210px, 20vw, 250px);
+  }
+}
+
+@media (max-width: 1400px) {
+  /* คอลัมน์แคบ: คะแนนอยู่ใต้ชื่อ ไม่แย่งความกว้างของชื่อ/ป้ายกับอวตาร */
+  .game:not(.game--solo) .score-row {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .game:not(.game--solo) .score-row .avatar-chip--lg {
+    width: 40px;
+    height: 40px;
+  }
+
+  .game:not(.game--solo) .score-row__avatar {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .game:not(.game--solo) .score-row__main {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .game:not(.game--solo) .score-row__name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .game:not(.game--solo) .score-row__score {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+  }
 }
 
 .room-info {

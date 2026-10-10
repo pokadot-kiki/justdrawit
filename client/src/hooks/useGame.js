@@ -27,7 +27,7 @@ function emptyGame() {
     firstTeam: null, // ทีมที่ทายถูกก่อน (ได้โบนัส +100 ต่อคนที่ทายถูก) null = ยังไม่มี/ไม่รู้
     teamSkipped: false, // ตานี้ทีมเราไม่มีคนวาด (ถูกข้าม)
     teamRanking: null, // จาก game_end
-    winner: null, // "A" | "B" | null (เสมอ)
+    winner: null, // team id จาก server | null (เสมอ)
     guessed: [], // playerId ที่ทายถูกในตานี้ ไว้ขึ้น ✅
     messages: [], // แชท
     // นับขึ้นทุกครั้งที่ขึ้นตาใหม่ — ใช้เป็นคีย์บอกกล่องแชทว่า "ขึ้นตาใหม่แล้ว โฟกัสช่องพิมพ์ให้หน่อย"
@@ -192,6 +192,7 @@ export function useGame() {
         hint: null,
         messages: g.timeLeft === 0 ? [...g.messages, { system: true, kind: "timeout", text: "หมดเวลา!" }] : g.messages,
       }));
+    const onTeamGalleryClose = () => patch({ summary: null });
 
     // จบเกม: เก็บอันดับไว้โชว์ ส่วนประวัติแชทคงไว้ให้อ่านย้อนหลังได้ระหว่างดูอันดับ
     const onGameEnd = (data) =>
@@ -304,7 +305,15 @@ export function useGame() {
         pendingCanvasRef.current = [cmd];
       }
       // server เป็นคนบอกว่ายังย้อน/ทำซ้ำได้อีกไหม — client ไม่เดาเอง
-      setGame((g) => ({ ...g, canUndo: !!data?.canUndo, canRedo: !!data?.canRedo }));
+      setGame((g) => ({
+        ...g,
+        canUndo: !!data?.canUndo,
+        canRedo: !!data?.canRedo,
+        penLocked: !!data?.penLocked,
+        messages: g.penLocked && !data?.penLocked
+          ? [...g.messages, { system: true, kind: "pen", text: "ล้างจอแล้ว เริ่มวาดเส้นใหม่ได้" }]
+          : g.messages,
+      }));
     };
 
     for (const [type, handler] of drawHandlers) socket.on(type, handler);
@@ -320,6 +329,7 @@ export function useGame() {
     socket.on("team_skipped", onTeamSkipped);
     socket.on("timer", onTimer);
     socket.on("round_end", onRoundEnd);
+    socket.on("team_gallery_close", onTeamGalleryClose);
     socket.on("game_end", onGameEnd);
     socket.on("lobby_return", onLobbyReturn);
     socket.on("chat_message", onChat);
@@ -340,6 +350,7 @@ export function useGame() {
       socket.off("team_skipped", onTeamSkipped);
       socket.off("timer", onTimer);
       socket.off("round_end", onRoundEnd);
+      socket.off("team_gallery_close", onTeamGalleryClose);
       socket.off("game_end", onGameEnd);
       socket.off("lobby_return", onLobbyReturn);
       socket.off("chat_message", onChat);

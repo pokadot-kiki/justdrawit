@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { createPainter, strokeShape } from "../canvas/painter";
-import { beginStroke, extendStroke, endStroke, applyFill, clearBoard, drawShape } from "../canvas/actions";
+import { beginStroke, extendStroke, endStroke, applyFill } from "../canvas/actions";
+import { toNorm, shapeEnd, finishedShape } from "../canvas/shapeGesture";
 import { TOOLS, isShapeTool } from "../canvas/palette";
 import { boardCursor } from "../canvas/cursor";
 import { reduceMotion } from "../prefs";
@@ -39,8 +40,6 @@ const HAS_COALESCED =
 const FLUSH_MS = 40;
 
 // ปัดพิกัดเหลือ 4 ตำแหน่ง พอสำหรับจอทุกขนาด แต่ payload เล็กลงมาก
-const round4 = (v) => Math.round(v * 10000) / 10000;
-const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
 /**
  * กระดานวาด — ข้อ 3
@@ -298,21 +297,6 @@ const Canvas = forwardRef(function Canvas({ canDraw, tool, color, size, onAction
 
   // ปลายอีกด้านของรูปทรงจากตำแหน่งนิ้ว — วงกลมบังคับกรอบเป็นจัตุรัส "ตามพิกเซลจริง" (กระดานเป็น 4:3
   // จัตุรัสในพิกัด 0–1 จะกลายเป็นวงรี) แล้วไม่ให้ล้นขอบกระดาน · สัญญา draw_shape ส่งวงรีในกรอบอยู่แล้ว จึงไม่ต้องแก้ server
-  function shapeEnd(s, p, rect) {
-    if (s.shape !== "circle") return p;
-    const dx = (p.x - s.start.x) * rect.width;
-    const dy = (p.y - s.start.y) * rect.height;
-    const sx = dx >= 0 ? 1 : -1;
-    const sy = dy >= 0 ? 1 : -1;
-    const roomX = (sx > 0 ? 1 - s.start.x : s.start.x) * rect.width;
-    const roomY = (sy > 0 ? 1 - s.start.y : s.start.y) * rect.height;
-    const side = Math.min(Math.max(Math.abs(dx), Math.abs(dy)), roomX, roomY);
-    return {
-      x: round4(s.start.x + (sx * side) / rect.width),
-      y: round4(s.start.y + (sy * side) / rect.height),
-    };
-  }
-
   function moveShape(e) {
     const s = shapeRef.current;
     const rect = canvasRef.current.getBoundingClientRect();
@@ -323,9 +307,11 @@ const Canvas = forwardRef(function Canvas({ canDraw, tool, color, size, onAction
   }
 
   // ปล่อยมือ: commit=true วาดจริง (ถ้าลากไกลพอ ไม่ใช่แค่แตะ) · commit=false ยกเลิก (นิ้วถูกแย่ง/ตาใหม่)
-  function finishShape(commit) {
+  function finishShape(commit, release) {
     const s = shapeRef.current;
     const id = pointerRef.current;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const action = finishedShape(s, release?.nativeEvent, rect, color, size, commit);
     shapeRef.current = null;
     pointerRef.current = null;
     if (id !== null) {
@@ -336,10 +322,7 @@ const Canvas = forwardRef(function Canvas({ canDraw, tool, color, size, onAction
       }
     }
     drawPreview();
-    if (!s || !commit) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    if (Math.hypot((s.x2 - s.x1) * rect.width, (s.y2 - s.y1) * rect.height) < 4) return; // แค่แตะ ไม่นับ
-    dispatch(drawShape({ shape: s.shape, x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, color, size }));
+    if (action) dispatch(action);
   }
 
   // ── ทางเข้า/ออกของกระดาน ให้คนนอก (ปุ่มล้างจอบนแถบเครื่องมือ และข้อ 4) เรียกใช้ ──
@@ -383,13 +366,6 @@ const Canvas = forwardRef(function Canvas({ canDraw, tool, color, size, onAction
   // ── แปลงตำแหน่งนิ้ว/เมาส์เป็นสัดส่วน 0–1 ตาม events.md ──
   // รับ rect เข้ามาจากคนเรียก เพราะจุดหลายจุดของเหตุการณ์เดียวกันใช้ rect อันเดียวกันได้
   // (เรียก getBoundingClientRect ซ้ำทุกจุดจะช้ากว่าที่ควร เพราะมันสั่งให้เบราว์เซอร์คิด layout ใหม่)
-  function toNorm(e, rect) {
-    return {
-      x: round4(clamp01((e.clientX - rect.left) / rect.width)),
-      y: round4(clamp01((e.clientY - rect.top) / rect.height)),
-    };
-  }
-
   // ระบายจุดที่พักไว้ออกเป็น stroke_points หนึ่งชุด
   //
   // ที่นี่ "ไม่วาดลงจอ" เพราะจุดพวกนี้ถูกวาดไปแล้วตอนเมาส์ขยับ (ดู handleMove)
@@ -619,7 +595,7 @@ const Canvas = forwardRef(function Canvas({ canDraw, tool, color, size, onAction
     // เพราะเบราว์เซอร์อาจไม่ส่ง pointerup ตามมาเลย ถ้าปล่อยไว้จะค้างวาดเส้นต่อไปไม่ได้
     if (e.pointerId !== pointerRef.current && e.type !== "lostpointercapture") return;
 
-    finishStroke(e.type === "pointercancel");
+    finishStroke(e.type === "pointercancel", e);
   }
 
   // ปิดเส้นที่กำลังวาดอยู่ให้เรียบร้อย — ทางเดียวที่ใช้ปิดเส้น ทุกสาเหตุเรียกฟังก์ชันนี้
@@ -628,8 +604,8 @@ const Canvas = forwardRef(function Canvas({ canDraw, tool, color, size, onAction
   // เดิม guard ถูกเขียนไว้ "ก่อน" clearInterval/pointerRef.current = null
   // ถ้า pointerId ไม่ตรง (หรือ pointerup ไม่มาเลย) timer จะค้างและ pointerRef ไม่ถูกปลด
   // ผลคือกดวาดเส้นถัดไปไม่ได้อีกเลยทั้งตา — ย้ายการปลดทรัพยากรให้อยู่รวมที่นี่ที่เดียว
-  function finishStroke(cancelled = false) {
-    if (shapeRef.current) return finishShape(!cancelled);
+  function finishStroke(cancelled = false, e = null) {
+    if (shapeRef.current) return finishShape(!cancelled, e);
     const id = pointerRef.current;
     clearInterval(timerRef.current);
     timerRef.current = null;

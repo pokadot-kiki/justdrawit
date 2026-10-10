@@ -12,6 +12,7 @@ import WordChoiceModal from "../components/WordChoiceModal";
 import ChallengeIntro from "../components/ChallengeIntro";
 import RoomInfo from "../components/RoomInfo";
 import RoundSummaryModal from "../components/RoundSummaryModal";
+import TeamGallery from "../components/TeamGallery";
 import GameOverModal from "../components/GameOverModal";
 import { TopIcons, InfoModal, ExitModal } from "../components/TopIcons";
 import { markTeamRulesSeen, teamRulesSeen } from "../prefs";
@@ -49,6 +50,7 @@ export default function Game({
   const drawing = Boolean(game.round); // กำลังวาดอยู่ (round_start มาแล้ว ยังไม่ round_end)
   // โหมดทีม: drawerId/hint/✅ ที่ได้รับเป็นของ "ทีมเรา" เสมอ (server ส่งแยกทีม)
   const teamMode = room.settings.mode === "team";
+  const showTeamGallery = teamMode && Array.isArray(game.summary?.gallery);
   const myTeam = teamMode ? players.find((p) => p.id === meId)?.team ?? null : null;
   const teamSkipped = teamMode && game.teamSkipped && drawing; // ตานี้ทีมเราไม่มีคนวาด
   const drawerName =
@@ -88,6 +90,7 @@ export default function Game({
   // ยกปากกาแล้ว (penLocked) ก็วาดต่อไม่ได้อีกทั้งตา
   // ช่วงป้ายใหญ่ (game.intro) ยังวาดไม่ได้ — server ทิ้งการวาดที่มาก่อนเวลาอยู่แล้ว ตรงนี้แค่ปิดเครื่องมือให้เห็นชัด
   const canDraw = isDrawer && drawing && !game.penLocked && !game.intro;
+  const canClearLocked = noLift && isDrawer && drawing && !game.intro && game.penLocked;
 
   // เครื่องมือที่เลือกอยู่ — เป็นสถานะของหน้าจอ ไม่เกี่ยวกับ server
   const [toolChoice, setToolChoice] = useState(TOOLS.PEN);
@@ -176,7 +179,8 @@ export default function Game({
   // (ไม่ได้เรียก painter ตรงๆ เพราะต้องให้มันเก็บลงลิสต์และส่งออกให้คนอื่นด้วย
   //  และต้องให้ server เก็บเป็นการกระทำหนึ่งอัน เพื่อให้กดย้อนกลับได้)
   function handleClear() {
-    canvasRef.current?.dispatch(clearBoard());
+    if (noLift) sendAction(clearBoard()); // server ล้างประวัติและปลดล็อกก่อน client เปลี่ยนภาพ
+    else canvasRef.current?.dispatch(clearBoard());
   }
 
   return (
@@ -195,12 +199,12 @@ export default function Game({
           </span>
         </div>
 
-        {/* โหมดทีม: คะแนนทีม A vs B (ผลรวมสมาชิก จาก room.teamScores) ทีมเราขอบหนากว่า */}
+        {/* โหมดทีม: คะแนนทุกทีมจาก room.teamScores ทีมเราขอบหนากว่า */}
         {teamMode && (
           <div className="team-vs" aria-label="คะแนนทีม">
-            {["A", "B"].map((t, i) => (
+            {Object.keys(room.teamScores ?? {}).map((t, i) => (
               <span key={t} className="team-vs__item">
-                {i === 1 && <span className="team-vs__sep">vs</span>}
+                {i > 0 && <span className="team-vs__sep">vs</span>}
                 <span className={`team-vs__chip team-vs__chip--${t}${myTeam === t ? " team-vs__chip--mine" : ""}`}>
                   <span className="team-vs__word">ทีม </span>
                   {t} <b>{room.teamScores?.[t] ?? 0}</b>
@@ -227,14 +231,14 @@ export default function Game({
 
       {/* เรียงตาม DESIGN.md: รายชื่อซ้าย · กระดานกลาง · เครื่องมือขวา
           มือขวาเอื้อมถึงเครื่องมือได้ถนัด (คนส่วนใหญ่ถนัดขวา) และกระดานได้ที่กว้างที่สุด */}
-      <main className={`game${isDrawer ? "" : " game--no-tools"}`}>
+      <main className={`game${isDrawer ? "" : " game--no-tools"}${showTeamGallery ? " game--team-gallery" : ""}`}>
         <aside className="game__players">
           <div className="game__players-list">
           <Scoreboard
             players={players}
             drawerId={game.drawerId}
             drawerIds={game.round?.drawerIds ?? null}
-            teamScores={teamMode ? room.teamScores ?? { A: 0, B: 0 } : null}
+            teamScores={teamMode ? room.teamScores : null}
             myTeam={myTeam}
             nextDrawerId={game.round?.nextDrawerId ?? null}
             drawing={drawing}
@@ -260,7 +264,9 @@ export default function Game({
 
             {/* คนวาดเห็นคำจริง (ได้จาก your_word) คนอื่นเห็นคำใบ้เป็นขีด */}
             <div className="wordbar__word">
-              {isDrawer && game.word ? (
+              {showTeamGallery ? (
+                <span className="topbar__real-word">{game.summary.word}</span>
+              ) : isDrawer && game.word ? (
                 <span className="topbar__real-word" title="คำที่คุณต้องวาด">
                   {game.word}
                 </span>
@@ -300,7 +306,7 @@ export default function Game({
             </div>
           </div>
 
-          <Canvas
+          {showTeamGallery ? <TeamGallery entries={game.summary.gallery} myTeam={myTeam} /> : <Canvas
             ref={canvasRef}
             canDraw={canDraw}
             tool={tool}
@@ -313,10 +319,10 @@ export default function Game({
             overlay={game.intro ? <ChallengeIntro challenge={game.round?.challenge} /> : null}
             // โหมดทีม: ทีมเราถูกข้ามกลางตา (คนวาดหลุด) — แถบแจ้งบนกระดาน อยู่ใน .board ไม่เพิ่มความสูง
             notice={teamSkipped ? "ตานี้ทีมเราไม่มีคนวาด (คนวาดของทีมหลุด) รอตาหน้านะ" : null}
-          />
+          />}
 
           {/* แถบเวลาวิ่งลดลงใต้กระดาน (ความสูงนับรวมในงบของ .board แล้ว) */}
-          <TimeBar timeLeft={drawing ? game.timeLeft : null} total={game.round?.time ?? null} />
+          {!showTeamGallery && <TimeBar timeLeft={drawing ? game.timeLeft : null} total={game.round?.time ?? null} />}
         </section>
 
         {/* คอลัมน์ขวา: คนวาด = เครื่องมือ (บน) + แชท (ล่าง) · คนทาย = แชทเต็มคอลัมน์
@@ -344,6 +350,7 @@ export default function Game({
                 hideShapes={noLift}
                 hidePen={shapesOnly}
                 locked={!canDraw}
+                canClearWhileLocked={canClearLocked}
               />
             </div>
           )}
@@ -364,7 +371,7 @@ export default function Game({
       {game.options && (
         <WordChoiceModal options={game.options} secondsLeft={chooseLeft} onChoose={chooseWord} challenge={game.chooseChallenge} />
       )}
-      {game.summary && <RoundSummaryModal summary={game.summary} players={players} myTeam={myTeam} meId={meId} />}
+      {game.summary && !showTeamGallery && <RoundSummaryModal summary={game.summary} players={players} myTeam={myTeam} meId={meId} />}
       {game.ranking && (
         <GameOverModal
           ranking={game.ranking}

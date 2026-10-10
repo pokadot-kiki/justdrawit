@@ -1,0 +1,264 @@
+/* ==========================================================================
+   Multiplayer vs AI (MpAiGame.jsx) — ใช้โครงหน้าเกมเดิม (.game .board .wordbar .ai-box) เพิ่มแค่ส่วนที่โหมดนี้มีเอง
+   คลาสขึ้นต้น mp-ai / mp-gallery (เช็คแล้วไม่ชนของเดิม)
+   ========================================================================== */
+
+/* การ์ดเลือกโหมดในหน้า SET UP อยู่ใน setup.css (กล่อง "แข่งกับ AI") */
+
+.mp-ai__legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ม่านบนกระดาน: AI กำลังดูภาพ / ส่งภาพแล้วรอเพื่อน */
+.mp-ai__eval {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 6px;
+  padding: 12px;
+  background: rgba(30, 30, 47, 0.55);
+  color: var(--white);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 20px;
+  text-align: center;
+}
+
+.mp-ai__eval p {
+  margin: 0;
+}
+
+.mp-ai__eval-count {
+  font-size: 30px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ช่วง 1: คำที่ AI ทายภาพของเรา เรียงตามเวลาแบบแชท (เห็นแค่เรา) — เลื่อนในกรอบ ล่าสุดอยู่ล่าง */
+.mp-ai__guesses {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  margin: 0 0 8px;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.mp-ai__guess {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  background: var(--tab-idle);
+  font-size: 14px;
+}
+
+.mp-ai__guess--ok {
+  background: var(--green-soft);
+  color: #15803d;
+  font-weight: 600;
+}
+
+.mp-ai__guess--hint {
+  background: none;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ช่วง 1 จอคอม: รักษาพื้นที่ให้รายชื่อและเครื่องมือ แล้วให้กระดาน 4:3 หดตามคอลัมน์กลางเดิม */
+@media (min-width: 1001px) and (max-width: 1400px) {
+  .mp-ai:not(.game--no-tools) {
+    --players-w: clamp(210px, 20vw, 250px);
+    --side-w: clamp(270px, 25vw, 310px);
+  }
+
+  .mp-ai:not(.game--no-tools) .score-row__tags {
+    height: auto;
+    overflow: visible;
+    flex-wrap: wrap;
+  }
+}
+
+@media (min-width: 700px) and (max-width: 1400px) {
+  .mp-ai:not(.game--no-tools) .score-row__name {
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* คำทาย AI อยู่ใกล้หัวกล่อง; ถ้ารายการยาวให้เลื่อนในกล่องและคอลัมน์ขวา */
+@media (min-width: 1001px) {
+  .mp-ai:not(.game--no-tools) .game__side {
+    overflow-y: auto;
+  }
+
+  .mp-ai:not(.game--no-tools) .game__side .game__tools,
+  .mp-ai:not(.game--no-tools) .game__side .game__answers--solo,
+  .mp-ai:not(.game--no-tools) .game__side .game__answers--solo .panel {
+    flex: none;
+  }
+
+  .mp-ai:not(.game--no-tools) .game__side .game__answers--solo .panel {
+    height: auto;
+    max-height: min(42dvh, 320px);
+  }
+}
+
+/* ช่วง 2: บรรทัดสถานะ + แชทร่วม (Chat เดิม) เต็มคอลัมน์ */
+.mp-ai__chat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+}
+
+.mp-ai__chat > :last-child {
+  flex: 1;
+  min-height: 0;
+}
+
+.mp-ai__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--cream);
+  color: var(--ink); /* คอลัมน์ขวาได้สีอ่อนจากที่อื่น → ตั้งเองให้อ่านออก */
+  font-size: 13px;
+}
+
+.mp-ai__status--ok {
+  background: var(--green-soft);
+  color: #15803d;
+  font-weight: 600;
+}
+
+/* แกลเลอรี: ขนาดกล่องเท่ากระดาน (4:3 งบเดียวกับ .board) แถวสุดท้ายอยู่กลาง เลื่อนในกรอบถ้าคนเยอะ */
+.mp-gallery {
+  --mp-gallery-min-card: 150px;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  max-width: calc((100dvh - 228px) * 4 / 3);
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: flex-start;
+  gap: 12px;
+  padding: 12px;
+  overflow: auto;
+  border: var(--border-thick);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow);
+  background: var(--white);
+}
+
+.mp-gallery__card {
+  display: grid;
+  flex: 0 0 var(--mp-gallery-card-width, 100%);
+  min-width: 0;
+  align-content: start;
+  gap: 10px;
+  margin: 0;
+  padding: 10px;
+  border: 3px solid var(--ink);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-xs);
+  background: var(--white);
+  color: var(--ink); /* figure ในธีมได้สีขาวจากที่อื่น → ตั้งเองให้อ่านออกบนการ์ดสีอ่อน */
+}
+
+.mp-gallery__card--me {
+  border-color: var(--blue);
+}
+
+.mp-gallery__img {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 2px solid var(--muted);
+  border-radius: var(--r-sm);
+  background: var(--white);
+}
+
+.mp-gallery__img img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.mp-gallery__none {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.mp-gallery__card figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.mp-gallery__name {
+  display: flex;
+  align-items: center;
+  flex: 1 0 min(100%, 110px);
+  gap: 6px;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.mp-gallery__avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--cream);
+}
+
+.mp-gallery__player-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-gallery__ai {
+  max-width: 100%;
+  padding: 2px 6px;
+  overflow: hidden;
+  border: 1px solid var(--red);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--red) 12%, white);
+  color: var(--red);
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-gallery__ai--ok {
+  border-color: var(--green);
+  background: var(--green-soft);
+  color: #15803d;
+}

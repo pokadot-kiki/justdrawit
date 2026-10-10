@@ -2,19 +2,20 @@ import { useEffect, useState } from "react";
 import Modal from "./Modal";
 import Mascot from "./Mascot";
 import Confetti from "./Confetti";
+import Avatar from "./Avatar";
 import YouTag from "./YouTag";
 import { Icon } from "./Icons";
 import { addCoins, getUserAuth } from "../prefs";
 
 const MEDALS = ["medal1", "medal2", "medal3"];
 
-// จบเกม — แท่นรางวัลอันดับ 1-3
+// จบเกม — แท่นรางวัลอันดับ 1-3 และอันดับครบทุกคนของโหมดรายคน
 // ทุกคนมีปุ่มกลับห้องรอ (back_to_lobby → server พาทุกคนกลับพร้อมกัน หรือพาเองเมื่อครบเวลา) กับกลับหน้าแรก (leave_room) · หัวห้องมีปุ่มเล่นอีกรอบเลย (start_game)
 export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLobby, returnAt = null, onLeave, teamRanking = null, winner = null, myTeam = null, meId = null }) {
-  // โหมดทีม: ประกาศทีมที่ชนะ (เสมอ = winner เป็น null) พลุเล่นเหมือนเดิมเพราะอยู่ในกล่องเดียวกัน
   const teamMode = Boolean(teamRanking);
   const top3 = ranking.slice(0, 3);
-  const rest = ranking.slice(3);
+  const teamTop3 = teamRanking?.slice(0, 3) ?? [];
+  const winningTeam = teamRanking?.find((t) => t.team === winner);
   // นับถอยหลังก่อน server พากลับห้องรอเอง (server เป็นคนสั่งจริง ตัวเลขนี้แค่โชว์)
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -24,8 +25,16 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
   }, [returnAt]);
   const secLeft = returnAt == null ? null : Math.max(0, Math.ceil((returnAt - now) / 1000));
 
-  // เรียงให้ที่ 1 อยู่กลาง เวลาตกแต่งด้วย CSS จะได้เหมือนแท่นรางวัลจริง
-  const podiumOrder = [top3[1], top3[0], top3[2]].filter(Boolean);
+  // เรียงให้ที่ 1 อยู่กลาง เวลาตกแต่งด้วย CSS จะได้เหมือนแท่นรางวัลจริง (เล่นสองคน = ไม่มีที่ 3 ไม่สร้างเพิ่ม)
+  const podiumOrder = (items) => [items[1], items[0], items[2]].filter(Boolean);
+  // Multiplayer vs AI: แยกคะแนนวาด (ช่วง 1) / ทาย (ช่วง 2) ไว้ในการ์ด/แถวของแต่ละคนเอง ไม่ทำรายชื่อซ้ำอีกชุด
+  const split = (p) =>
+    p.drawPoints === undefined ? null : (
+      <span className="podium__split">
+        วาด {p.drawPoints} · ทาย {p.guessPoints}
+        {p.left ? " · ออกแล้ว" : ""}
+      </span>
+    );
 
   const auth = getUserAuth();
   const baseCoins = 100;
@@ -41,59 +50,118 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
   }, []);
 
   return (
-    <Modal labelledBy="game-over-title">
+    <Modal labelledBy="game-over-title" panelClassName={teamMode ? "modal__panel--team-over" : ""}>
       <Mascot mood="trophy" className="mascot--modal" />
-      <h2 className="modal__title" id="game-over-title">
-        จบเกมแล้ว
+      <h2 className={`modal__title${teamMode ? " team-over__headline" : ""}`} id="game-over-title">
+        {teamMode ? winningTeam ? "ทีมผู้ชนะ!" : "เสมอกัน!" : "จบเกมแล้ว"}
       </h2>
 
-      {teamMode && (
-        <div className={`team-winner${winner ? ` team-winner--${winner}` : ""}`}>
-          <p className="team-winner__title">
-            <Icon name={winner ? "trophy" : "users"} size={24} /> {winner ? `ทีม ${winner} ชนะ!` : "เสมอกัน!"}
-            {winner && winner === myTeam ? " (ทีมคุณ)" : ""}
-          </p>
-          <div className="team-vs">
-            {teamRanking.map((t) => (
-              <span key={t.team} className={`team-vs__chip team-vs__chip--${t.team}`}>
-                ทีม {t.team} <b>{t.score}</b>
-              </span>
-            ))}
+      {teamMode ? (
+        <>
+          <div className="team-over__winner">
+            <Icon name={winningTeam ? "trophy" : "users"} size={32} />
+            {winningTeam ? (
+              <>
+                <strong className="team-over__winner-name">{winningTeam.name}</strong>
+                <span className="team-over__winner-members">{winningTeam.members.map((p) => p.name).join(" × ")}</span>
+                <span className="team-over__winner-score">{winningTeam.score} คะแนน{winningTeam.team === myTeam ? " · ทีมคุณ" : ""}</span>
+              </>
+            ) : (
+              <span>ไม่มีทีมชนะเพียงทีมเดียว</span>
+            )}
           </div>
+
+          {/* ใช้อันดับทีมที่ server ส่งมาโดยตรง; พลุเล่นครั้งเดียวจากแท่นเดิม */}
+          <div className="podium-stage team-over__stage">
+            <Confetti />
+            <ol className={`team-podium${teamTop3.length === 2 ? " team-podium--two" : ""}`}>
+              {podiumOrder(teamTop3).map((t) => {
+                const place = teamTop3.indexOf(t);
+                return (
+                  <li className={`team-podium__item team-podium__item--${place + 1}`} key={t.team}>
+                    <span className="team-podium__medal"><Icon name={MEDALS[place]} size={30} /></span>
+                    <span className={`team-vs__chip team-vs__chip--${t.team}`}>ทีม {t.team}</span>
+                    <strong className="team-podium__name">{t.name}</strong>
+                    <span className="team-podium__members">
+                      {t.members.map((p) => (
+                        <span className="team-podium__member" key={p.playerId}>
+                          {Number.isInteger(p.avatar) && <Avatar index={p.avatar} />}
+                          <span title={p.name}>{p.name}{p.left ? " · ออกแล้ว" : ""}</span>
+                        </span>
+                      ))}
+                    </span>
+                    <strong className="team-podium__score">{t.score} คะแนน</strong>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+
+          <section className="team-standings" aria-labelledby="team-standings-title">
+            <h3 className="team-standings__title" id="team-standings-title">อันดับทีมทั้งหมด</h3>
+            <ol className="team-standings__list">
+              {teamRanking.map((t, i) => (
+                <li className="team-standings__row" key={t.team}>
+                  <span className="team-standings__rank">{i + 1}.</span>
+                  <span className="team-standings__identity">
+                    <span className={`team-vs__chip team-vs__chip--${t.team}`}>{t.name}</span>
+                    <span className="team-standings__members">
+                      {t.members.map((p) => (
+                        <span className="team-standings__member" key={p.playerId}>
+                          {Number.isInteger(p.avatar) && <Avatar index={p.avatar} />}
+                          <span title={p.name}>{p.name}{p.left ? " · ออกแล้ว" : ""}</span>
+                        </span>
+                      ))}
+                    </span>
+                  </span>
+                  <strong className="team-standings__score">{t.score}</strong>
+                </li>
+              ))}
+            </ol>
+          </section>
+        </>
+      ) : (
+        <div className="podium-stage">
+          <Confetti />
+          <ol className={`podium${top3.length === 2 ? " podium--two" : ""}`}>
+            {podiumOrder(top3).map((p) => {
+              const place = top3.indexOf(p);
+              return (
+                <li className={`podium__item podium__item--${place + 1}${p.playerId === meId ? " podium__item--me" : ""}`} key={p.playerId}>
+                  <span className="podium__medal"><Icon name={MEDALS[place]} size={34} /></span>
+                  <span className="podium__name">{p.name}</span>
+                  <span className="podium__score">{p.score}</span>
+                  {split(p)}
+                </li>
+              );
+            })}
+          </ol>
         </div>
       )}
 
-      {/* พลุพุ่งจากแท่นรางวัล: กล่อง relative ครอบเฉพาะแท่น ให้พลุเริ่มที่แท่นไม่ใช่ที่มุมหน้าต่าง */}
-      {teamMode && <p className="modal__note">คะแนนรายคน</p>}
-      <div className="podium-stage">
-        <Confetti />
-        <ol className="podium">
-          {podiumOrder.map((p) => {
-            const place = top3.indexOf(p);
-            return (
-              <li className={`podium__item podium__item--${place + 1}${p.playerId === meId ? " podium__item--me" : ""}`} key={p.playerId}>
-                <span className="podium__medal"><Icon name={MEDALS[place]} size={34} /></span>
-                <span className="podium__name">{p.name}</span>
-                {p.playerId === meId && <YouTag />}
-                <span className="podium__score">{p.score}</span>
+      {!teamMode && (
+        <section className="match-ranking" aria-labelledby="match-ranking-title">
+          <h3 className="match-ranking__title" id="match-ranking-title">อันดับผู้เล่นทั้งหมด</h3>
+          <ol className="match-ranking__list">
+            {ranking.map((p, i) => (
+              <li className={`match-ranking__row${p.playerId === meId ? " match-ranking__row--me" : ""}`} key={p.playerId}>
+                <span className="match-ranking__place">{i + 1}.</span>
+                <span className="match-ranking__avatar">{Number.isInteger(p.avatar) && <Avatar index={p.avatar} />}</span>
+                <span className="match-ranking__identity">
+                  <span className="match-ranking__name" title={p.name}>{p.name}</span>
+                  {(p.playerId === meId || p.isHost || p.left) && (
+                    <span className="match-ranking__badges">
+                      {p.playerId === meId && <YouTag />}
+                      {p.isHost && <span className="tag tag--host" title="หัวห้อง"><Icon name="crown" size={13} /> หัวห้อง</span>}
+                      {p.left && <span className="match-ranking__left">ออกแล้ว</span>}
+                    </span>
+                  )}
+                </span>
+                <strong className="match-ranking__score">{p.score}</strong>
               </li>
-            );
-          })}
-        </ol>
-      </div>
-
-      {rest.length > 0 && (
-        <ul className="gains">
-          {rest.map((p, i) => (
-            <li className={p.playerId === meId ? "gains__row gains__row--me" : "gains__row"} key={p.playerId}>
-              <span>
-                {i + 4}. {p.name}
-                {p.playerId === meId && <YouTag />}
-              </span>
-              <span className="gains__value">{p.score}</span>
-            </li>
-          ))}
-        </ul>
+            ))}
+          </ol>
+        </section>
       )}
 
       {/* ── Economy & Reward System Breakdown (ข้อ 6) ── */}

@@ -1,0 +1,611 @@
+/* ==========================================================================
+   หน้า SET UP (ตามภาพอ้างอิง setup-screen.png) — ชั้นทับบน theme.css + arcade.css
+   ซ้าย แผงตั้งค่า (คลาส .setup__opts เดิมใน theme.css) · ขวาบน การ์ดแข่งเดี่ยว/แข่งทีมคู่กัน
+   · ขวาล่าง กล่องใหญ่ "แข่งกับ AI" · ล่าง ปุ่มเขียวเต็มความกว้าง
+   ใช้สี/ฟอนต์/มุมโค้ง/เงาจากตัวแปรของธีม Neo-Arcade เท่านั้น
+   ========================================================================== */
+
+:root {
+  --su-card: #e9e7ff; /* พื้นการ์ดโหมดห้อง: ม่วงอ่อนมาก (ในภาพอ้างอิง) */
+  --su-active-bg: #fffbea; /* พื้นการ์ดที่เลือกอยู่: เหลืองนวล คู่กับกรอบทอง */
+}
+
+/* กว้างขึ้นจาก 940px ให้มีที่สำหรับการ์ดสองใบเคียงกัน + กล่อง AI */
+.setup,
+.setup__create {
+  max-width: 1180px;
+}
+
+/* สองคอลัมน์เฉพาะจอกว้าง > 900px (ไฟล์นี้โหลดหลัง theme.css ถ้าไม่ครอบด้วย media จะไปทับกฎ
+   "≤ 900px เรียงคอลัมน์เดียว" ของ theme.css แล้วการ์ดถูกบีบเป็นแถบแคบบนมือถือ) */
+@media (min-width: 901px) {
+  .setup {
+    grid-template-columns: 330px minmax(0, 1fr);
+  }
+}
+
+/* จอคอม: ริบบิ้น SET UP อยู่แถวบนสุดระดับเดียวกับปุ่มกลับ/ปุ่มเสียง (ตามภาพอ้างอิง)
+   แล้วให้ตารางการ์ดยืดเต็มความสูงที่เหลือ ปุ่มเขียวชิดล่าง แทนการจัดทั้งก้อนไว้กลางจอ */
+@media (min-width: 1001px) {
+  .screen--setup {
+    justify-content: flex-start;
+    padding-top: 18px;
+  }
+
+  .screen--setup .setup {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+}
+
+/* ตัวการ์ตูนบนขอบกล่อง: ขยับเข้าด้านในให้พ้นปุ่มกลับ (ซ้ายบน) และปุ่มเพลง/เสียง (ขวาบน)
+   เพราะกล่องขึ้นมาอยู่ใต้แถวบนสุดพอดี ถ้าอยู่ที่เดิมจะทับปุ่มที่จอ 1024–1366px */
+@media (min-width: 901px) {
+  .screen--setup .crit--top-left {
+    left: 130px;
+  }
+
+  .screen--setup .crit--top-right {
+    right: 120px;
+  }
+}
+
+/* ---- แผงซ้าย: ชื่อผู้เล่นมีคำว่า "ผู้เล่น" กำกับ + กรอบรอบอวตาร ---- */
+.setup__who-art {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--white);
+}
+
+.setup__who-text {
+  display: grid;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.setup__who-text small {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* ---- ขวา: ตาราง 2 คอลัมน์ แถวบนการ์ดห้องสองใบ แถวล่างกล่อง AI เต็มแถว ---- */
+.mode-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 18px;
+  min-width: 0;
+}
+
+.mode-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px 18px 14px;
+  border: var(--border-thick);
+  border-radius: var(--r-card);
+  background: var(--su-card);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.mode-card:hover {
+  transform: translateY(-2px);
+}
+
+.mode-card:active {
+  transform: translate(2px, 2px);
+}
+
+.mode-card:focus-visible {
+  outline: 3px solid var(--yellow);
+  outline-offset: 3px;
+}
+
+/* การ์ดที่เลือก: กรอบทอง + พื้นเหลืองนวล + ป้าย "เลือกอยู่" (ภาพอ้างอิงใช้แบบนี้) */
+.mode-card--active {
+  border-color: var(--yellow);
+  background: var(--su-active-bg);
+  box-shadow: 0 0 0 3px var(--ink), var(--shadow);
+}
+
+.mode-card__badge {
+  position: absolute;
+  top: -14px;
+  right: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-pill);
+  background: var(--yellow);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+/* กรอบรูปขาวด้านบนการ์ด */
+.mode-card__art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 78px;
+  padding: 10px;
+  border: var(--border-thick);
+  border-radius: var(--r-ctl);
+  background: var(--white);
+}
+
+.mode-card__tile {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+}
+
+.mode-card__tile--yellow { background: #fde68a; }
+.mode-card__tile--pink { background: #fbcfe8; }
+.mode-card__tile--green { background: #bbf7d0; }
+
+.mode-card__side {
+  display: inline-flex;
+  gap: 2px;
+  padding: 4px 6px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+}
+
+.mode-card__side--A { background: #fecaca; }
+.mode-card__side--B { background: #bfdbfe; }
+
+.mode-card__vs {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.mode-card__title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.mode-card__desc {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ท้ายการ์ด: จำนวนผู้เล่น (ซ้าย) · ป้ายโหมด (ขวา) เส้นคั่นบาง ชิดล่างการ์ดเสมอ */
+.mode-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid rgba(30, 30, 47, 0.18);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.mode-card__chip {
+  flex: none;
+  padding: 2px 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--white);
+  font-family: var(--font-head);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* ---- กล่องใหญ่ "แข่งกับ AI" ---- */
+.ai-panel {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px 22px 20px;
+  border: var(--border-thick);
+  border-radius: var(--r-card);
+  background: var(--white);
+  box-shadow: var(--shadow);
+}
+
+.ai-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--tab-idle);
+}
+
+.ai-panel__icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  flex: none;
+  border: var(--border-thick);
+  border-radius: var(--r-ctl);
+  background: #bae6fd;
+  box-shadow: var(--shadow-xs);
+}
+
+.ai-panel__heading {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ai-panel__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-panel__title {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 26px;
+  line-height: 1.2;
+}
+
+.ai-panel__tag {
+  padding: 2px 10px;
+  border: 2px solid var(--purple);
+  border-radius: var(--r-sm);
+  background: #ede9fe;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: var(--purple);
+}
+
+.ai-panel__sub {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* การ์ด SOLO VS AI ในกล่อง AI: พื้นขาว (ไม่ใช่ม่วงอ่อนแบบการ์ดห้อง) เลือกแล้วกรอบทอง */
+.mode-card--ai {
+  flex: 1;
+  background: var(--white);
+  box-shadow: var(--shadow-sm);
+  gap: 10px;
+}
+
+/* เนื้อหาการ์ดอยู่กลางแนวตั้ง (การ์ดยืดเต็มความสูงกล่อง AI บนจอสูง) */
+.mode-card--ai .mode-card__ai-body {
+  flex: 1;
+  align-content: center;
+}
+
+.mode-card--ai.mode-card--active {
+  background: var(--su-active-bg);
+  box-shadow: 0 0 0 3px var(--ink), var(--shadow-sm);
+}
+
+.mode-card__ai-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mode-card__ai-name {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: 0.1em;
+  color: #92400e;
+}
+
+/* กล่องการ์ดเดียว (ซ่อน MULTIPLAYER VS AI ไว้) จึงวางแถบ "คุณ VS AI Bot" ซ้าย ข้อความขวา ประหยัดความสูง */
+.mode-card__ai-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  align-items: center;
+  gap: 22px;
+}
+
+.mode-card__duel {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  gap: 10px;
+  padding: 12px 10px;
+  border: var(--border-thick);
+  border-radius: var(--r-ctl);
+  background: var(--white);
+}
+
+.mode-card__fighter {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
+.mode-card__fighter small {
+  font-family: var(--font-head);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.mode-card__duel-vs {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--red);
+}
+
+.mode-card__ai-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mode-card__ai-text .mode-card__title {
+  font-size: 20px;
+}
+
+.mode-card__points {
+  display: grid;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+/* จุดนำหน้าสีส้ม (ในภาพอ้างอิง) — ใช้ span ไม่ใช้ ul เพราะอยู่ใน <button> */
+.mode-card__points > span {
+  position: relative;
+  padding-left: 16px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.mode-card__points > span::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.6em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f97316;
+}
+
+/* ---- กล่อง "แข่งกับ AI" มีสองการ์ดเคียงกัน: SOLO VS AI · MULTIPLAYER VS AI (ตามภาพอ้างอิง) ----
+   แต่ละการ์ดแคบลงครึ่งหนึ่ง จึงเรียงข้างในเป็นแนวตั้ง: ชื่อ+ป้าย → แถบ VS → ข้อความ (ชนะกฎ 2 คอลัมน์ของการ์ดเดี่ยวด้านล่าง) */
+.ai-panel__cards {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  min-height: 0;
+}
+
+.ai-panel__cards .mode-card__ai-top {
+  flex-wrap: wrap;
+}
+
+.ai-panel__cards .mode-card__ai-name {
+  font-size: 18px;
+}
+
+.mode-card__ai-name--mp {
+  color: #1e3a8a;
+}
+
+.ai-panel__cards .mode-card__ai-body {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 6px;
+}
+
+.ai-panel__cards .mode-card {
+  gap: 6px;
+  padding-top: 12px;
+  padding-bottom: 10px;
+}
+
+.ai-panel__cards .mode-card__duel {
+  flex-direction: row;
+  padding: 6px 10px;
+}
+
+.ai-panel__cards .mode-card__points > span {
+  line-height: 1.35;
+}
+
+.ai-panel__cards .mode-card__fighter {
+  display: grid;
+  grid-template-columns: none;
+  justify-items: center;
+}
+
+.mode-card__crowd {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.mode-card__duel-vs--mp {
+  color: var(--blue);
+}
+
+.ai-panel__cards .mode-card__ai-text .mode-card__title {
+  font-size: 18px;
+}
+
+/* ---- จอคอมเตี้ย (1366×768 · 1024×768): ย่อช่องไฟ/รูป ให้ไม่ต้องเลื่อนหน้า (ปุ่มยังสูง ≥ 44px) ---- */
+@media (min-width: 1001px) and (max-height: 820px) {
+  .screen--setup {
+    padding-top: 12px;
+  }
+
+  .mode-cards {
+    gap: 14px;
+  }
+
+  .mode-card {
+    gap: 6px;
+    padding: 12px 16px 10px;
+  }
+
+  .mode-card__art {
+    min-height: 0;
+    padding: 6px;
+  }
+
+  .mode-card__tile {
+    width: 44px;
+    height: 44px;
+  }
+
+  .mode-card__title {
+    font-size: 20px;
+  }
+
+  .mode-card__desc {
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .mode-card__foot {
+    padding-top: 6px;
+  }
+
+  .ai-panel {
+    gap: 10px;
+    padding: 12px 18px 14px;
+  }
+
+  .ai-panel__head {
+    padding-bottom: 8px;
+  }
+
+  .ai-panel__icon {
+    width: 46px;
+    height: 46px;
+  }
+
+  .ai-panel__title {
+    font-size: 22px;
+  }
+
+  .mode-card__duel {
+    padding: 8px;
+  }
+
+  .mode-card__points > span {
+    font-size: 13px;
+    line-height: 1.35;
+  }
+}
+
+/* ไอแพดสูงสั้นสุด (≤ 700px): ซ่อนบรรทัดอธิบายของกล่อง AI และข้อย่อยข้อสุดท้าย */
+@media (min-width: 1001px) and (max-height: 700px) {
+  .ai-panel__sub,
+  .mode-card__points > span:nth-child(n + 3) {
+    display: none;
+  }
+}
+
+/* ---- จอกลาง (≤ 1180px กว้าง): กล่อง AI เรียงแถบ "คุณ VS AI" ไว้บนข้อความ ---- */
+@media (max-width: 1180px) {
+  .mode-card__ai-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .mode-card__duel {
+    padding: 6px 10px;
+  }
+}
+
+/* จอกลางที่เตี้ยด้วย (1024×768): ข้อความ AI อยู่ขวาของแถบเหมือนจอใหญ่ จะได้ไม่สูงเกินจอ */
+@media (min-width: 1001px) and (max-width: 1180px) and (max-height: 820px) {
+  .mode-card__ai-body {
+    grid-template-columns: 170px minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .mode-card__duel {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .mode-card__fighter {
+    grid-template-columns: auto auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .mode-card__duel-vs {
+    font-size: 16px;
+  }
+}
+
+/* ---- มือถือ: การ์ดเรียงทีละใบ ---- */
+@media (max-width: 560px) {
+  .mode-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mode-card__title {
+    font-size: 21px;
+  }
+
+  .ai-panel {
+    padding: 14px 14px 16px;
+  }
+
+  .ai-panel__title {
+    font-size: 22px;
+  }
+
+  .mode-card__ai-name {
+    font-size: 18px;
+  }
+}
+
+/* จอแคบ (มือถือ / แท็บเล็ตแนวตั้งแคบ): สองการ์ดในกล่อง AI เรียงบนลงล่าง */
+@media (max-width: 700px) {
+  .ai-panel__cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* จอคอมเตี้ยและแคบ (1024×768): สองการ์ดในกล่อง AI แคบมาก ข้อย่อยขึ้นหลายบรรทัดจนหน้าต้องเลื่อน
+   → ซ่อนข้อย่อย เหลือชื่อ แถบ VS หัวข้อ และบรรทัดอธิบาย (1366×768 ยังกว้างพอ เห็นครบ) */
+@media (min-width: 1001px) and (max-width: 1180px) and (max-height: 820px) {
+  .ai-panel__cards .mode-card__points {
+    display: none;
+  }
+}
