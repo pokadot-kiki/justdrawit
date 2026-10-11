@@ -23,7 +23,7 @@ const SOLO_LEVEL_TIME = 60;
 const ROOM_MAX_PLAYERS = 8;
 const CLASSIC_MIN_PLAYERS = 2;
 
-export default function SetUp({ connected, profile, onBack, onEntered, onError, onStartSolo }) {
+export default function SetUp({ connected, profile, onBack, onEntered, onError, onStartSolo, onEditProfile }) {
   const [mode, setMode] = useState("classic"); // classic | team | mpai (Multiplayer vs AI สร้างห้อง) | ai (ai = Solo แข่งกับ AI ไม่สร้างห้อง)
   const [rounds, setRounds] = useState(3);
   const [drawTime, setDrawTime] = useState(60);
@@ -153,7 +153,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
                 ? "Public: ห้องขึ้นในรายการหน้าแรก ใครก็กดเข้าได้ · Mini Challenge เปิด/ปิดได้ในห้องรอ"
                 : "Private: เข้าได้ด้วยรหัสห้องหรือลิงก์เชิญเท่านั้น · Mini Challenge เปิด/ปิดได้ในห้องรอ"}
           </p>
-          <p className="setup__who">
+          <button type="button" className="setup__who setup__who--edit" onClick={onEditProfile} aria-label="แก้ไขโปรไฟล์">
             <span className="setup__who-art">
               <AvatarArt index={avatar} size={34} />
             </span>
@@ -161,7 +161,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
               <small>ผู้เล่น</small>
               <span>{name.trim() || "ยังไม่ได้ใส่ชื่อ"}</span>
             </span>
-          </p>
+          </button>
         </section>
 
         <div className="mode-cards deco-host" role="radiogroup" aria-label="โหมดเกม">

@@ -12,6 +12,7 @@ const leaderboard = require("./leaderboard");
 const ai = require("./ai");
 const aiDrawings = require("./ai-drawings");
 const teamGallery = require("./team-gallery");
+const { validateProfile, applyRoomProfile } = require("./profile");
 const teamFinalResults = require("./team-final-results");
 
 const app = express();
@@ -311,7 +312,8 @@ function teamRoundInfo(room, lane) {
     nextDrawerId: next,
     hint: lane.hintOpen && lane.word ? makeHint(lane.word) : null,
     hintAt: hintAt(room),
-    time: room.timeLeft,
+    time: room.settings.drawTime,
+    timeLeft: room.timeLeft,
     challenge: room.challenge ?? { type: STANDARD_CHALLENGE },
     intro: Boolean(room.intro),
     guessedIds: [...lane.guessedIds],
@@ -968,7 +970,8 @@ function roundInfo(room) {
     // คนที่เข้าห้องกลางตาหลังเปิดแล้วจะได้ชุดช่องจริงไปเลย ไม่ใช่ null
     hint: room.hintOpen && room.word ? makeHint(room.word) : null,
     hintAt: hintAt(room), // เปิดเองเมื่อเวลาเหลือเท่านี้ — client ใช้โชว์ "คำใบ้จะขึ้นเมื่อเหลือ X วิ"
-    time: room.timeLeft,
+    time: room.settings.drawTime,
+    timeLeft: room.timeLeft,
     // Mini Challenge ของตานี้ (ข้อ 5) — ติดไปกับ round_start ด้วย
     // คนที่เข้าห้องกลางตาจึงเห็นป้ายเหมือนคนที่อยู่ในห้องตั้งแต่แรก โดยไม่ต้องมีโค้ดพิเศษ
     challenge: room.challenge ?? { type: STANDARD_CHALLENGE },
@@ -1665,6 +1668,28 @@ io.on("connection", (socket) => {
     if (!room) return callback({ ok: false, error: "ROOM_NOT_FOUND" });
     if (!room.players.some((p) => p.id === socket.data.pid)) return callback({ ok: false, error: "NOT_IN_ROOM" });
     callback(rejoinRoom(socket, room));
+  });
+
+  socket.on("update_profile", (data, callback) => {
+    if (typeof callback !== "function") return;
+    const checked = validateProfile(data, cleanName, cleanAvatar);
+    if (!checked.ok) return callback(checked);
+    const { name, avatar } = checked;
+    const room = rooms.get(socket.data.roomCode);
+    if (room) {
+      if (!room.players.some((p) => p.id === socket.data.pid)) return callback({ ok: false, error: "NOT_IN_ROOM" });
+      if (room.players.some((p) => p.id !== socket.data.pid && p.name === name)) return callback({ ok: false, error: "NAME_TAKEN" });
+      applyRoomProfile(room, socket.data.pid, name, avatar);
+      callback({ ok: true, name, avatar });
+      io.to(room.code).emit("profile_updated", { playerId: socket.data.pid, name, avatar });
+      io.to(room.code).emit("room_update", roomState(room));
+      return;
+    }
+    const solo = soloSessions.get(socket.data.pid);
+    if (!solo || solo.over) return callback({ ok: false, error: "NOT_IN_GAME" });
+    solo.name = name;
+    callback({ ok: true, name, avatar });
+    io.to(socket.data.pid).emit("profile_updated", { playerId: socket.data.pid, name, avatar });
   });
 
 

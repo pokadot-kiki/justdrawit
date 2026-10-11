@@ -304,6 +304,47 @@ async function main() {
       (await emitAck(D.socket, "join_room", { code: "00000", name: "X", avatar: 1 }))?.error, "ROOM_NOT_FOUND");
   });
 
+  await runPart("2b. แก้โปรไฟล์: server ตรวจเองและส่งข้อมูลตรงกันทั้งสองหน้าจอ", async () => {
+    const host = track(await connect());
+    const guest = track(await connect());
+    others.push(host, guest);
+    const created = await emitAck(host.socket, "create_room", { name: "ProfileHost", avatar: 0 });
+    await emitAck(guest.socket, "join_room", { code: created.code, name: "ProfileGuest", avatar: 1 });
+    clearAll(host, guest);
+    const saved = await emitAck(guest.socket, "update_profile", { playerId: host.socket.id, name: "NewGuest", avatar: 4 });
+    check("บันทึกชื่อ/อวตารใหม่ได้", [saved?.ok, saved?.name, saved?.avatar], [true, "NewGuest", 4]);
+    const hostView = await host.wait("room_update", (r) => r.players.some((p) => p.name === "NewGuest"));
+    const guestView = await guest.wait("room_update", (r) => r.players.some((p) => p.name === "NewGuest"));
+    check("profile_updated ส่งถึงทั้งสองหน้าจอ", [
+      (await host.wait("profile_updated")).playerId,
+      (await guest.wait("profile_updated")).playerId,
+    ], [guest.socket.id, guest.socket.id]);
+    check("Host และ Player เห็นโปรไฟล์เดียวกัน", hostView.players, guestView.players);
+    check("แก้ playerId ของคนอื่นไม่ได้", hostView.players.find((p) => p.id === host.socket.id).name, "ProfileHost");
+    check("Player ID และทีม/คะแนนไม่เปลี่ยน", [hostView.players[1].id, hostView.players[1].score, hostView.hostId], [guest.socket.id, 0, host.socket.id]);
+    check("ชื่อซ้ำถูกปฏิเสธ", (await emitAck(guest.socket, "update_profile", { name: "ProfileHost", avatar: 3 }))?.error, "NAME_TAKEN");
+    check("ชื่อว่างถูกปฏิเสธ", (await emitAck(guest.socket, "update_profile", { name: " ", avatar: 3 }))?.error, "INVALID_NAME");
+    check("avatar เกินช่วงถูกปฏิเสธ", (await emitAck(guest.socket, "update_profile", { name: "NewGuest", avatar: 99 }))?.error, "INVALID_AVATAR");
+    guest.socket.emit("set_ready", { ready: true });
+    await host.wait("room_update", (r) => r.players.find((p) => p.id === guest.socket.id)?.ready === true);
+    clearAll(host, guest);
+    host.socket.emit("start_game");
+    await host.wait("game_started");
+    clearAll(host, guest);
+    check("กำลังเล่นอยู่ก็เปลี่ยนโปรไฟล์ได้", (await emitAck(guest.socket, "update_profile", { name: "DuringGame", avatar: 5 }))?.ok, true);
+    const playingView = await host.wait("room_update", (r) => r.players.some((p) => p.name === "DuringGame"));
+    check("ระหว่างเล่น ID/คะแนนยังเดิม", [playingView.players[1].id, playingView.players[1].score], [guest.socket.id, 0]);
+    host.socket.emit("leave_room");
+    guest.socket.emit("leave_room");
+    const solo = track(await connect());
+    others.push(solo);
+    solo.socket.emit("ai_start", { name: "SoloBefore", difficulty: "easy" });
+    await solo.wait("ai_round_start");
+    check("Solo เปลี่ยนชื่อระหว่างเล่นได้", (await emitAck(solo.socket, "update_profile", { name: "SoloAfter", avatar: 2 }))?.ok, true);
+    check("Solo reconnect ใช้ชื่อใหม่", (await emitAck(solo.socket, "ai_resume", {}))?.state?.name, "SoloAfter");
+    solo.socket.emit("leave_room");
+  });
+
   await runPart("3. ห้องเต็ม · หัวห้องย้าย · เริ่มเกมคนเดียว", async () => {
     const host = track(await connect());
     others.push(host);
@@ -579,6 +620,7 @@ async function main() {
 
     const rs = await drawer.wait("round_start", null, 3000);
     const rsGuess = await guessers[0].wait("round_start", null, 3000);
+    check("คนวาดและคนทายได้เวลาเริ่มตาเดียวกัน", [rs.time, rs.timeLeft], [rsGuess.time, rsGuess.timeLeft]);
     return {
       drawer,
       guessers,
@@ -779,6 +821,7 @@ async function main() {
     const rs = await Late.wait("round_start", null, 3000);
     checkOk("คนเข้าห้องกลางตาได้ round_start", !!rs);
     check("round_start บอกคนวาดถูกคน", rs.drawerId, D.socket.id);
+    checkOk("คนเข้ากลางตาได้เวลารวมและเวลาคงเหลือจาก server", rs.time >= rs.timeLeft && rs.timeLeft >= 0);
     checkOk("round_start ส่ง guessedIds มาให้ (คนที่ทายถูกไปแล้ว)",
       Array.isArray(rs.guessedIds) && rs.guessedIds.includes(E.socket.id));
     checkOk("guessedIds ส่งแค่ id ไม่มีคำตอบปนมา",

@@ -1299,6 +1299,7 @@ input {
 .podium__item {
   display: grid;
   justify-items: center;
+  min-width: 0;
   gap: 4px;
   padding: 10px 6px;
   border: var(--border);
@@ -1335,11 +1336,14 @@ input {
 }
 
 .podium__name {
+  max-width: 100%;
   font-family: var(--font-head);
   font-weight: 500;
   font-size: 15px;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
+
+.podium__avatar { width: 32px; height: 32px; }
 
 .podium__score {
   font-family: var(--font-pixel);
@@ -1352,6 +1356,21 @@ input {
   max-width: 66%;
   margin-left: auto;
   margin-right: auto;
+}
+
+.podium--one {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 220px;
+  margin-inline: auto;
+}
+
+.podium--one .podium__item--1 { grid-column: 1; }
+
+@media (max-width: 620px) {
+  .podium:not(.podium--two):not(.podium--one) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .podium:not(.podium--two):not(.podium--one) .podium__item--1 { grid-column: 1 / -1; grid-row: 1; }
+  .podium:not(.podium--two):not(.podium--one) .podium__item--2 { grid-column: 1; grid-row: 2; }
+  .podium:not(.podium--two):not(.podium--one) .podium__item--3 { grid-column: 2; grid-row: 2; }
 }
 
 /* Multiplayer vs AI: คะแนนวาด/ทายในการ์ดและแถวของคนนั้นเอง */
@@ -2982,7 +3001,7 @@ select[class] {
   margin-top: auto;
   font-family: var(--font-pixel);
   font-size: 20px;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .team-standings {
@@ -5633,3 +5652,173 @@ select[class] {
   font-weight: 600;
   font-size: 17px;
 }
+
+/* ผลจบเกม: ขยายพื้นที่อ่านผล ลดความสูงของหัวและแท่น โดยยังเลื่อนใน modal เดิม */
+.modal__panel--game-over {
+  max-width: 720px;
+  max-height: calc(100dvh - 32px);
+  padding: clamp(14px, 2.5vw, 24px);
+  overflow-x: hidden;
+}
+
+.modal__panel--solo-over {
+  max-height: calc(100dvh - 32px);
+  overflow-x: hidden;
+}
+
+.modal__panel--game-over .mascot--modal,
+.modal__panel--solo-over .mascot--modal {
+  width: clamp(68px, 10vw, 92px);
+  max-width: 100%;
+  margin: 0 auto 4px;
+}
+
+.modal__panel--game-over .modal__title,
+.modal__panel--solo-over .modal__title {
+  margin-bottom: 8px;
+  font-size: clamp(21px, 3vw, 28px);
+  line-height: 1.3;
+}
+
+.modal__panel--game-over .podium {
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.modal__panel--game-over .podium__item {
+  align-content: center;
+  gap: 5px;
+  padding: 10px 8px;
+  box-shadow: var(--shadow-xs);
+}
+
+.modal__panel--game-over .podium__item--1 { min-height: 174px; border-width: 4px; }
+.modal__panel--game-over .podium__item--2 { min-height: 150px; }
+.modal__panel--game-over .podium__item--3 { min-height: 136px; }
+.modal__panel--game-over .podium__medal { line-height: 1; }
+.modal__panel--game-over .podium__medal svg { max-width: 30px; max-height: 30px; }
+.modal__panel--game-over .podium__item--1 .podium__medal svg { max-width: 34px; max-height: 34px; }
+.modal__panel--game-over .podium__name { font-size: clamp(14px, 2vw, 18px); line-height: 1.3; }
+.modal__panel--game-over .podium__score { font-size: 18px; }
+.modal__panel--game-over .podium__split { line-height: 1.35; }
+.modal__panel--game-over .match-ranking { margin-top: 16px; }
+.modal__panel--game-over .match-ranking__row { gap: 8px; }
+
+.modal__panel--game-over.modal__panel--team-over { max-width: 860px; }
+.modal__panel--team-over .team-over__winner { margin-bottom: 12px; padding: 10px; }
+.modal__panel--team-over .team-over__winner-name { font-size: clamp(20px, 3vw, 26px); line-height: 1.3; }
+.modal__panel--team-over .team-over__winner-members { line-height: 1.4; }
+.modal__panel--team-over .team-podium__item { gap: 5px; padding: 10px 8px; }
+.modal__panel--team-over .team-podium__item--1 { min-height: 250px; }
+.modal__panel--team-over .team-podium__item--2 { min-height: 228px; }
+.modal__panel--team-over .team-podium__item--3 { min-height: 210px; }
+.modal__panel--team-over .team-podium__name { line-height: 1.3; }
+.modal__panel--team-over .team-podium__member { overflow-wrap: anywhere; }
+.modal__panel--team-over .team-standings { margin-top: 14px; }
+
+.game-over__coins {
+  margin: 14px 0;
+  padding: 10px 12px;
+  border: 2px solid #c69212;
+  border-radius: var(--r-sm);
+  background: #fff3c4;
+  color: var(--ink);
+}
+
+.game-over__coins-title { margin: 0; font-family: var(--font-head); font-size: 17px; line-height: 1.35; }
+.game-over__coins-note { margin: 4px 0 0; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
+.game-over__coins-note--guest { color: #9f3024; }
+
+.modal__panel--game-over .modal__actions,
+.modal__panel--solo-over .modal__actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.modal__panel--game-over .modal__actions .btn,
+.modal__panel--solo-over .modal__actions .btn {
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: 8px 10px;
+  font-size: 15px;
+  line-height: 1.3;
+  white-space: normal;
+}
+
+@media (max-width: 620px) {
+  .modal__panel--game-over,
+  .modal__panel--solo-over { max-height: calc(100dvh - 40px); padding: 12px; }
+  .modal__panel--game-over .podium:not(.podium--two):not(.podium--one) .podium__item--1 { min-height: 150px; }
+  .modal__panel--game-over .podium:not(.podium--two):not(.podium--one) .podium__item--2,
+  .modal__panel--game-over .podium:not(.podium--two):not(.podium--one) .podium__item--3 { min-height: 126px; }
+  .modal__panel--team-over .team-podium__item--1 { min-height: 205px; }
+  .modal__panel--team-over .team-podium__item--2,
+  .modal__panel--team-over .team-podium__item--3 { min-height: 185px; }
+  .modal__panel--game-over .match-ranking__row { grid-template-columns: 2.5ch 32px minmax(0, 1fr) auto; gap: 5px; padding: 6px; }
+  .modal__panel--game-over .match-ranking__score { font-size: 14px; }
+}
+
+/* โปรไฟล์ที่แก้ได้: ใช้ชิปเดิมและขนาดสัมผัสของเกม */
+.profile-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: min(24vw, 200px);
+  min-height: 44px;
+  padding: 3px 8px 3px 3px;
+  border: var(--border);
+  border-radius: var(--r-pill);
+  background: var(--white);
+  color: var(--ink);
+  box-shadow: var(--shadow-xs);
+  font: 600 14px var(--font-head);
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.profile-trigger:hover,
+.avatar-picker__stage--edit:hover,
+.name-row__edit:hover,
+.setup__who--edit:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+.profile-trigger:focus-visible,
+.avatar-picker__stage--edit:focus-visible,
+.name-row__edit:focus-visible,
+.setup__who--edit:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.profile-trigger__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-trigger .avatar-chip { flex: none; }
+.topbar .profile-trigger { max-width: min(16vw, 160px); }
+.topbar:has(.team-vs) .profile-trigger { max-width: min(12vw, 130px); }
+.lb-top .profile-trigger { max-width: min(45vw, 220px); }
+.avatar-picker__stage--edit { cursor: pointer; }
+.name-row__edit { display: flex; align-items: center; cursor: pointer; text-align: left; }
+.name-row__edit span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup__who--edit { width: 100%; border-right: 0; border-bottom: 0; border-left: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
+
+.modal__panel--profile { max-width: 540px; max-height: calc(100dvh - 40px); overflow-x: hidden; }
+.profile-preview { display: grid; justify-items: center; gap: 4px; min-width: 0; font-family: var(--font-head); font-weight: 700; overflow-wrap: anywhere; }
+.profile-avatars { min-width: 0; margin: 14px 0; padding: 10px; border: var(--border); text-align: left; }
+.profile-avatars legend { padding: 0 5px; font-family: var(--font-head); font-weight: 700; }
+.profile-avatars__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.profile-avatars__item { display: grid; justify-items: center; gap: 3px; min-width: 0; padding: 8px 3px; border: var(--border); border-radius: var(--r-sm); background: var(--white); color: var(--ink); font: 600 13px var(--font-head); cursor: pointer; }
+.profile-avatars__item--selected { border-color: var(--blue); background: var(--tab-idle); box-shadow: inset 0 0 0 2px var(--blue); }
+.profile-avatars__item:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.profile-name-input { width: 100%; }
+.profile-error { margin: 8px 0 0; color: var(--red); font-weight: 700; overflow-wrap: anywhere; }
+
+@media (max-width: 620px) {
+  .modal__panel--profile { padding: 12px; }
+  .profile-avatars__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .top-icons { flex-wrap: wrap; justify-content: flex-end; }
+  .top-icons .profile-trigger { max-width: min(48vw, 180px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-trigger { transition: none; }
+}
+
+html[data-motion="reduce"] .profile-trigger { transition: none; }

@@ -19,7 +19,7 @@ import { PAINT_COLORS, SIZE_DEFAULT, TOOLS, isShapeTool } from "../canvas/palett
 import { SNAPSHOT_MS, THINK_TIMEOUT_MS } from "../aiSnapshot";
 import ChallengeBanner from "../components/ChallengeBanner";
 import ChallengeIntro from "../components/ChallengeIntro";
-import { galleryLayout } from "../galleryLayout";
+import { galleryStripLayout } from "../galleryLayout";
 
 const MAX_SIZE = 12; // แปรงหนาเกินทำให้ AI จำภาพไม่ได้ (วัดไว้ตอนทำ Solo) — ช่วยผู้เล่นเท่านั้น ไม่ใช่กติกา
 const STATUS_TEXT = { missing: "ไม่ได้ส่งภาพ", error: "AI ดูภาพไม่สำเร็จ", timeout: "AI ใช้เวลานานเกิน" };
@@ -33,7 +33,7 @@ const OP_START = new Set(["stroke_start", "fill", "draw_shape", "clear_canvas"])
  * ช่วง 2 ดู AI วาด แล้วทายในแชทร่วมของห้อง (Chat + useGame เดิม) → เฉลย → รอบถัดไป/จบเกม
  * สถานะเกมมาจาก useMpAi (ผูกที่ App) — หน้านี้แค่แสดงผล ส่งภาพ และส่งข้อความ server ตัดสินทั้งหมด
  */
-export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game, startGame, backToLobby, onLeave, onToast }) {
+export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game, startGame, backToLobby, onLeave, onToast, onEditProfile }) {
   const canvasRef = useRef(null);
   const [tool, setTool] = useState(TOOLS.PEN);
   const [color, setColor] = useState(PAINT_COLORS[0].hex); // เริ่มที่สีดำ (ตัวแรกในพาเลต)
@@ -183,19 +183,14 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
           </span>
           <Timer timeLeft={live ? mp.timeLeft : null} />
         </div>
-        <TopIcons onInfo={() => setShowInfo(true)} onExit={() => setShowExit(true)} shareCode={room.code} onToast={onToast} />
+        <TopIcons onInfo={() => setShowInfo(true)} onExit={() => setShowExit(true)} shareCode={room.code} onToast={onToast} profile={players.find((p) => p.id === meId)} onEditProfile={onEditProfile} />
       </header>
 
-      <main className={`game mp-ai${drawPhase ? "" : " game--no-tools"}`}>
+      <main className={`game mp-ai${drawPhase ? "" : " game--no-tools"}${mp.phase === "gallery" ? " mp-ai--gallery" : ""}`}>
         <aside className="game__players">
           <div className="game__players-list">
             <Scoreboard players={players} drawerId={null} drawing={false} guessed={doneIds} meId={meId} />
           </div>
-          {!watching && (
-            <p className="mp-ai__legend">
-              <Icon name="check" size={14} /> AI ทายภาพถูกแล้ว
-            </p>
-          )}
         </aside>
 
         <section className="game__stage">
@@ -298,15 +293,7 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
             {watching ? (
               // ช่วง 2: แชทร่วมของห้อง (ตัวเดียวกับโหมดปกติ) — ทายถูกแล้วคุยได้แค่กับคนที่ถูกแล้ว (server คุม)
               <div className="mp-ai__chat">
-                <p className={`mp-ai__status${solvedMe ? " mp-ai__status--ok" : ""}`}>
-                  {solvedMe ? (
-                    <>
-                      <Icon name="check" size={18} /> ถูก! +{mp.watch.myPoints} · รอเพื่อน ({mp.watch.solvedIds.length}/{online})
-                    </>
-                  ) : (
-                    "พิมพ์ทายในแชท ทายถูกเร็วได้คะแนนมาก · ทุกคนทายแยกกัน"
-                  )}
-                </p>
+                {!solvedMe && <p className="mp-ai__status">พิมพ์ทายในแชท ทายถูกเร็วได้คะแนนมาก · ทุกคนทายแยกกัน</p>}
                 <Chat messages={mp.watch?.chat ?? []} meId={meId} disabled={mp.phase !== "watch"} onSend={sendGuess} focusKey={mp.round ?? 0} />
               </div>
             ) : (
@@ -314,7 +301,7 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
                 <h2 className="panel__title">{mp.phase === "gallery" ? "แกลเลอรี" : "AI คิดว่า..."}</h2>
                 {mp.phase === "gallery" ? (
                   <div className="ai-box__body">
-                    <p className="ai-box__hint">ภาพของทุกคน คำที่ AI ทาย และคะแนน · เดี๋ยวเข้าช่วง 2 (AI วาด คุณทาย)</p>
+                    <p className="ai-box__hint">ภาพของทุกคนและผลการรู้จำของ AI · เดี๋ยวเข้าช่วง 2 (AI วาด คุณทาย)</p>
                   </div>
                 ) : (
                   <>
@@ -334,9 +321,6 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
                       ))}
                       {thinking && !myDone && <li className="mp-ai__guess mp-ai__guess--hint">AI กำลังดูภาพ...</li>}
                     </ol>
-                    <p className="ai-box__past">
-                      AI ทายถูกแล้ว {mp.doneIds.length}/{online} คน · ภาพและคำทายของคุณเห็นแค่คุณจนกว่าจะเปิดแกลเลอรี
-                    </p>
                   </>
                 )}
               </section>
@@ -384,12 +368,22 @@ function Gallery({ gallery, meId }) {
       const width = node.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
       const gap = parseFloat(style.columnGap);
       const minCardWidth = parseFloat(style.getPropertyValue("--mp-gallery-min-card"));
-      setCardWidth(galleryLayout(gallery.results.length, width, minCardWidth, gap).cardWidth);
+      // A single large 4:3 image must also fit the visible height on laptops.
+      const visibleHeight = window.visualViewport?.height ?? window.innerHeight;
+      const heightLeft = visibleHeight - node.getBoundingClientRect().top;
+      const maxCardWidth = Math.max(minCardWidth, Math.min(parseFloat(style.getPropertyValue("--mp-gallery-max-card")), heightLeft));
+      setCardWidth(galleryStripLayout(gallery.results.length, width, minCardWidth, maxCardWidth, gap).cardWidth);
     };
     const observer = new ResizeObserver(measure);
     observer.observe(node);
+    window.addEventListener("resize", measure);
+    window.visualViewport?.addEventListener("resize", measure);
     measure();
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+      window.visualViewport?.removeEventListener("resize", measure);
+    };
   }, [gallery.results.length]);
   return (
     <div ref={ref} className="mp-gallery" aria-label="แกลเลอรีภาพของทุกคน" style={cardWidth == null ? undefined : { "--mp-gallery-card-width": `${cardWidth}px` }}>

@@ -20,7 +20,7 @@ const API_TIMEOUT_MS = 15000;
 const AI_WORDS_FILE = process.env.AI_WORDS_FILE || path.join(__dirname, "data", "ai-words.json");
 let soloBank = null;     // { easy: [{word, category, en}], medium: [...], hard: [...] } หรือ null ถ้าไฟล์ใช้ไม่ได้
 const thToEn = new Map(); // คำไทย → ชื่ออังกฤษ
-let modelOk = false;     // โมเดลพร้อมใช้ (โหลดติด + มีคลังคำ) · ถ้าพังกลางทางจะถูกปิด
+let modelOk = false;     // โมเดลพร้อมใช้ (โหลดติด + มีคลังคำ); คำขอที่ล้มเหลวไม่ปิดโมเดลให้ทุกห้อง
 
 function loadSoloBank() {
   try {
@@ -179,18 +179,18 @@ async function guessImage({ image, word, allWords, elapsed, time, wrong, require
   let guess = null;
   let prob = 0;
   let source = null;
-  if (aiMode() === "model") {
+  const mode = aiMode();
+  if (mode === "model") {
     try {
       ({ guess, prob } = await modelGuess({ image, wrong }));
       source = "model";
     } catch (err) {
-      // โมเดลพัง → ปิดมัน แล้วลองสมองถัดไป (โหมดห้อง AI ห้ามใช้คำทายจำลอง)
-      console.warn("โมเดล AI พัง ถอยไปใช้สมองถัดไป:", err.message);
-      modelOk = false;
+      // ความผิดพลาดครั้งนี้อาจเป็นชั่วคราว: fallback เฉพาะคำขอนี้ ไม่ปิดโมเดลของทุกห้อง
+      console.warn("โมเดล AI ตอบคำขอนี้ไม่สำเร็จ ถอยไปใช้สมองถัดไป:", err.message);
     }
   }
   if (guess === null) {
-    if (aiMode() === "claude") {
+    if (mode === "claude" || (mode === "model" && process.env.ANTHROPIC_API_KEY)) {
       guess = await claudeGuess({ image, wrong });
       prob = CLAUDE_CONFIDENCE;
       source = "claude";

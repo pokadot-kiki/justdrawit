@@ -50,7 +50,7 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
   }, []);
 
   return (
-    <Modal labelledBy="game-over-title" panelClassName={teamMode ? "modal__panel--team-over" : ""}>
+    <Modal labelledBy="game-over-title" panelClassName={`modal__panel--game-over${teamMode ? " modal__panel--team-over" : ""}`}>
       <Mascot mood="trophy" className="mascot--modal" />
       <h2 className={`modal__title${teamMode ? " team-over__headline" : ""}`} id="game-over-title">
         {teamMode ? winningTeam ? "ทีมผู้ชนะ!" : "เสมอกัน!" : "จบเกมแล้ว"}
@@ -123,12 +123,13 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
       ) : (
         <div className="podium-stage">
           <Confetti />
-          <ol className={`podium${top3.length === 2 ? " podium--two" : ""}`}>
+          <ol className={`podium${top3.length === 2 ? " podium--two" : top3.length === 1 ? " podium--one" : ""}`}>
             {podiumOrder(top3).map((p) => {
               const place = top3.indexOf(p);
               return (
                 <li className={`podium__item podium__item--${place + 1}${p.playerId === meId ? " podium__item--me" : ""}`} key={p.playerId}>
                   <span className="podium__medal"><Icon name={MEDALS[place]} size={34} /></span>
+                  {Number.isInteger(p.avatar) && <span className="podium__avatar"><Avatar index={p.avatar} /></span>}
                   <span className="podium__name">{p.name}</span>
                   <span className="podium__score">{p.score}</span>
                   {split(p)}
@@ -165,14 +166,14 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
       )}
 
       {/* ── Economy & Reward System Breakdown (ข้อ 6) ── */}
-      <div style={{ margin: "16px 0", padding: "12px", background: "#fefce8", border: "1px solid #fef08a", borderRadius: "8px", textAlign: "center" }}>
-        <h3 style={{ margin: 0, fontSize: "14px", color: "#a16207" }}>💰 สรุปเหรียญรางวัลประจำรอบ (Coin Rewards)</h3>
+      <div className="game-over__coins">
+        <h3 className="game-over__coins-title">💰 เหรียญรางวัล</h3>
         {auth ? (
-          <p style={{ margin: "6px 0 0 0", fontSize: "13px", color: "#854d0e" }}>
+          <p className="game-over__coins-note">
             คุณได้รับ <b>+{totalEarned}</b> เหรียญ! (เหรียญพื้นฐาน 100 + คะแนนผลงาน)
           </p>
         ) : (
-          <p style={{ margin: "6px 0 0 0", fontSize: "12px", color: "#dc2626" }}>
+          <p className="game-over__coins-note game-over__coins-note--guest">
             ⚠️ คุณเล่นในโหมด Guest (0 เหรียญ) — กรุณาล็อกอินเข้าสู่ระบบเพื่อสะสมเหรียญ
           </p>
         )}

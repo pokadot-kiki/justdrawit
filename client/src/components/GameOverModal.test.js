@@ -75,6 +75,23 @@ test("two-player podium uses the centered two-column layout", () => {
   assert.match(html, /<ol class="podium podium--two">/);
 });
 
+test("one-player result centers a real podium entry and shows its avatar", () => {
+  const html = render([{ playerId: "solo", name: "Only player", score: 0, avatar: 2 }], "solo");
+  assert.match(html, /<ol class="podium podium--one">/);
+  assert.match(html, /podium__item--1 podium__item--me/);
+  assert.match(html, /podium__avatar[\s\S]*data-avatar="2"/);
+  assert.equal((leaderboard(html).match(/class="match-ranking__row/g) ?? []).length, 1);
+});
+
+test("eight-player result keeps every authoritative rank once", () => {
+  const players = Array.from({ length: 8 }, (_, i) => ({ playerId: `p${i}`, name: `Player ${i + 1}`, score: 80 - i * 10 }));
+  const html = render(players, "p7");
+  const list = leaderboard(html);
+  assert.equal((list.match(/class="match-ranking__row/g) ?? []).length, players.length);
+  assert.equal((html.match(/class="podium__item /g) ?? []).length, 3);
+  for (const player of players) assert.equal((list.match(new RegExp(`title="${player.name}"`, "g")) ?? []).length, 1);
+});
+
 test("Multiplayer vs AI: leaderboard includes all total scores, including zero and departed players", () => {
   const html = render([
     { playerId: "one", name: "First", score: 700, drawPoints: 400, guessPoints: 300, left: false },

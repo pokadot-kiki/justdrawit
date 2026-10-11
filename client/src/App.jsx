@@ -6,7 +6,10 @@ import { useGame } from "./hooks/useGame";
 import { useMpAi } from "./hooks/useMpAi";
 import MpAiGame from "./screens/MpAiGame";
 import Lobby from "./screens/Lobby";
-import { initialName, saveName } from "./playerName";
+import { initialName, loadAvatar, saveAvatar, saveName } from "./playerName";
+import { AVATARS } from "./avatars";
+import { getUserAuth } from "./prefs";
+import ProfileModal from "./components/ProfileModal";
 import WaitingRoom from "./screens/WaitingRoom";
 import Game from "./screens/Game";
 import Leaderboard from "./screens/Leaderboard";
@@ -47,7 +50,8 @@ export default function App() {
   const [me, setMe] = useState(null); // { playerId, name, avatar, code } ของเครื่องนี้
   const [inGame, setInGame] = useState(false); // อยู่ในห้องแล้วเกมเริ่มหรือยัง (ห้องรอ ↔ หน้าเกม)
   // ชื่อ + อวตารที่เลือกในหน้าแรก อยู่ที่นี่เพื่อให้ติดไปหน้า SET UP / Solo ได้ ไม่ต้องกรอกซ้ำ
-  const [profile, setProfile] = useState(() => ({ name: initialName(), avatar: 0 })); // ชื่อ: ที่จำไว้ ไม่งั้นสุ่มให้ (playerName.js)
+  const [profile, setProfile] = useState(() => ({ name: initialName(getUserAuth()?.username), avatar: loadAvatar(AVATARS.length, getUserAuth()?.username) }));
+  const [showProfile, setShowProfile] = useState(false);
   // ค่าเริ่ม Solo ที่ส่งมาจากหน้า SET UP (เลือกโหมด "แข่งกับ AI") → SoloAI เริ่มเกมทันทีด้วยความยากนี้
   // null = เข้า /solo ตรง ๆ (เช่นรีเฟรช) จะเห็นหน้ากรอกชื่อตามปกติ
   const [soloBoot, setSoloBoot] = useState(null);
@@ -94,7 +98,16 @@ export default function App() {
     const onDisconnect = () => setConnected(false);
     // server ส่ง room_update ทุกครั้งที่มีคนเข้าออก แก้ตั้งค่า หรือคะแนนเปลี่ยน
     // หน้าจอแค่เอาค่าที่ได้ไปแสดง ไม่ต้องคำนวณเอง
-    const onRoomUpdate = (next) => setRoom(next);
+    const onRoomUpdate = (next) => {
+      setRoom(next);
+      const own = next.code === meRef.current?.code ? next.players?.find((p) => p.id === meRef.current?.playerId) : null;
+      if (own) {
+        const info = { ...meRef.current, name: own.name, avatar: own.avatar };
+        meRef.current = info;
+        setMe(info);
+        setProfile((previous) => previous.name === own.name && previous.avatar === own.avatar ? previous : { name: own.name, avatar: own.avatar });
+      }
+    };
     const onGameStarted = () => setInGame(true);
     // รีเฟรชหลังเกมจบ: server ส่ง game_end กลับมาให้ (ไม่มี game_started) → ต้องอยู่หน้าเกมเพื่อโชว์ผลจบเกม
     const onGameEnd = () => setInGame(true);
@@ -138,7 +151,35 @@ export default function App() {
   useEffect(() => () => clearTimeout(toastTimer.current), []);
 
   // จำชื่อล่าสุดที่ใช้ไว้ในเบราว์เซอร์ (พิมพ์เองก็จำ) เปิดครั้งหน้าใช้ชื่อเดิม
-  useEffect(() => saveName(profile.name), [profile.name]);
+  useEffect(() => saveName(profile.name, getUserAuth()?.username), [profile.name]);
+  useEffect(() => saveAvatar(profile.avatar, AVATARS.length, getUserAuth()?.username), [profile.avatar]);
+
+  async function saveProfile(next) {
+    if (route.screen !== "room" && route.screen !== "solo") {
+      setProfile(next);
+      return { ok: true };
+    }
+    if (!socket.connected) return { ok: false, error: "CONNECT_FAILED" };
+    return new Promise((resolve) => {
+      socket.timeout(6000).emit("update_profile", next, (err, result) => {
+        if (err) return resolve({ ok: false, error: "CONNECT_FAILED" });
+        if (!result?.ok) {
+          if (route.screen === "solo" && result?.error === "NOT_IN_GAME") {
+            setProfile(next);
+            return resolve({ ok: true });
+          }
+          return resolve(result ?? { ok: false, error: "SERVER_ERROR" });
+        }
+        const saved = { name: result.name, avatar: result.avatar };
+        setProfile(saved);
+        if (meRef.current) {
+          meRef.current = { ...meRef.current, ...saved };
+          setMe(meRef.current);
+        }
+        resolve({ ok: true });
+      });
+    });
+  }
 
   // ล้างสถานะห้องในเครื่อง (ไม่ได้บอก server — คนเรียกเป็นคนตัดสินใจว่าต้องส่ง leave_room ไหม)
   function clearRoom() {
@@ -234,6 +275,7 @@ export default function App() {
           connected={connected}
           profile={profile}
           onProfile={setProfile}
+          onEditProfile={() => setShowProfile(true)}
           inviteCode={inviteCode}
           onEntered={handleEntered}
           // หน้า Lobby ส่ง "รหัส error" มา ที่นี่แปลงเป็นข้อความไทยก่อนโชว์
@@ -247,6 +289,7 @@ export default function App() {
         <SetUp
           connected={connected}
           profile={profile}
+          onEditProfile={() => setShowProfile(true)}
           onBack={goHome}
           onEntered={handleEntered}
           onError={(code) => showToast(errorText(code))}
@@ -265,6 +308,8 @@ export default function App() {
       {route.screen === "solo" && (
         <SoloAI
           initialName={profile.name}
+          profile={profile}
+          onEditProfile={() => setShowProfile(true)}
           boot={soloBoot}
           onName={(name) => setProfile((p) => ({ ...p, name }))}
           onBack={() => {
@@ -282,7 +327,7 @@ export default function App() {
       )}
 
       {roomReady && !inGame && (
-        <WaitingRoom room={room} me={me} messages={game.messages} onSend={sendGuess} onLeave={handleLeave} />
+        <WaitingRoom room={room} me={me} messages={game.messages} onSend={sendGuess} onLeave={handleLeave} onEditProfile={() => setShowProfile(true)} />
       )}
 
       {showGame && room.settings.mode === "mpai" && (
@@ -297,6 +342,7 @@ export default function App() {
           backToLobby={backToLobby}
           onLeave={handleLeave}
           onToast={showToast}
+          onEditProfile={() => setShowProfile(true)}
         />
       )}
 
@@ -318,11 +364,14 @@ export default function App() {
           onLeave={handleLeave}
           // Toast ตัวกลางอยู่ที่ App หน้าเกมจึงขอยืมใช้ (เช่นตอนกดคัดลอกรหัสห้อง)
           onToast={showToast}
+          onEditProfile={() => setShowProfile(true)}
         />
       )}
 
       {/* หลุดจาก server ระหว่างอยู่ในห้อง: บอกให้รู้ว่ากำลังต่อใหม่ (ต่อติดแล้ว rejoin เองโดยอัตโนมัติ) */}
       {roomReady && !connected && <div className="reconnect-note">การเชื่อมต่อหลุด กำลังต่อใหม่...</div>}
+
+      {showProfile && <ProfileModal profile={roomReady ? { name: me.name, avatar: me.avatar } : profile} onSave={saveProfile} onClose={() => setShowProfile(false)} />}
 
       {/* key ผูกกับ id ของ toast เพื่อให้แสดงข้อความซ้ำแล้วเล่นอนิเมชันใหม่ */}
       <Toast key={toast?.id ?? "none"} toast={toast} />

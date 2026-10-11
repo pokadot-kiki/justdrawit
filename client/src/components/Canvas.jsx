@@ -234,6 +234,9 @@ const Canvas = forwardRef(function Canvas({ canDraw, tool, color, size, onAction
     // ทุกจุดที่วาดจึงคูณ 0 กลายเป็น (0,0) หมด ลากเมาส์แล้วไม่มีอะไรเกิดขึ้นเลย
     painter.setSize(cssW, cssH, dpr);
     painter.replay(actionsRef.current);
+    // ResizeObserver can reset the preview canvas while a shape is being dragged.
+    // Restore the in-progress outline so resizing does not make the tool appear unresponsive.
+    if (shapeRef.current) drawPreview();
   }
 
   // ── ผูก painter กับ canvas ครั้งเดียว แล้วเฝ้าดูขนาดจอ ──
@@ -628,14 +631,15 @@ const Canvas = forwardRef(function Canvas({ canDraw, tool, color, size, onAction
     if (DEBUG) dbgRef.current.leaves++;
   }
 
-  // เสียการจับ pointer กลางคัน (เบราว์เซอร์แย่งไปทำอย่างอื่น) — ปิดเส้นทิ้งอย่างเรียบร้อย
-  // ภาพที่วาดไปแล้วยังอยู่ครบ ไม่หาย แต่ปล่อยให้วาดเส้นใหม่ได้ ไม่ค้าง
+  // เสียการจับ pointer กลางคัน: ปิดเส้นมือเปล่า และเก็บรูปทรงจากจุด preview ล่าสุด
+  // เพื่อไม่ให้รูปทรงหายเมื่อเบราว์เซอร์ไม่ส่ง pointerup ตามมา
   function handleLostCapture() {
     // ตอนปิดเส้นปกติ เราปล่อยการจับเอง เบราว์เซอร์ก็ส่ง event นี้มาด้วย — ไม่ใช่ "การถูกแย่ง"
     // นับเฉพาะตอนที่ยังมีเส้นค้างอยู่จริง ซึ่งแปลว่าเบราว์เซอร์ปลดให้เองโดยเราไม่ได้สั่ง
     if (pointerRef.current === null) return;
     if (DEBUG) dbgRef.current.lostCaptures++;
-    finishStroke(true);
+    if (shapeRef.current) finishShape(true); // เก็บรูปทรงจากจุด preview ล่าสุดเมื่อ pointerup ไม่มาถึง
+    else finishStroke(true);
   }
 
   // ข้อความในกล่องดีบัก (โหมดดีบักชั่วคราว) — ลบได้ทั้งก้อน

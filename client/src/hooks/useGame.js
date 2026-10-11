@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { socket } from "../socket";
+import { withProfileIdentity, withProfileList } from "../profileIdentity";
 
 // event การวาดที่ server ส่งกลับมาให้เราวาดตาม (events.md หัวข้อ 4)
 // ทุกตัวมี payload ที่หน้าตาเหมือน action ใน canvas/actions.js เป๊ะ
@@ -119,7 +120,7 @@ export function useGame() {
         roundNo: data.round,
         totalRounds: data.totalRounds,
         drawerId: data.drawerId,
-        timeLeft: data.time,
+        timeLeft: data.timeLeft ?? data.time,
         options: null,
         chooseChallenge: null,
         intro: Boolean(data.intro),
@@ -213,6 +214,15 @@ export function useGame() {
     };
 
     const onChat = (msg) => setGame((g) => ({ ...g, messages: [...g.messages, msg] }));
+    const onProfileUpdated = (update) => setGame((g) => ({
+      ...g,
+      messages: withProfileList(g.messages, update),
+      ranking: withProfileList(g.ranking, update),
+      teamRanking: g.teamRanking?.map((team) => ({ ...team, members: withProfileList(team.members, update) })) ?? null,
+      summary: g.summary?.gallery
+        ? { ...g.summary, gallery: g.summary.gallery.map((entry) => ({ ...entry, drawer: withProfileIdentity(entry.drawer, update) })) }
+        : g.summary,
+    }));
 
     // ทายถูก: เก็บ id ไว้ขึ้น ✅ ที่แถบรายชื่อ และเพิ่มข้อความระบบไว้กล่อง "ในห้อง"
     // server ไม่ได้ส่งข้อความระบบนี้มา (ส่งมาแค่ id กับชื่อ) จึงประกอบเองฝั่งนี้
@@ -223,12 +233,12 @@ export function useGame() {
     // ทีมที่ทายถูกก่อนได้โบนัส +100 ต่อคน — จำว่าทีมไหนก่อนจากลำดับที่ event มาถึง (server ส่งเรียงตามจริง)
     const onCorrectGuess = (data) =>
       setGame((g) => {
-        const note = (kind, text) => ({ system: true, kind, text });
+        const note = (kind, text, playerId = null, name = null) => ({ system: true, kind, text, playerId, name });
         if (!data.team) {
           return {
             ...g,
             guessed: [...g.guessed, data.playerId],
-            messages: [...g.messages, note("correct", `${data.name} ทายถูก`)],
+            messages: [...g.messages, note("correct", `${data.name} ทายถูก`, data.playerId, data.name)],
           };
         }
         const isFirst = !g.solvedTeams.includes(data.team) && g.solvedTeams.length === 0;
@@ -238,7 +248,7 @@ export function useGame() {
         const msgs = [];
         if (data.playerId) {
           const bonus = firstTeam === data.team ? " (โบนัสทีมแรก +100)" : "";
-          msgs.push(note("correct", `${data.name} ทายถูก${bonus}`));
+          msgs.push(note("correct", `${data.name} ทายถูก${bonus}`, data.playerId, data.name));
         }
         if (teamNew) {
           msgs.push(
@@ -333,6 +343,7 @@ export function useGame() {
     socket.on("game_end", onGameEnd);
     socket.on("lobby_return", onLobbyReturn);
     socket.on("chat_message", onChat);
+    socket.on("profile_updated", onProfileUpdated);
     socket.on("correct_guess", onCorrectGuess);
     socket.on("room_update", onRoomUpdate);
 
@@ -354,6 +365,7 @@ export function useGame() {
       socket.off("game_end", onGameEnd);
       socket.off("lobby_return", onLobbyReturn);
       socket.off("chat_message", onChat);
+      socket.off("profile_updated", onProfileUpdated);
       socket.off("correct_guess", onCorrectGuess);
       socket.off("room_update", onRoomUpdate);
     };

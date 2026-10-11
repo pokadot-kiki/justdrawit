@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Icon } from "./Icons";
+import { isNearChatBottom } from "./chatScroll";
 import { predictWords } from "../utils/predictiveText";
 import { createSpeechRecognizer } from "../utils/speechToText";
 
@@ -28,6 +29,7 @@ export default function Chat({ messages = [], meId, disabled = false, onSend, fo
   const [text, setText] = useState("");
   const [listening, setListening] = useState(false);
   const listRef = useRef(null);
+  const stickToBottomRef = useRef(true);
   const inputRef = useRef(null);
   const recognizerRef = useRef(null);
 
@@ -59,11 +61,17 @@ export default function Chat({ messages = [], meId, disabled = false, onSend, fo
     }
   }
 
-  // ข้อความใหม่มา ให้เลื่อนลงล่างสุดเสมอ
-  useEffect(() => {
+  // รักษาตำแหน่งผู้อ่านเมื่อเลื่อนขึ้นดูข้อความเก่า; รอบใหม่เริ่มที่ข้อความล่าสุด
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (list && stickToBottomRef.current) list.scrollTop = list.scrollHeight;
+  }, [messages]);
+
+  useLayoutEffect(() => {
+    stickToBottomRef.current = true;
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
-  }, [messages]);
+  }, [focusKey]);
 
   // ขึ้นตาใหม่ = เริ่มทายใหม่ ให้เคอร์เซอร์อยู่ที่ช่องพิมพ์เลย จะได้พิมพ์ได้ทันทีไม่ต้องกดก่อน
   // ข้ามตอนที่พิมพ์ไม่ได้ (เราเป็นคนวาด) ไม่งั้นจะไปแย่งโฟกัสทั้งที่พิมพ์ไม่ได้
@@ -90,7 +98,7 @@ export default function Chat({ messages = [], meId, disabled = false, onSend, fo
     <section className="panel panel--chat" aria-label="แชท">
       <h2 className="panel__title">แชท</h2>
 
-      <div className="chat__list" ref={listRef}>
+      <div className="chat__list" ref={listRef} onScroll={(event) => { stickToBottomRef.current = isNearChatBottom(event.currentTarget); }}>
         {messages.length === 0 && <p className="chat__empty">พิมพ์ทายคำที่นี่</p>}
         {messages.map((m, i) => {
           if (m.system) {

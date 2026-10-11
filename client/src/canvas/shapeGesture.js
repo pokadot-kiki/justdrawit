@@ -27,8 +27,10 @@ export function shapeEnd(s, p, rect) {
 }
 
 export function finishedShape(s, release, rect, color, size, commit) {
-  if (!s || !commit || !release) return null;
-  const end = shapeEnd(s, toNorm(release, rect), rect);
+  if (!s || !commit) return null;
+  // A browser can drop pointer capture before pointerup (notably with pen input).
+  // In that case the last preview point is the only authoritative local endpoint.
+  const end = release ? shapeEnd(s, toNorm(release, rect), rect) : { x: s.x2, y: s.y2 };
   if (Math.hypot((end.x - s.x1) * rect.width, (end.y - s.y1) * rect.height) < MIN_SHAPE_DRAG_PX) return null;
   return drawShape({ shape: s.shape, x1: s.x1, y1: s.y1, x2: end.x, y2: end.y, color, size });
 }

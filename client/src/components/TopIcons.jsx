@@ -5,6 +5,7 @@ import { useReduceMotion, useSoundMuted } from "../hooks/usePrefs";
 import { Icon } from "./Icons";
 import { AudioButtons } from "./AudioDock";
 import { copyText, inviteUrl } from "../invite";
+import ProfileTrigger from "./ProfileTrigger";
 
 // รูปประตูพิกเซลของเราเอง (วาดจากสี่เหลี่ยมล้วน เหมือนมาสคอต) ใช้ในกล่องยืนยันออก
 // ตารางกว้าง 12 สูง 14 · crispEdges ให้ขอบคม ไม่เบลอเมื่อขยาย
@@ -100,7 +101,7 @@ export function ExitModal({ onYes, onNo, note }) {
 }
 
 // ── ไอคอนบนแถบบน: แชร์ลิงก์ (เฉพาะในห้อง) · ข้อมูล · ออก (สูง ≥44px ให้นิ้วแตะบนไอแพดได้) ──
-export function TopIcons({ onInfo, onExit, shareCode = null, onToast }) {
+export function TopIcons({ onInfo, onExit, shareCode = null, onToast, profile = null, onEditProfile }) {
   // ปุ่มเปิด/ปิดเสียงกับเพลงย้ายไป AudioDock (components/AudioDock.jsx) ที่อยู่ทุกหน้าตำแหน่งเดียวกัน
 
   // ลิงก์เชิญ: คัดลอก URL ที่มี ?room=รหัส ให้เพื่อนกดแล้วเข้าห้องได้เลย
@@ -110,6 +111,7 @@ export function TopIcons({ onInfo, onExit, shareCode = null, onToast }) {
   }
   return (
     <div className="top-icons">
+      {profile && onEditProfile && <ProfileTrigger name={profile.name} avatar={profile.avatar} onClick={onEditProfile} />}
       <AudioButtons />
       {/* แชร์ = คัดลอกลิงก์เชิญ · รหัสห้องแสดงอยู่บนปุ่มเลย (ทุกคนในห้องเห็นและกดได้) */}
       {shareCode && (

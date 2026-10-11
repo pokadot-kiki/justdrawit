@@ -5,15 +5,6 @@
 
 /* การ์ดเลือกโหมดในหน้า SET UP อยู่ใน setup.css (กล่อง "แข่งกับ AI") */
 
-.mp-ai__legend {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 8px 0 0;
-  font-size: 13px;
-  color: var(--muted);
-}
-
 /* ม่านบนกระดาน: AI กำลังดูภาพ / ส่งภาพแล้วรอเพื่อน */
 .mp-ai__eval {
   position: absolute;
@@ -130,6 +121,33 @@
   min-height: 0;
 }
 
+.mp-ai__chat .chat__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  overscroll-behavior: contain;
+}
+
+.mp-ai__chat .chat__row {
+  flex: none;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mp-ai__chat .chat__name {
+  overflow-wrap: anywhere;
+}
+
+.mp-ai__chat .chat__form {
+  min-width: 0;
+}
+
+.mp-ai__chat .chat__input {
+  min-width: 0;
+  flex: 1;
+}
+
 .mp-ai__status {
   display: flex;
   align-items: center;
@@ -143,26 +161,20 @@
   font-size: 13px;
 }
 
-.mp-ai__status--ok {
-  background: var(--green-soft);
-  color: #15803d;
-  font-weight: 600;
-}
-
-/* แกลเลอรี: ขนาดกล่องเท่ากระดาน (4:3 งบเดียวกับ .board) แถวสุดท้ายอยู่กลาง เลื่อนในกรอบถ้าคนเยอะ */
+/* Gallery แถวเดียว: ขนาดการ์ดขึ้นกับจำนวนภาพและพื้นที่ จอแคบเลื่อนแนวนอน */
 .mp-gallery {
-  --mp-gallery-min-card: 150px;
+  --mp-gallery-min-card: 96px;
+  --mp-gallery-max-card: 720px;
   width: 100%;
-  aspect-ratio: 4 / 3;
-  max-width: calc((100dvh - 228px) * 4 / 3);
   margin: 0 auto;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-content: flex-start;
-  gap: 12px;
-  padding: 12px;
-  overflow: auto;
+  flex-wrap: nowrap;
+  justify-content: safe center;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
   border: var(--border-thick);
   border-radius: var(--r-card);
   box-shadow: var(--shadow);
@@ -171,12 +183,12 @@
 
 .mp-gallery__card {
   display: grid;
-  flex: 0 0 var(--mp-gallery-card-width, 100%);
+  flex: 0 0 var(--mp-gallery-card-width, var(--mp-gallery-min-card));
   min-width: 0;
   align-content: start;
-  gap: 10px;
+  gap: 6px;
   margin: 0;
-  padding: 10px;
+  padding: 6px;
   border: 3px solid var(--ink);
   border-radius: var(--r-sm);
   box-shadow: var(--shadow-xs);
@@ -191,7 +203,7 @@
 .mp-gallery__img {
   display: grid;
   place-items: center;
-  aspect-ratio: 1;
+  aspect-ratio: 4 / 3;
   overflow: hidden;
   border: 2px solid var(--muted);
   border-radius: var(--r-sm);
@@ -210,10 +222,9 @@
 }
 
 .mp-gallery__card figcaption {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
   gap: 6px;
   font-size: 13px;
 }
@@ -221,7 +232,7 @@
 .mp-gallery__name {
   display: flex;
   align-items: center;
-  flex: 1 0 min(100%, 110px);
+  width: 100%;
   gap: 6px;
   min-width: 0;
   font-weight: 600;
@@ -244,6 +255,7 @@
 }
 
 .mp-gallery__ai {
+  justify-self: start;
   max-width: 100%;
   padding: 2px 6px;
   overflow: hidden;
@@ -255,6 +267,42 @@
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* เฉพาะช่วง Gallery: คืนพื้นที่ที่กระดาน 4:3 และแถบเครื่องมือไม่ต้องใช้แล้วให้ภาพจริง */
+@media (min-width: 1001px) {
+  .game.mp-ai--gallery {
+    max-width: 1800px;
+    grid-template-columns: minmax(190px, 250px) minmax(0, 1fr) minmax(240px, 300px);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    align-content: stretch;
+  }
+
+  .mp-ai--gallery .mp-gallery {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: stretch;
+    align-items: safe center;
+    overflow-y: auto;
+  }
+}
+
+@media (min-width: 700px) and (max-width: 1000px) {
+  .mp-ai--gallery .mp-gallery {
+    --mp-gallery-min-card: 180px;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 699px) {
+  .mp-ai--gallery .mp-gallery {
+    --mp-gallery-min-card: 220px;
+    grid-column: 1;
+    order: 1;
+    min-width: 0;
+  }
 }
 
 .mp-gallery__ai--ok {

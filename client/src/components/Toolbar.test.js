@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { TOOLS } from "../canvas/palette.js";
+import { PAINT_COLORS, TOOLS } from "../canvas/palette.js";
 
 const filename = fileURLToPath(new URL("./Toolbar.jsx", import.meta.url));
 const vite = await createServer({
@@ -37,4 +37,10 @@ test("Shapes Only shows disabled freehand tools and an active selected shape", (
   assert.match(html, /aria-label="ปากกา"[^>]*title="กติกา Shapes Only:[^"]*"[^>]*disabled/);
   assert.match(html, /aria-label="ยางลบ"[^>]*title="กติกา Shapes Only:[^"]*"[^>]*disabled/);
   assert.match(html, /aria-label="สี่เหลี่ยม"[^>]*aria-pressed="true"/);
+});
+
+test("shared toolbar keeps standard colors without a custom color control", () => {
+  const html = render();
+  assert.equal((html.match(/class="swatch/g) ?? []).length, PAINT_COLORS.length);
+  assert.doesNotMatch(html, /swatch--custom|สีเอง|color-pop/);
 });

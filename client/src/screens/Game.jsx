@@ -44,6 +44,7 @@ export default function Game({
   bindCanvas,
   onLeave,
   onToast,
+  onEditProfile,
 }) {
   const players = room.players;
   const isDrawer = game.drawerId === meId;
@@ -226,6 +227,8 @@ export default function Game({
           onExit={() => setShowExit(true)}
           shareCode={room.code}
           onToast={onToast}
+          profile={players.find((p) => p.id === meId)}
+          onEditProfile={onEditProfile}
         />
       </header>
 

@@ -326,7 +326,7 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
         checkProgress(room);
       }
     } catch (err) {
-      if (!alive(room, token) || mp.phase !== "draw") return;
+      if (!alive(room, token) || mp.phase !== "draw" || (mp.boards.get(pid)?.clearGeneration || 0) !== clearGeneration) return;
       mp.failed.set(pid, err?.timeout ? "timeout" : "error");
       // ไม่ log ภาพหรือคำตอบ · แจ้งเจ้าของภาพด้วย error เดียวกับ Solo แล้ววาดต่อได้ (ครั้งถัดไป AI ลองใหม่)
       console.warn(`Multiplayer vs AI ห้อง ${room.code}: AI ดูภาพไม่สำเร็จ (${mp.failed.get(pid)})`);

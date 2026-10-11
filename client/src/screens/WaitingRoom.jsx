@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { socket } from "../socket";
 import Avatar from "../components/Avatar";
+import ProfileTrigger from "../components/ProfileTrigger";
 import Logo from "../components/Logo";
 import LobbyChat from "../components/LobbyChat";
 import { AudioButtons } from "../components/AudioDock";
@@ -18,7 +19,7 @@ import { teamRoomView } from "../teamRoomView";
 const ROUND_CHOICES = [1, 2, 3, 4, 5];
 const TIME_CHOICES = [30, 45, 60, 90];
 
-export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }) {
+export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, onEditProfile }) {
   const [linkCopied, setLinkCopied] = useState(false);
   const [editingTeam, setEditingTeam] = useState(null);
   const [editName, setEditName] = useState("");
@@ -162,10 +163,7 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave }
         <span className="lb-top__code">ห้อง {room.code}</span>
         <span className="lb-top__spacer" />
         <AudioButtons />
-        <span className="lb-top__me">
-          <Avatar index={me?.avatar ?? 0} />
-          <span className="lb-top__name">{me?.name}</span>
-        </span>
+        <ProfileTrigger name={me?.name ?? ""} avatar={me?.avatar ?? 0} onClick={onEditProfile} className="lb-top__me" />
         <button type="button" className="btn btn--danger lb-top__leave" onClick={onLeave}>
           <Icon name="door" size={18} /> ออกจากห้อง
         </button>

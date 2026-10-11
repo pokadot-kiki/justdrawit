@@ -17,10 +17,20 @@ test("each shape commits from pointerup even when no pointermove arrived", () =>
   }
 });
 
-test("pointercancel/lost capture discard preview; a tap remains below the drag threshold", () => {
+test("pointercancel discards preview; a tap remains below the drag threshold", () => {
   assert.equal(finishedShape(gesture("rect"), release, rect, "#000000", 5, false), null);
   assert.equal(finishedShape(gesture("rect"), null, rect, "#000000", 5, true), null);
   assert.equal(finishedShape(gesture("rect"), { clientX: 121, clientY: 106 }, rect, "#000000", 5, true), null);
+});
+
+test("lost pointer capture commits the last real preview endpoint", () => {
+  const shape = { ...gesture("line"), x2: 0.5, y2: 0.5 };
+  const action = finishedShape(shape, null, rect, "#000000", 5, true);
+  assert.deepEqual(
+    [action.x2, action.y2],
+    [0.5, 0.5],
+  );
+  assert.equal(finishedShape(shape, null, rect, "#000000", 5, false), null);
 });
 
 test("rapid tool changes keep the shape captured on pointerdown for that gesture", () => {

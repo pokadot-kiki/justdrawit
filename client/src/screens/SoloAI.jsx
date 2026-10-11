@@ -67,11 +67,12 @@ const DIFFICULTIES = [
   ["hard", "ยาก"],
 ];
 
-export default function SoloAI({ initialName = "", boot = null, onName, onBack }) {
+export default function SoloAI({ initialName = "", boot = null, onName, onBack, profile, onEditProfile }) {
   // intro = กรอกชื่อ · starting = ส่ง ai_start แล้วรอด่านแรก · playing = ช่วง 1 เราวาด AI ทาย
   // watch = ช่วง 2 ดูภาพที่เล่นซ้ำแล้วพิมพ์ทาย · rest = พักระหว่างช่วง · over = จบเกม
   const [phase, setPhase] = useState("intro");
   const [name, setName] = useState(initialName);
+  useEffect(() => setName(initialName), [initialName]);
   // ระดับ "เริ่มต้น" ของชุดคำ — server ไล่คำให้ยากขึ้นตามด่านจากระดับนี้เอง (เวลาเท่ากันทุกด่าน)
   // มาจากหน้า SET UP (boot) ถ้าเข้าทางนั้น ไม่งั้นเริ่มที่ง่าย
   const [difficulty, setDifficulty] = useState(boot?.difficulty ?? "easy");
@@ -644,7 +645,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
           <Timer timeLeft={live ? timeLeft : null} />
         </div>
 
-        <TopIcons onInfo={() => setShowInfo(true)} onExit={() => setShowExit(true)} />
+        <TopIcons onInfo={() => setShowInfo(true)} onExit={() => setShowExit(true)} profile={profile ? { ...profile, name } : null} onEditProfile={onEditProfile} />
       </header>
 
       <main className="game game--solo">
@@ -814,7 +815,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
       )}
 
       {phase === "over" && final && (
-        <Modal labelledBy="solo-over-title">
+        <Modal labelledBy="solo-over-title" panelClassName="modal__panel--solo-over">
           <Mascot mood="trophy" className="mascot--modal" />
           <h2 className="modal__title" id="solo-over-title">
             จบเกม

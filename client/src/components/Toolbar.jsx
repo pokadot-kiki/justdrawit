@@ -1,7 +1,5 @@
-import { useState } from "react";
 import { Icon } from "./Icons";
-import { PAINT_COLORS, SIZE_MIN, SIZE_MAX, TOOLS, PICK_DEFAULT, colorLabel, hslToHex } from "../canvas/palette";
-import ColorPicker from "./ColorPicker";
+import { PAINT_COLORS, SIZE_MIN, SIZE_MAX, TOOLS, colorLabel } from "../canvas/palette";
 
 /**
  * แถบเครื่องมือวาด — อยู่คอลัมน์ขวาของหน้าเกม (DESIGN.md)
@@ -44,26 +42,12 @@ export default function Toolbar({
   hidePen = false,
   historyLocked = false,
 }) {
-  // สีที่เลือกเอง: เก็บเป็น "องศาสี + ความสว่าง" (ไม่ใช่ hex) เพราะช่องเลือกสีต้องรู้ว่าจะวางจุดจับไว้ตรงไหน
-  const [pick, setPick] = useState(PICK_DEFAULT);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [hasPicked, setHasPicked] = useState(false); // เคยเลือกสีเองแล้วหรือยัง → ขึ้นจุดสีที่มุมช่อง และกดช่องแล้วใช้สีนั้นได้เลย
-  const custom = hslToHex(pick.hue, 1, pick.light);
-  const customPicked = color.toLowerCase() === custom.toLowerCase() && !PAINT_COLORS.some((c) => c.hex === color.toLowerCase());
   // colour_fix: กลุ่มเลือกสีใช้ไม่ได้ทั้งกลุ่ม (สีล็อกจาก server แล้ว ไม่ใช่สีที่ผู้ใช้เลือก)
   const colourLocked = Boolean(lockedColor);
-  const closePicker = () => setPickerOpen(false);
-
-  // ลาก/แตะในช่องเลือกสี → ได้สีนั้นทันที ไม่ต้องกดยืนยัน
-  function handlePick(hue, light) {
-    setPick({ hue, light });
-    setHasPicked(true);
-    onColor(hslToHex(hue, 1, light));
-  }
 
   return (
     <div
-      className={`toolbar${locked ? " toolbar--locked" : ""}${canClearWhileLocked ? " toolbar--clear-only" : ""}`} data-picker={pickerOpen && !colourLocked && !locked ? "open" : undefined}
+      className={`toolbar${locked ? " toolbar--locked" : ""}${canClearWhileLocked ? " toolbar--clear-only" : ""}`}
       // aria-disabled บอกโปรแกรมอ่านหน้าจอว่าตอนนี้ใช้ไม่ได้ (ตัวกันการกดจริงคือ CSS pointer-events)
       aria-disabled={locked && !canClearWhileLocked || undefined}
     >
@@ -94,7 +78,7 @@ export default function Toolbar({
         </button>
       </div>
 
-      {/* ── จานสี 20 สี + ปุ่ม "สีเอง" รวม 21 ช่อง เรียงเป็นตารางสี่เหลี่ยมเล็ก 7×3 ──
+      {/* ── จานสีมาตรฐาน ──
           colour_fix: ทั้งกลุ่มกดไม่ได้ (สีถูกล็อกไว้แล้ว) แต่ยังโชว์ให้เห็นว่ามีสีอะไรบ้าง
           สีที่ล็อกอยู่จะติด swatch--on เอง เพราะ Game ส่ง drawColor ลงมาเป็นสีที่ล็อกแล้ว
           (สีล็อกมาจากชุดสีหลักของ server ซึ่งอยู่ในจานนี้ครบ ดู palette.js) */}
@@ -114,36 +98,10 @@ export default function Toolbar({
             title={c.name}
             aria-pressed={color.toLowerCase() === c.hex}
             disabled={colourLocked || locked}
-            onClick={() => {
-              onColor(c.hex);
-              closePicker();
-            }}
+            onClick={() => onColor(c.hex)}
           />
         ))}
-        {/* ช่องที่ 21 = สีเอง: พื้นสีรุ้งพิกเซล + เครื่องหมาย + (กดเพื่อเลือกสีเพิ่ม) ต่างจากช่องสีธรรมดาทันที
-            เลือกสีเองแล้ว → มุมช่องมีจุดสีของสีเองล่าสุด · กดช่องนี้ขณะใช้สีอื่นอยู่ = ใช้สีเองล่าสุดเลย
-            กดอีกครั้งตอนที่ใช้สีเองอยู่ = เปิด/ปิดช่องเลือกสีเพื่อปรับ (ยังไม่เคยเลือก = เปิดช่องเลือกสีก่อน) */}
-        <button
-          type="button"
-          className={`swatch swatch--custom${customPicked ? " swatch--on" : ""}`}
-          aria-label={hasPicked ? `สีเอง ${custom}` : "สีเอง เปิดช่องเลือกสี"}
-          title={hasPicked ? "สีเอง: กดเพื่อใช้สีล่าสุด · กดซ้ำเพื่อปรับสี" : "สีเอง: เลือกสีเพิ่ม"}
-          aria-pressed={customPicked}
-          aria-expanded={pickerOpen}
-          disabled={colourLocked || locked}
-          onClick={() => {
-            if (!hasPicked || customPicked) return setPickerOpen((o) => !o);
-            onColor(custom); // ใช้สีเองล่าสุดเลย
-            setPickerOpen(false);
-          }}
-        >
-          {hasPicked && <span className="swatch__dot" style={{ background: custom }} />}
-        </button>
       </div>
-
-      {pickerOpen && !colourLocked && !locked && (
-        <ColorPicker hue={pick.hue} light={pick.light} onChange={handlePick} onClose={closePicker} />
-      )}
 
       {/* ── ขนาดแปรง 2–40 ── */}
       <div className="toolbar__group toolbar__group--size">

@@ -16,7 +16,7 @@ const ERROR_MESSAGES = {
   NOT_HOST: "เฉพาะหัวห้องเท่านั้น",
   NOT_ENOUGH_PLAYERS: "ต้องมีผู้เล่นอย่างน้อย 2 คน",
   NOT_YOUR_TURN: "ยังไม่ถึงตาคุณวาด", // รหัสนี้อยู่ใน events.md (DESIGN.md ไม่ได้เขียนไว้) จะได้ใช้ตอนข้อ 4
-  AI_UNAVAILABLE: "AI ไม่ว่าง ลองใหม่อีกครั้ง",
+  AI_UNAVAILABLE: "AI ตอบไม่ได้ในตอนนี้ ลองใหม่อีกครั้ง",
 
   // รหัสนี้ฝั่ง client ใช้เอง ไม่ได้มาจาก server (server ไม่เคยส่งรหัสนี้)
   // ใช้ตอนยิงคำขอแล้ว server ไม่ตอบ เช่น ลืมเปิด server

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { socket } from "../socket";
+import { withProfileList } from "../profileIdentity";
 
 // สถานะเริ่มต้นของโหมด Multiplayer vs AI (events.md หัวข้อ 10)
 // phase: null | "draw" | "eval" | "gallery" | "watch" | "watch_end" | "over"
@@ -86,6 +87,12 @@ export function useMpAi(meId) {
     });
     const onChat = (item) => { if (!item.correct) onWatchChat(item); };
     const onCorrectChat = (item) => { if (item.system) onWatchChat(item); };
+    const onProfileUpdated = (update) => setMp((m) => ({
+      ...m,
+      gallery: m.gallery ? { ...m.gallery, results: withProfileList(m.gallery.results, update) } : null,
+      watch: m.watch ? { ...m.watch, chat: withProfileList(m.watch.chat, update) } : null,
+      watchEnd: m.watchEnd ? { ...m.watchEnd, results: withProfileList(m.watchEnd.results, update) } : null,
+    }));
     // เส้นแต่ละเส้นถูกส่งตอนเวลา server = startedAt ของมัน → ทุกเส้นที่มาถึงคือ "ตัวอย่าง" ส่วนต่างนาฬิกาเครื่องเรากับ server
     // เก็บค่าที่น้อยที่สุด (ข้อความที่มาถึงช้าน้อยที่สุด) — เดิมใช้ค่าจาก mpai_watch_start ข้อความเดียว
     // ถ้าข้อความนั้นถูกจัดการช้า (เครื่องช้า/แท็บอยู่เบื้องหลัง) เครื่องนั้นจะเล่นภาพช้ากว่าคนอื่นไปทั้งช่วง
@@ -147,6 +154,7 @@ export function useMpAi(meId) {
       mpai_watch_stroke: onStroke,
       chat_message: onChat,
       correct_guess: onCorrectChat,
+      profile_updated: onProfileUpdated,
       mpai_watch_hint: onHint,
       mpai_correct: onCorrect,
       mpai_watch_end: onWatchEnd,
