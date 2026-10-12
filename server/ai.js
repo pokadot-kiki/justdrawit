@@ -101,6 +101,14 @@ function aiMode() {
   return process.env.ANTHROPIC_API_KEY ? "claude" : "mock";
 }
 
+// สรุปว่าแต่ละโหมดใช้สมองตัวไหน — index.js พิมพ์ตอนสตาร์ท และเทสใช้ตรวจว่าไม่มีโหมดไหนถอยไปจำลองทั้งที่มีโมเดล
+// Solo ถอยไปจำลองได้ (เล่นได้เสมอ) · Multiplayer vs AI ต้องมี AI จริง (model หรือ claude) ไม่งั้นทายไม่ได้
+function status() {
+  const mode = aiMode();
+  const model = mode === "model" ? aiModel.info() : null;
+  return { solo: mode, mpai: mode === "mock" ? "unavailable" : mode, model };
+}
+
 // โอกาสถูกของโหมดจำลอง: เริ่ม 10% ไปถึง 85% เมื่อหมดเวลา (AI_MOCK_CHANCE ตั้งค่าตายตัวไว้ให้เทส)
 function mockChance(elapsed, time) {
   const fixed = Number(process.env.AI_MOCK_CHANCE);
@@ -226,4 +234,4 @@ function wordsOf(wordBank) {
   return ["easy", "medium", "hard"].flatMap((l) => (wordBank[l] || []).map((w) => w.word));
 }
 
-module.exports = { init, soloWords, levelConfig, pickWord, scoreFor, aiMode, guessImage, mockChance, parseImage, sameWord, drawScore, wordsOf };
+module.exports = { init, soloWords, levelConfig, pickWord, scoreFor, aiMode, status, guessImage, mockChance, parseImage, sameWord, drawScore, wordsOf };

@@ -1481,6 +1481,19 @@ server แยกฟังก์ชัน `applySettings(room, data)` ใช้�
 - ทดสอบ: `npm test` ผ่าน 2 รอบติดกัน ไม่มีข้อตก (smoke 962 และ 937 ข้อ — จำนวนขยับตาม Mini Challenge ที่สุ่มได้ · mpai 64) · `npm run build` ผ่าน · เทสหน่วย server ของ feature (`team-membership` `team-gallery` `team-final-results` `challenge-selection` `profile-unit` `log-answer`) ผ่าน
 - **ยังไม่ได้ทำ/ข้อจำกัด**: ไม่ได้รันเทสเบราว์เซอร์ (`tests/browser/`) หลัง merge — `team-options.mjs` `team-balance.mjs` `mpai.mjs` `setup-solo.mjs` อาจต้องปรับ selector เพราะห้องรอ/SET UP ใช้โครงของ feature · เทสหน่วย client 3 ไฟล์ (`GameOverModal` `Scoreboard` `ProfileModal` `.test.js`) ไม่ผ่านบน Windows (`window/document is not defined` ตอนโหลดโมดูล) ยังไม่ได้ไล่ว่าเป็นเพราะเครื่องหรือเพราะ merge · ไม่ได้ลองเล่นจริงในเบราว์เซอร์
 
+### เสร็จแล้ว (โมเดลทายภาพสองตัว: quickdraw345 ก่อน ไม่มีก็ MobileViT — แก้ Multiplayer vs AI ขึ้น `AI_UNAVAILABLE` · แตะ server + เอกสาร ไม่แตะ `events.md` และ client)
+- **อาการ**: โหมด mpai ขึ้น "AI ตอบไม่ได้ในตอนนี้" ทุกครั้ง · Solo ตกไปโหมดจำลองเงียบๆ
+- **สาเหตุ (ไล่ด้วยการรันจริง ไม่ใช่เดา)**: branch feature เปลี่ยน `ai-model.js` ไปโหลดโมเดลใหม่จาก `server/models/quickdraw345/` (`model.onnx` + `labels.txt`) แต่ไฟล์นี้ไม่อยู่ใน git และ `get-model.js` ยังดาวน์โหลด MobileViT ตัวเดิมลง `server/models/` → เครื่องที่ไม่มีไฟล์ของคนทำ โหลดโมเดลไม่ติด → โหมด mock → mpai เรียก `guessImage` แบบ `requireReal: true` จึง throw → `AI_UNAVAILABLE`
+  **ไม่ได้เกิดจาก merge**: รันสคริปต์เดียวกันกับ `fc157d9` (ก่อน merge) พังเหมือนกันทุกบรรทัด
+- **แก้** `server/ai-model.js`: รองรับสองรูปแบบ (`FORMATS`) ลองตามลำดับ quickdraw345 → mobilevit · ตัวแรกไม่มี/ไฟล์เสีย = ใช้ตัวที่สอง · `info()` บอกตัวที่ใช้อยู่ · `AI_MODEL_DIR` (เทส) = ใช้โฟลเดอร์นั้นที่เดียว ดูรูปแบบจากไฟล์ข้างใน
+  · quickdraw345: อินพุต `[1,28,28,1]` เอาต์พุตเป็น softmax แล้ว · mobilevit: อินพุต `[1,1,28,28]` เอาต์พุต logits (softmax เฉพาะคำในเกม — โค้ดเดิมก่อน feature เปลี่ยน) · การเตรียมภาพใช้ชุดเดียวกัน
+- `ai.status()` ใหม่ → `{ solo, mpai, model }` · ตอนสตาร์ทพิมพ์ 3 บรรทัด `AI ทายภาพ: ...` · `AI Solo: โหมด ...` · `AI Multiplayer vs AI: ...` (mpai ไม่มี AI จริง = "ใช้ไม่ได้" พร้อมวิธีแก้)
+- **คำที่ mpai/Solo สุ่มให้วาด** (`ai-words.json` 194 คำ ชุดเดียวกัน) MobileViT รู้จักครบ ไม่มีคำขาด (มีเทสตรวจ)
+- **เทส** (`smoke.js` ข้อ 25): เดิมข้ามทั้งข้อถ้าไม่มี quickdraw345 → ตอนนี้ใช้โมเดลตัวที่มีจริง · เพิ่ม: มีโมเดลแล้ว Solo+mpai ต้องเป็น `model` ทั้งคู่ · ตัวแรกเสียต้องถอยไปตัวที่สอง · server จริงค่าเริ่มต้น: บรรทัดสตาร์ท + Solo `aiMode: "model"` + mpai ได้ `mpai_ai_guess` จริงไม่มี `AI_UNAVAILABLE`
+  · แก้เช็คเก่า 1 ข้อที่ไม่เคยได้รันบนเครื่องนี้ ("ภาพเสียแล้ว aiMode เป็น mock") ให้ตรงพฤติกรรมปัจจุบันของ `ai.js` (ถอยไปจำลองเฉพาะคำขอที่พัง ไม่ปิดโมเดล)
+- ทดสอบ: `npm test` ผ่าน (smoke 1002 · mpai 63 ไม่มีข้อตก · รันด้วย `TEST_PORT=3071 ALT_PORT=3081` เพราะ server ของผู้ใช้เปิดพอร์ต 3000) · `npm run build` ผ่าน · ยืนยันว่าเช็คใหม่ล้มจริงเมื่อใส่ `ai-model.js` ตัวเดิมกลับ
+- **ข้อจำกัด**: เครื่องนี้ไม่มีไฟล์ quickdraw345 จึง **ทดสอบจริงได้แค่ MobileViT** — เส้นทางโมเดลใหม่ตรวจได้แค่ว่าโค้ดส่วนนั้นไม่ถูกแก้ตรรกะ (รูปร่างอินพุต/การอ่าน labels เหมือนเดิม) · ยังไม่มีสคริปต์ดาวน์โหลด/แปลง quickdraw345 (ต้นทางบน Hugging Face มีแต่ `.tflite`) · ไม่ได้วัดความแม่นของ MobileViT ใหม่ ใช้ตัวเลขเดิมใน AI-FACTS.md · ไม่ได้ทดสอบในเบราว์เซอร์
+
 ### ยังไม่ได้ทำ (ตามลำดับใน PROMPTS.md)
 - (ไม่มีแล้ว — ข้อ 8 เสร็จ)
 

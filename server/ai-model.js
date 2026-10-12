@@ -1,36 +1,102 @@
-// ---------- สมอง AI แบบโมเดลในเครื่อง (QuickDraw 345 SE-ResNet) ----------
-// รันที่ server เท่านั้น ไม่ผูกกับ socket · โหลดไม่ได้ = คืน false แล้วให้ ai.js ใช้สมองถัดไป ห้ามล่ม
-// โมเดล: zarqankhn/quickdraw-345-tflite (Apache 2.0) แปลงเป็น ONNX · 345 คำ · อินพุต [1,28,28,1]
-// สคริปต์ฝึกใช้ bitmap Quick Draw ตรงๆ /255: พื้นดำ = 0 เส้นสว่าง = 1 (ตรวจด้วยภาพวงกลมจริง)
+// ---------- สมอง AI แบบโมเดลในเครื่อง (Quick, Draw! 345 คำ) ----------
+// รันที่ server เท่านั้น ไม่ผูกกับ socket · โหลดไม่ได้ = คืน false แล้วให้ ai.js ใช้สมองถัดไป ห้าม throw ให้ server ล่ม
+// รองรับโมเดลสองตัว เลือกตามลำดับนี้ (Solo กับ Multiplayer vs AI ใช้ตัวเดียวกันเสมอ):
+//   1) quickdraw345  server/models/quickdraw345/ (model.onnx + labels.txt)
+//      zarqankhn/quickdraw-345-tflite (Apache 2.0) แปลงเป็น ONNX เอง · อินพุต [1,28,28,1] · เอาต์พุตเป็น softmax แล้ว
+//   2) mobilevit     server/models/ (model.onnx + config.json) — ตัวที่ `npm run get-model` ดาวน์โหลดให้
+//      VinayHajare/quickdraw-mobilevit-small-onnx (MIT) · อินพุต [1,1,28,28] · เอาต์พุตเป็น logits
+// ไม่มีตัวแรก หรือตัวแรกโหลดไม่ได้ → ใช้ตัวที่สอง · ภาพที่ป้อน (พื้นดำ = 0 เส้นสว่าง = 1) เตรียมแบบเดียวกันทั้งสองตัว
 const fs = require("fs");
 const path = require("path");
 
-const MODEL_DIR = process.env.AI_MODEL_DIR || path.join(__dirname, "models", "quickdraw345");
+const MODELS_ROOT = path.join(__dirname, "models");
 const SIZE = 28;
 const INK_MIN = 40; // ความเข้มต่ำสุด (0–255) ที่นับว่าเป็นเส้น ตัดสัญญาณรบกวนของ JPEG
 
+// รูปแบบของโมเดลแต่ละตัว: อ่านรายชื่อคลาสจากไฟล์ไหน · รูปร่างอินพุต · เอาต์พุตเป็นความน่าจะเป็นแล้วหรือยัง
+const FORMATS = {
+  quickdraw345: {
+    title: "QuickDraw 345 SE-ResNet",
+    labelFile: "labels.txt",
+    shape: [1, SIZE, SIZE, 1],
+    probs: true,
+    readLabels(dir) {
+      const list = fs.readFileSync(path.join(dir, "labels.txt"), "utf8").trimEnd().split(/\r?\n/);
+      if (list.length !== 345 || new Set(list).size !== 345 || list.some((x) => !x.trim())) throw new Error("labels.txt ไม่ถูกรูปแบบ");
+      return list;
+    },
+  },
+  mobilevit: {
+    title: "Quick, Draw! MobileViT",
+    labelFile: "config.json",
+    shape: [1, 1, SIZE, SIZE],
+    probs: false,
+    readLabels(dir) {
+      const config = JSON.parse(fs.readFileSync(path.join(dir, "config.json"), "utf8"));
+      const list = [];
+      for (const id of Object.keys(config.id2label).map(Number)) list[id] = config.id2label[id];
+      if (list.length < 2 || list.some((x) => typeof x !== "string")) throw new Error("config.json ไม่ถูกรูปแบบ");
+      return list;
+    },
+  },
+};
+
+// ลำดับที่ลองโหลด · ตั้ง AI_MODEL_DIR = ใช้โฟลเดอร์นั้นที่เดียว (ไว้ให้เทสชี้ไปที่อื่น) ดูรูปแบบจากไฟล์ที่มีข้างใน
+function candidates() {
+  const custom = process.env.AI_MODEL_DIR;
+  if (custom) {
+    const format = fs.existsSync(path.join(custom, FORMATS.quickdraw345.labelFile)) ? "quickdraw345" : "mobilevit";
+    return [{ format, dir: custom }];
+  }
+  return [
+    { format: "quickdraw345", dir: path.join(MODELS_ROOT, "quickdraw345") },
+    { format: "mobilevit", dir: MODELS_ROOT },
+  ];
+}
+
 let session = null;
 let labels = []; // labels[i] = ชื่ออังกฤษของคลาส i
+let active = null; // { format, title, dir } ของโมเดลที่โหลดติด
 
 function isReady() {
   return session !== null;
 }
 
-// โหลดโมเดล · คืน true/false · ไม่ throw
-async function load() {
-  try {
-    const onnx = require("onnxruntime-node");
-    const list = fs.readFileSync(path.join(MODEL_DIR, "labels.txt"), "utf8").trimEnd().split(/\r?\n/);
-    if (list.length !== 345 || new Set(list).size !== 345 || list.some((x) => !x.trim())) throw new Error("labels.txt ไม่ถูกรูปแบบ");
-    const s = await onnx.InferenceSession.create(path.join(MODEL_DIR, "model.onnx"));
-    labels = list;
-    session = s;
-    return true;
-  } catch (err) {
-    session = null;
-    console.warn("โหลดโมเดล AI ไม่สำเร็จ (ใช้สมองอื่นแทน):", err.message);
-    return false;
+// โมเดลที่ใช้อยู่ตอนนี้ (null = ไม่มี) — ไว้พิมพ์ตอนสตาร์ทและให้เทสตรวจ
+function info() {
+  return active ? { ...active } : null;
+}
+
+// โหลดโมเดลตัวแรกที่โหลดติดตามลำดับ · คืน true/false · ไม่ throw
+// list ส่งมาเองได้ (เทสใช้จำลอง "ตัวแรกเสีย ต้องถอยไปตัวที่สอง")
+async function load(list = candidates()) {
+  session = null;
+  labels = [];
+  active = null;
+  const problems = [];
+  for (const { format, dir } of list) {
+    const spec = FORMATS[format];
+    // ไม่มีไฟล์ของตัวนี้ = ข้ามไปตัวถัดไป (เรื่องปกติ ไม่ใช่ข้อผิดพลาด)
+    if (!spec || !fs.existsSync(path.join(dir, "model.onnx")) || !fs.existsSync(path.join(dir, spec.labelFile))) {
+      problems.push(`${format}: ไม่พบไฟล์ใน ${dir}`);
+      continue;
+    }
+    try {
+      const onnx = require("onnxruntime-node");
+      const names = spec.readLabels(dir);
+      const s = await onnx.InferenceSession.create(path.join(dir, "model.onnx"));
+      labels = names;
+      session = s;
+      active = { format, title: spec.title, dir };
+      return true;
+    } catch (err) {
+      // มีไฟล์แต่เสีย: บอกให้รู้ แล้วลองตัวถัดไป (ไม่ปล่อยให้ตกไปโหมดจำลองทั้งที่ยังมีอีกตัวให้ใช้)
+      console.warn(`โหลดโมเดล AI ${format} ไม่สำเร็จ (ลองตัวถัดไป):`, err.message);
+      problems.push(`${format}: ${err.message}`);
+    }
   }
+  console.warn("โหลดโมเดล AI ไม่สำเร็จ (ใช้สมองอื่นแทน):", problems.join(" · "));
+  return false;
 }
 
 // ความหนาเส้นสำคัญที่สุดต่อความแม่นของโมเดล: ข้อมูลฝึกมีเส้นกว้างราว 1.5 จาก 24 พิกเซลของภาพวาด (6.25%)
@@ -162,20 +228,38 @@ async function classify(image, { allowed = null, top = 5 } = {}) {
   const pixels = await preprocess(image);
   if (!pixels) return null;
   const onnx = require("onnxruntime-node");
-  const feeds = { [session.inputNames[0]]: new onnx.Tensor("float32", pixels, [1, SIZE, SIZE, 1]) };
+  const spec = FORMATS[active.format];
+  const feeds = { [session.inputNames[0]]: new onnx.Tensor("float32", pixels, spec.shape) };
   const result = await session.run(feeds);
-  const scores = result[session.outputNames[0]]?.data;
-  if (!scores || scores.length !== labels.length || Array.from(scores).some((v) => !Number.isFinite(v) || v < 0 || v > 1)) {
+  const raw = result[session.outputNames[0]]?.data;
+  if (!raw || raw.length !== labels.length || Array.from(raw).some((v) => !Number.isFinite(v))) {
     throw new Error("ผลโมเดล AI ไม่ถูกรูปแบบ");
   }
-  // โมเดลให้ softmax มาแล้ว: กรองเฉพาะคำในเกม แต่คงความมั่นใจจริงของแต่ละคำไว้ใช้คิดคะแนน
+  // AI ต้องเลือกจากคำที่เกมมีเท่านั้น: ตัดคลาสอื่นทิ้งก่อน
   const keep = [];
   for (let i = 0; i < labels.length; i++) if (!allowed || allowed.has(labels[i])) keep.push(i);
   if (keep.length === 0) return null;
+  let probs;
+  if (spec.probs) {
+    // quickdraw345 ให้ softmax มาแล้ว: คงความมั่นใจจริงของแต่ละคำไว้ใช้คิดคะแนน
+    if (Array.from(raw).some((v) => v < 0 || v > 1)) throw new Error("ผลโมเดล AI ไม่ถูกรูปแบบ");
+    probs = keep.map((i) => raw[i]);
+  } else {
+    // mobilevit ให้ logits: คิดความน่าจะเป็นเฉพาะในกลุ่มคำที่เกมมี
+    probs = softmax(keep.map((i) => raw[i]));
+  }
   return keep
-    .map((i) => ({ label: labels[i], prob: scores[i] }))
-    .sort((a, b) => b.prob - a.prob)
+    .map((i, k) => ({ label: labels[i], prob: probs[k] }))
+    .sort((x, y) => y.prob - x.prob)
     .slice(0, top);
 }
 
-module.exports = { load, isReady, classify, preprocess };
+function softmax(logits) {
+  let max = -Infinity;
+  for (const v of logits) if (v > max) max = v;
+  const exps = Array.from(logits, (v) => Math.exp(v - max));
+  const sum = exps.reduce((x, y) => x + y, 0);
+  return exps.map((e) => e / sum);
+}
+
+module.exports = { load, isReady, info, classify, preprocess };
