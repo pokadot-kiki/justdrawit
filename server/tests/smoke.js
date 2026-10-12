@@ -13,6 +13,10 @@ const fs = require("fs");
 const { spawn } = require("child_process");
 
 const SERVER_DIR = path.join(__dirname, "..");
+process.env.NODE_ENV = "test";
+process.env.JDI_TEST_AUTH_BYPASS = "1";
+const authSession = require(path.join(SERVER_DIR, "auth-session"));
+const firebaseAuth = require(path.join(SERVER_DIR, "firebase-auth"));
 
 // ข้อ 19-20 (Leaderboard) ใช้ไฟล์คะแนนชั่วคราว ไม่แตะ server/data/scores.json ของจริง
 // ต้องตั้งก่อน require("../leaderboard") และส่งต่อให้ server ตอน spawn ด้วย ทั้งสองฝั่งจะได้ใช้ไฟล์เดียวกัน
@@ -228,7 +232,92 @@ async function getBoard(query = "") {
 
 // ================= เทส =================
 async function main() {
+  await runPart("0. Firebase token และ session helpers", async () => {
+    const secret = "test-auth-session-secret-with-at-least-32-bytes";
+    const session = authSession.signSession(
+      { sub: "firebase-uid", email: "player@example.com", name: "Player" },
+      secret,
+      1000,
+    );
+    check("session ที่เซ็นด้วย secret ถูกต้องอ่านได้", authSession.readSession(session, secret, 1001), {
+      sub: "firebase-uid", email: "player@example.com", name: "Player",
+    });
+    check("แก้ token แล้วตรวจไม่ผ่าน", authSession.readSession(`${session}x`, secret, 1001), null);
+    check("session หมดอายุแล้วตรวจไม่ผ่าน", authSession.readSession(session, secret, 1000 + authSession.SESSION_TTL_MS), null);
+    check("อ่าน cookie ที่มีเครื่องหมายเท่ากับได้ครบ", authSession.parseCookies("a=1; jdi_session=abc.def==").jdi_session, "abc.def==");
+
+    const validTokenResponse = async (_url, options) => {
+      check("ส่ง Firebase ID token ไปตรวจแบบ POST", [options.method, JSON.parse(options.body).idToken], ["POST", "valid-test-token-123456"]);
+      return {
+        ok: true,
+        json: async () => ({ users: [{ localId: "firebase-uid", email: "player@example.com", emailVerified: true, displayName: "Player" }] }),
+      };
+    };
+    check("ยอมรับเฉพาะบัญชีที่ Firebase ยืนยันอีเมลแล้ว", await firebaseAuth.verifyIdToken(
+      "valid-test-token-123456",
+      "public-firebase-api-key",
+      validTokenResponse,
+    ), { sub: "firebase-uid", email: "player@example.com", name: "Player" });
+
+    let failure = null;
+    try {
+      await firebaseAuth.verifyIdToken("valid-test-token-123456", "public-firebase-api-key", async () => ({
+        ok: true,
+        json: async () => ({ users: [{ localId: "firebase-uid", email: "player@example.com", emailVerified: false }] }),
+      }));
+    } catch (error) {
+      failure = error.code;
+    }
+    check("ปฏิเสธบัญชีที่ยังไม่ยืนยันอีเมล", failure, "EMAIL_NOT_VERIFIED");
+
+    failure = null;
+    try {
+      await firebaseAuth.verifyIdToken("invalid-test-token-123456", "public-firebase-api-key", async () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({ error: { message: "INVALID_ID_TOKEN" } }),
+      }));
+    } catch (error) {
+      failure = error.code;
+    }
+    check("ปฏิเสธ token ที่ Firebase ไม่รับรอง", failure, "INVALID_TOKEN");
+
+    failure = null;
+    try {
+      await firebaseAuth.verifyIdToken("valid-test-token-123456", "public-firebase-api-key", async () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({ error: { message: "API_KEY_INVALID" } }),
+      }));
+    } catch (error) {
+      failure = error.code;
+    }
+    check("แยก API key Firebase ผิดออกจาก token ผู้เล่นผิด", failure, "PROVIDER_UNAVAILABLE");
+
+    failure = null;
+    try {
+      await firebaseAuth.verifyIdToken("short", "public-firebase-api-key", async () => {
+        throw new Error("should not request");
+      });
+    } catch (error) {
+      failure = error.code;
+    }
+    check("ปฏิเสธ token ผิดรูปแบบก่อนเรียก Firebase", failure, "INVALID_TOKEN");
+  });
+
   await startServer();
+
+  await runPart("0. สถานะล็อกอินใน test server", async () => {
+    const response = await fetch(`${URL}/api/auth/me`);
+    const result = await response.json();
+    check("test bypass มีไว้ให้ชุดทดสอบเท่านั้น", [response.status, result.enabled, result.user?.email], [200, true, "test@example.com"]);
+    const login = await fetch(`${URL}/api/auth/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: "valid-test-token-123456" }),
+    });
+    check("ไม่มี Firebase config แล้วออก session ไม่ได้", [login.status, await login.json()], [503, { error: "AUTH_NOT_CONFIGURED" }]);
+  });
 
   // คำทุกคำที่ server สุ่มมาให้คนวาดเลือก สะสมไว้ใช้เช็คตอนท้าย (ข้อ 8)
   const drawnOptions = [];
@@ -1398,6 +1487,14 @@ async function main() {
     check("API เห็นคะแนนที่เพิ่งบันทึก เรียงถูก", r.body?.top.map((t) => t.name), ["Mew", "ชื่อยาวมากเกินยี่สิบตัวอักษรแน่นอน".slice(0, 20), "<b>x</b>"]);
     check("ไม่มีไฟล์ชั่วคราวค้าง (.tmp)", fs.readdirSync(SCORES_DIR).filter((f) => f.endsWith(".tmp")), []);
 
+    const accountId = "a".repeat(64);
+    saveScore({ name: "ชื่อเดิม", score: 1500, levelReached: 5, accountId });
+    saveScore({ name: "ชื่อใหม่", score: 400, levelReached: 2, accountId });
+    const renamedBoard = await getBoard(`?month=${month}`);
+    const renamedEntry = renamedBoard.body?.top.find((entry) => entry.name === "ชื่อใหม่");
+    check("เปลี่ยนชื่อแล้วใช้คะแนนสูงสุดเดิมของบัญชีเดียวกัน", [renamedEntry?.name, renamedEntry?.score, renamedEntry?.levelReached], ["ชื่อใหม่", 1500, 5]);
+    check("API Leaderboard ไม่เปิดเผย accountId", JSON.stringify(renamedBoard.body).includes(accountId), false);
+
     // ไฟล์เสีย → เก็บสำรองไว้ แล้วเริ่มรายการใหม่
     fs.writeFileSync(SCORES_FILE, "[{ เสีย");
     const after = saveScore({ name: "Joy", score: 700, levelReached: 4 });
@@ -1411,7 +1508,7 @@ async function main() {
   const TINY_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
   const readRows = () => JSON.parse(fs.readFileSync(SCORES_FILE, "utf8"));
 
-  await runPart("21. Leaderboard หนึ่งชื่อหนึ่งแถว · rankOf", async () => {
+  await runPart("21. Leaderboard หนึ่งบัญชีหนึ่งแถว · rankOf", async () => {
     const { rankOf } = require("../leaderboard");
     const now = new Date();
     const pad2 = (n) => String(n).padStart(2, "0");
@@ -1440,8 +1537,22 @@ async function main() {
     check("rankOf: 1000 คะแนนตามหลัง Tar กับ Mew = อันดับ 3", rankOf({ name: "New", score: 1000, levelReached: 1 }), 3);
     check("rankOf: คะแนนเท่ากันแต่ด่านน้อยกว่า ตามหลังคนเดิม", rankOf({ name: "New", score: 1300, levelReached: 5 }), 3);
     check("rankOf: ไม่นับตัวเอง (Mew 1300/6 ได้อันดับ 2 ไม่ใช่ 3)", rankOf({ name: "Mew", score: 1300, levelReached: 6 }), 2);
+    check("rankOf: ไม่นับบัญชีตัวเองแม้เปลี่ยนชื่อเล่น", rankOf({ name: "Mew-บัญชีเดิม", score: 1300, levelReached: 6, accountId: "c".repeat(64) }), 3);
     check("rankOf: ไม่นับ OldChamp (2000 คะแนน) เพราะอยู่เดือนก่อน — 1600 เดือนนี้ชนะทุกคนจึงได้อันดับ 1",
       rankOf({ name: "New", score: 1600, levelReached: 1 }), 1);
+    const accountId = "c".repeat(64);
+    const accountAt = (day) => `${CUR_MONTH}-${day} 10:00`;
+    const rows = readRows();
+    rows.push(
+      { id: 8, name: "Mew-บัญชีเดิม", score: 1400, levelReached: 6, playedAt: accountAt("06"), accountId },
+      { id: 9, name: "Mew-บัญชีล่าสุด", score: 900, levelReached: 4, playedAt: accountAt("07"), accountId },
+    );
+    fs.writeFileSync(SCORES_FILE, JSON.stringify(rows));
+    const accountBoard = await getBoard(`?month=${CUR_MONTH}`);
+    const accountEntry = accountBoard.body?.top.find((entry) => entry.name === "Mew-บัญชีล่าสุด");
+    check("Leaderboard รวมชื่อเก่า/ใหม่เป็นบัญชีเดียวและใช้ชื่อเล่นล่าสุด", [accountEntry?.name, accountEntry?.score], ["Mew-บัญชีล่าสุด", 1400]);
+    check("API Leaderboard ไม่ส่ง accountId", JSON.stringify(accountBoard.body).includes(accountId), false);
+    check("rankOf ไม่นับบัญชีตัวเองแม้เปลี่ยนชื่อเล่น", rankOf({ name: "Mew-บัญชีล่าสุด", score: 1300, levelReached: 6, accountId }), 3);
     check("rankOf: ไฟล์ว่างได้อันดับ 1", (fs.rmSync(SCORES_FILE, { force: true }), rankOf({ name: "A", score: 0, levelReached: 1 })), 1);
   });
 
@@ -4016,6 +4127,60 @@ async function main() {
 
   // ปิดทุก socket เพื่อให้โปรเซสจบได้
   for (const rec of [A, B, C, ...others]) rec.socket.disconnect();
+
+  await runPart("45. server ปฏิเสธ socket ที่ไม่มี Firebase session", async () => {
+    const authUrl = `http://localhost:${ALT_PORT}`;
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const authServer = spawn(process.execPath, ["index.js"], {
+      cwd: SERVER_DIR,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+        JDI_TEST_AUTH_BYPASS: "0",
+        PORT: ALT_PORT,
+        AI_MODE: "mock",
+        FIREBASE_API_KEY: "",
+        AUTH_SESSION_SECRET: "",
+      },
+    });
+    try {
+      let ready = false;
+      for (let i = 0; i < 80; i++) {
+        if (await fetch(`${authUrl}/healthz`).then((r) => r.ok).catch(() => false)) {
+          ready = true;
+          break;
+        }
+        await wait(100);
+      }
+      check("server ที่ไม่มี Firebase config ยังสตาร์ทและรายงานสุขภาพได้", ready, true);
+      if (!ready) return;
+      const status = await fetch(`${authUrl}/api/auth/me`).then((r) => r.json());
+      check("ไม่มี Firebase config แล้ว login ถูกปิด ไม่ได้เปิดเล่นแบบ guest", status.enabled, false);
+
+      const result = await new Promise((resolve) => {
+        const socket = io(authUrl, { transports: ["websocket"], reconnection: false, timeout: 3000 });
+        const timer = setTimeout(() => {
+          socket.close();
+          resolve("TIMEOUT");
+        }, 4000);
+        socket.on("connect_error", (error) => {
+          clearTimeout(timer);
+          socket.close();
+          resolve(error.message);
+        });
+        socket.on("connect", () => {
+          clearTimeout(timer);
+          socket.close();
+          resolve("CONNECTED");
+        });
+      });
+      check("Socket.IO ที่ไม่มี session และยังไม่ตั้ง OAuth ถูกปฏิเสธ", result, "AUTH_NOT_CONFIGURED");
+    } finally {
+      authServer.kill();
+      await wait(300);
+    }
+  });
 }
 
 // กันเทสค้าง: ถ้าเกิน 300 วิให้หยุด (ข้อ 29 เพิ่มราว 20 วิ) (ไม่หน่วงไม่ให้โปรเซสปิดตัว)

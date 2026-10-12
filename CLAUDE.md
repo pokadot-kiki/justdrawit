@@ -36,6 +36,7 @@ Just Drawit (ชื่อทีม TATA.IO) เป็นเว็บเกมว
 |---|---|
 | server | Node.js + Express + Socket.IO (CommonJS, `require`) พอร์ต 3000 |
 | client | React + Vite, `react-router-dom` (URL ต่อหน้า), CSS ธรรมดา (ไม่ใช้ Tailwind), HTML5 Canvas, `socket.io-client` |
+| เข้าสู่ระบบ | Firebase Authentication (Google + อีเมล/รหัสผ่าน) · server ตรวจ ID token และออก session คุกกี้ HttpOnly · ต้องล็อกอินก่อนเชื่อมต่อเกม |
 | เก็บคะแนน | **Upstash Redis** (คีย์เดียว `jdi:scores:v1` เก็บ JSON ทั้งก้อน) เป็นหลัก — ต้องตั้ง env `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` (ใช้งานจริงบน Render ตั้งไว้แล้ว ดู `DEPLOY.md`) · ไม่ได้ตั้ง env หรือต่อไม่ได้ = ถอยไปใช้ไฟล์ `server/data/scores.json` แทนอัตโนมัติ ไม่ล่ม (`server/leaderboard.js`) |
 | AI ทายภาพ | ลำดับ **โมเดลในเครื่อง** (Quick, Draw! MobileViT ผ่าน `onnxruntime-node` + `sharp` แปลงภาพ) → Claude (vision) เรียกจาก server เท่านั้น ผ่าน `fetch` ของ Node (ไม่ใช้ SDK) key อยู่ใน `server/.env` → โหมดจำลอง |
 
@@ -55,7 +56,9 @@ justdrawit/
 │  ├─ ai-model.js       ← รันโมเดลทายภาพในเครื่อง (ONNX) เตรียมภาพ 28×28 · ไม่ผูกกับ socket
 │  ├─ ai-drawings.js    ← ภาพวาดจริงสำหรับช่วง "ดูภาพแล้วทาย" (โหลด สุ่ม จัดจังหวะเส้น) · ไม่ผูกกับ socket
 │  ├─ ai.js             ← AI ทายภาพ (โมเดล/Claude/จำลอง) · กติกาด่าน · สุ่มคำ · คิดคะแนน Solo ไม่ผูกกับ socket
-│  ├─ .env.example      ← ตัวอย่างไฟล์ .env (คัดลอกเป็น .env แล้วใส่ ANTHROPIC_API_KEY และ/หรือ UPSTASH_REDIS_REST_URL/TOKEN)
+│  ├─ auth-session.js   ← เซ็น/ตรวจ session cookie · ใช้ crypto มาตรฐาน Node
+│  ├─ firebase-auth.js  ← ตรวจ Firebase ID token ผ่าน Identity Toolkit
+│  ├─ .env.example      ← ตัวอย่าง env: Firebase Auth · ANTHROPIC_API_KEY · Upstash
 │  ├─ index.js          ← server หลัก (ทำไว้แล้ว ดู "สถานะงาน")
 │  ├─ leaderboard.js    ← คะแนนบน Upstash Redis เป็นหลัก ไฟล์ scores.json เป็นทางสำรอง (`saveScore` `getLeaderboard`) ไม่ผูกกับ socket
 │  ├─ clean.js          ← `cleanName` ใช้ร่วมกันระหว่าง index.js กับ leaderboard.js
@@ -70,11 +73,12 @@ justdrawit/
 │  └─ .env              ← API key / Upstash token (ห้าม commit)
 └─ client/              ← React + Vite
    └─ src/
+      ├─ firebase.js    ← ตั้งค่า Firebase client จาก VITE_FIREBASE_* (ไม่ใส่ข้อมูลลับ)
       ├─ socket.js      ← สร้าง socket ตัวเดียวใช้ทั้งแอป (ส่ง playerKey ถาวรใน handshake.auth)
       ├─ canvas/cursor.js ← เคอร์เซอร์วาดของเราเอง (วงกลมตามขนาดแปรง/ถังสี/รูปทรง) แก้ปัญหา crosshair มองไม่เห็นบน Windows
-      ├─ screens/       ← Lobby, SetUp, WaitingRoom, Game, Leaderboard, SoloAI
+      ├─ screens/       ← Login, Lobby, SetUp, WaitingRoom, Game, Leaderboard, SoloAI
       ├─ components/    ← Canvas, Toolbar, Chat, Scoreboard, HintSlots, Timer, Modal, RankTable, LobbyChat, RoomInfo
-      └─ styles/        ← theme.css (ตัวแปรสีและฟอนต์ตาม DESIGN.md) + arcade.css (ธีม Neo-Arcade ทับบน) + lobby.css
+      └─ styles/        ← theme.css (ตัวแปรสีและฟอนต์ตาม DESIGN.md) + arcade.css (ธีม Neo-Arcade ทับบน) + lobby.css + auth.css
 ```
 
 ถ้า `server/index.js` ยาวเกินจัดการ แยกไฟล์ได้ เช่น `server/rules.js` `server/leaderboard.js` `server/ai.js` แต่บอกผู้ใช้ก่อน
@@ -1321,6 +1325,31 @@ server แยกฟังก์ชัน `applySettings(room, data)` ใช้�
 · **`balance.mjs` 45/45** (ยืนยันหน้าแรกกลับมาไม่เลื่อนที่ 1366×768 และ 1024×768 แล้ว — ก่อนซ่อนปุ่มร้านค้าอยู่ที่ 43/45)
 · ปิด Chrome/server ทดสอบและลบโปรไฟล์ชั่วคราวครบ (เช็คด้วย `lsof`/`pgrep`/`find` — ไม่มีอะไรค้าง)
 · **ยังไม่ได้ push และยังไม่ได้ merge เข้า `main`** ตามที่สั่ง
+
+### ประวัติ: Google Login รุ่นแรก (ถูกแทนที่ด้วย Firebase Authentication ด้านล่าง)
+**สัญญากลางถูกเพิ่ม** (`events.md` §1 และตารางแก้ไข): server-side Google OAuth, `GET /api/auth/me`, `POST /api/auth/logout`, และการปฏิเสธ Socket.IO เมื่อไม่มี session
+- `server/google-auth.js`: session cookie เซ็นด้วย HMAC-SHA256 ใช้ `AUTH_SESSION_SECRET` อย่างน้อย 32 bytes · อายุ 7 วัน · เปรียบเทียบ signature แบบ constant-time · ตรวจ `returnTo` ให้อยู่ใน origin เดิม
+- `server/index.js`: OAuth authorization-code flow → Google token endpoint → UserInfo · เช็ค `sub` และ `email_verified` · `jdi_session` เป็น `HttpOnly; SameSite=Lax` และ `Secure` บน HTTPS · ไม่ตั้งค่าครบ = server ล็อกการเชื่อมต่อเกม ไม่ fallback เป็น guest · Leaderboard ยังดูได้โดยไม่ login
+- `playerId` ตอนนี้ hash จาก `${Google sub}:${playerKey}` เพื่อแยกบัญชี แต่ยังคง playerKey แยกต่อแท็บเพื่อให้เปิดหลายคนในเครื่องเดียวได้
+- client: หน้า `/login` ครอบ Lobby/SET UP/ห้อง/Solo · กลับไป URL เดิมหลัง OAuth · Lobby มีชื่อบัญชีและออกจากระบบ · หน้า Leaderboard ยังเป็นสาธารณะ
+- ไม่เพิ่ม library · เพิ่ม test helper/session checks และทดสอบว่า server ที่ไม่มี OAuth config ปฏิเสธ Socket.IO · browser test processes ใช้ `NODE_ENV=test` + `JDI_TEST_AUTH_BYPASS=1` เท่านั้น (bypass ทำงานได้เฉพาะ test environment)
+- การตั้งค่าที่ผู้ใช้ต้องทำ: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `AUTH_SESSION_SECRET` ใน `server/.env` หรือ Environment Variables ของ Render · ดู [README.md](./README.md) และ [DEPLOY.md](./DEPLOY.md)
+- **ข้อจำกัด:** ยังไม่ได้ทดสอบ OAuth กับ Google จริงเพราะต้องใช้ credentials ของผู้ใช้ · บัญชี Google ไม่ได้เก็บในฐานข้อมูล · ร้านค้า/เหรียญยังคงปิดไว้ เพราะการเก็บเหรียญแบบ localStorage ยังไม่ server-authoritative แม้ระบบ login จะมีแล้ว
+- **ทดสอบแล้ว:** `npm test` 830/830 (`TEST_PORT=31230 ALT_PORT=31240`) · `npm --prefix client run build` ผ่าน
+- **Browser tests:** ยังไม่ผ่านครบใน Windows — `mobile.mjs` ล้มเหลวคนละขั้นเมื่อรันซ้ำ (จังหวะสร้างห้อง/จบตา) และ `setup-solo.mjs` เรียก `grep` ที่ไม่มีบน Windows; ต้องปรับสคริปต์ทดสอบให้รองรับ Windows ก่อนจึงจะยืนยันชุด browser ได้ · ตั้ง `CHROME_BIN` ไปยัง Chrome ในเครื่องแล้ว และตรวจปิด server/Chrome ทดสอบกับลบโปรไฟล์/ภาพชั่วคราวหลังแต่ละรอบแล้ว
+
+### เสร็จแล้ว (เปลี่ยนเป็น Firebase Authentication — แตะ server + client + `events.md` + เอกสาร)
+- รองรับ Google และอีเมล/รหัสผ่านด้วย Firebase Authentication · สมัครด้วยอีเมลส่งลิงก์ยืนยัน และ client/server ปฏิเสธบัญชีที่ยังไม่ยืนยัน
+- server ตรวจ ID token ผ่าน Firebase Identity Toolkit ก่อนเซ็น `jdi_session` แบบ HMAC-SHA256 อายุ 7 วัน · cookie `HttpOnly; SameSite=Lax` และ `Secure` บน HTTPS · Firebase Web API key เป็น config ไม่ใช่รหัสผ่าน และไม่ต้องมี service-account secret
+- `playerId` hash จาก `${Firebase UID}:${playerKey}` จึงยังแยกบัญชีและแท็บตามกติกาเดิม · Leaderboard ยังคง public · ไม่มี guest fallback
+- เพิ่ม Firebase JS SDK ฝั่ง client สำหรับ popup/email · ตั้ง `VITE_FIREBASE_*` ฝั่ง client และ `FIREBASE_API_KEY` + `AUTH_SESSION_SECRET` ฝั่ง server · ดู [README.md](./README.md) และ [DEPLOY.md](./DEPLOY.md)
+- เพิ่มเทสตรวจ session, Firebase ID token/อีเมลยืนยัน และ server ที่ไม่มี Firebase config · test bypass ยังเปิดได้เฉพาะ `NODE_ENV=test` พร้อม `JDI_TEST_AUTH_BYPASS=1`
+- **ข้อจำกัด:** ต้องสร้าง/ตั้งค่า Firebase project และเปิด Email/Password กับ Google provider ก่อนใช้งานจริง · ยังไม่ได้ทดสอบกับ Firebase project ของผู้ใช้ · ร้านค้า/เหรียญยังปิดไว้ เพราะการเก็บเหรียญใน localStorage ไม่ server-authoritative
+
+### แก้ Leaderboard รวมคะแนนตามบัญชี Firebase แม้เปลี่ยนชื่อเล่น
+- คะแนนใหม่จัดกลุ่มด้วยค่าแฮชของ Firebase UID ที่ server สร้างเอง ไม่รับ identity จาก client และไม่ส่ง accountId ออกใน Leaderboard API
+- หนึ่งบัญชีมีหนึ่งแถวต่อกระดาน/เดือน: แสดงชื่อเล่นที่ใช้ล่าสุด แต่ใช้คะแนนเกมที่ดีที่สุด · ใช้กับทั้ง Solo และเกมห้อง
+- คะแนนที่มีอยู่ก่อนการเปลี่ยนนี้ไม่มี accountId จึงยังถูกจัดกลุ่มด้วยชื่อเดิมและไม่สามารถผูกย้อนหลังเข้าบัญชีอย่างน่าเชื่อถือโดยอัตโนมัติ
 
 ### ยังไม่ได้ทำ (ตามลำดับใน PROMPTS.md)
 - (ไม่มีแล้ว — ข้อ 8 เสร็จ)

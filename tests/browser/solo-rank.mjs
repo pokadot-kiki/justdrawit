@@ -54,7 +54,7 @@ try {
   // ⇒ แพ้ครบ 3 ชีวิตด้วยเวลาหมดล้วนๆ totalScore คงเป็น 0 เสมอ ไม่มีทางสุ่มทายถูกปนมา
   server = spawn("node", ["index.js"], {
     cwd: `${ROOT}/server`,
-    env: { ...process.env, PORT: String(PORT), SCORES_FILE: `${SP}/scores-sr.json`, AI_MODE: "mock", AI_MOCK_CHANCE: "0", AI_TIME_OVERRIDE: "2", AI_NEXT_DELAY_MS: "300", AI_DRAWINGS_FILE: `${SP}/no-such-file.json` },
+    env: { ...process.env, NODE_ENV: "test", JDI_TEST_AUTH_BYPASS: "1", PORT: String(PORT), SCORES_FILE: `${SP}/scores-sr.json`, AI_MODE: "mock", AI_MOCK_CHANCE: "0", AI_TIME_OVERRIDE: "2", AI_NEXT_DELAY_MS: "300", AI_DRAWINGS_FILE: `${SP}/no-such-file.json` },
     stdio: "ignore",
   });
   chrome = spawn((process.env.CHROME_BIN || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"), [`--remote-debugging-port=${DBG}`, `--user-data-dir=${PROFILE}`, "--headless=new", "--mute-audio", "--no-first-run", "--window-size=1500,1000", "about:blank"], { stdio: "ignore" });

@@ -24,6 +24,8 @@ export default function Lobby({
   onEntered,
   onError,
   onOpenSetup,
+  user,
+  onLogout,
 }) {
   // เปิดจากลิงก์เชิญ (?room=12345) → กล่องใส่รหัสขึ้นเองพร้อมรหัสที่เติมไว้แล้ว
   const [joining, setJoining] = useState(Boolean(inviteCode));
@@ -42,6 +44,12 @@ export default function Lobby({
   return (
     <div className="screen screen--home">
       <GrassStrip />
+      {user && (
+        <div className="auth-account" aria-label="บัญชีที่เข้าสู่ระบบ">
+          <span className="auth-account__name" title={user.email}>{user.name || user.email}</span>
+          <button type="button" className="auth-account__logout" onClick={onLogout}>ออกจากระบบ</button>
+        </div>
+      )}
       <div className="logo-wrap">
         <Logo />
         <Sparkles spots={[[-8, 10, 3, 0], [104, 0, 4, 0.7], [-2, 78, 2, 1.4], [98, 82, 3, 0.35], [50, -22, 2, 1.1]]} />

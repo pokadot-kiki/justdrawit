@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { socket } from "./socket";
 import { errorText } from "./messages";
@@ -10,6 +10,7 @@ import Game from "./screens/Game";
 import Leaderboard from "./screens/Leaderboard";
 import SoloAI from "./screens/SoloAI";
 import SetUp from "./screens/SetUp";
+const Login = lazy(() => import("./screens/Login"));
 import AudioDock from "./components/AudioDock";
 import { roomCodeFromSearch } from "./invite";
 import Toast from "./components/Toast";
@@ -24,6 +25,7 @@ import Toast from "./components/Toast";
 function parseRoute(pathname) {
   const path = pathname.replace(/\/+$/, "") || "/";
   if (path === "/") return { screen: "lobby" };
+  if (path === "/login") return { screen: "login" };
   if (path === "/setup") return { screen: "setup" };
   if (path === "/leaderboard") return { screen: "leaderboard" };
   if (path === "/solo") return { screen: "solo" };
@@ -41,6 +43,7 @@ export default function App() {
   const routeCode = route.screen === "room" ? route.code : null;
 
   const [connected, setConnected] = useState(socket.connected);
+  const [auth, setAuth] = useState({ loading: true, enabled: false, user: null, error: null });
   const [room, setRoom] = useState(null); // RoomState ก้อนล่าสุดจาก server
   const [me, setMe] = useState(null); // { playerId, name, avatar, code } ของเครื่องนี้
   const [inGame, setInGame] = useState(false); // อยู่ในห้องแล้วเกมเริ่มหรือยัง (ห้องรอ ↔ หน้าเกม)
@@ -59,6 +62,26 @@ export default function App() {
 
   // เปิดจากลิงก์เชิญ /?room=12345 → หน้าแรกเปิดกล่องใส่รหัสให้เอง
   const inviteCode = route.screen === "lobby" ? roomCodeFromSearch(location.search) : null;
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((result) => {
+        if (active) setAuth({ loading: false, enabled: result.enabled === true, user: result.user ?? null, error: null });
+      })
+      .catch((error) => {
+        if (active) setAuth({ loading: false, enabled: false, user: null, error: error.message });
+      });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (route.screen === "login" && auth.user) navigate("/", { replace: true });
+  }, [auth.user, navigate, route.screen]);
 
   // สถานะของเกมที่กำลังเล่น ผูก socket ไว้ที่นี่ (ไม่ใช่ในหน้า Game) เพื่อไม่ให้ event หลุด
   // ดูเหตุผลเต็มๆ ในคอมเมนต์ของ useGame
@@ -88,6 +111,11 @@ export default function App() {
   useEffect(() => {
     const onConnect = () => setConnected(true);
     const onDisconnect = () => setConnected(false);
+    const onConnectError = (error) => {
+      if (error.message === "AUTH_REQUIRED" || error.message === "AUTH_NOT_CONFIGURED") {
+        setAuth({ loading: false, enabled: error.message === "AUTH_REQUIRED", user: null, error: null });
+      }
+    };
     // server ส่ง room_update ทุกครั้งที่มีคนเข้าออก แก้ตั้งค่า หรือคะแนนเปลี่ยน
     // หน้าจอแค่เอาค่าที่ได้ไปแสดง ไม่ต้องคำนวณเอง
     const onRoomUpdate = (next) => setRoom(next);
@@ -106,6 +134,7 @@ export default function App() {
 
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
+    socket.on("connect_error", onConnectError);
     socket.on("room_update", onRoomUpdate);
     socket.on("game_started", onGameStarted);
     socket.on("game_end", onGameEnd);
@@ -121,6 +150,7 @@ export default function App() {
     return () => {
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
+      socket.off("connect_error", onConnectError);
       socket.off("room_update", onRoomUpdate);
       socket.off("game_started", onGameStarted);
       socket.off("game_end", onGameEnd);
@@ -219,6 +249,43 @@ export default function App() {
   }, [inGame]);
 
   const showGame = roomReady && inGame;
+  const needsLogin = ["lobby", "setup", "room", "solo"].includes(route.screen);
+  const returnTo = route.screen === "login"
+    ? new URLSearchParams(location.search).get("returnTo") || "/"
+    : `${location.pathname}${location.search}`;
+
+  if ((needsLogin || route.screen === "login") && auth.loading) {
+    return <div className="screen"><div className="panel">กำลังตรวจสอบการเข้าสู่ระบบ...</div></div>;
+  }
+  if ((needsLogin || route.screen === "login") && !auth.user) {
+    return (
+      <Suspense fallback={<div className="screen"><div className="panel">กำลังโหลดหน้าเข้าสู่ระบบ...</div></div>}>
+        <Login
+          enabled={auth.enabled}
+          error={auth.error}
+          returnTo={returnTo}
+          onAuthenticated={(user) => {
+            socket.disconnect();
+            setAuth({ loading: false, enabled: true, user, error: null });
+            socket.connect();
+          }}
+        />
+      </Suspense>
+    );
+  }
+  if (route.screen === "login") return null;
+
+  async function handleLogout() {
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      socket.disconnect();
+      setAuth({ loading: false, enabled: true, user: null, error: null });
+      navigate("/login", { replace: true });
+    } catch (error) {
+      showToast(`ออกจากระบบไม่สำเร็จ (${error.message})`);
+    }
+  }
 
   return (
     <>
@@ -235,6 +302,8 @@ export default function App() {
           // หน้า Lobby ส่ง "รหัส error" มา ที่นี่แปลงเป็นข้อความไทยก่อนโชว์
           onError={(code) => showToast(errorText(code))}
           onOpenSetup={() => navigate("/setup")}
+          user={auth.user}
+          onLogout={handleLogout}
         />
       )}
 
