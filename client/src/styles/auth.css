@@ -1,6 +1,7 @@
 .auth-screen {
+  position: relative;
   min-height: 100dvh;
-  padding: 32px 16px;
+  padding: 16px;
 }
 
 .auth-card {
@@ -8,8 +9,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
-  padding: 34px;
+  gap: 8px;
+  padding: 18px 28px;
   text-align: center;
 }
 
@@ -20,24 +21,24 @@
 
 .auth-card h1 {
   font-family: var(--font-head);
-  font-size: 25px;
+  font-size: 22px;
 }
 
 .auth-card p {
-  line-height: 1.6;
-}
-
-.auth-guest {
-  width: 100%;
+  line-height: 1.4;
 }
 
 .auth-google {
   width: 100%;
-  min-height: 54px;
+  min-height: 46px;
   display: flex;
   justify-content: center;
   align-items: center;
-  color: var(--ink);
+  /* ไม่ override สี/เงาจาก .big-btn อีกต่อไป — ของเดิม color: var(--ink) ทำให้ตัวหนังสือกับเงา
+     (text-shadow ที่ .big-btn ตั้งไว้ก็เป็นสี ink เหมือนกัน) เป็นสีเดียวกันทั้งคู่ ซ้อนกันแล้วเลอะอ่านไม่ออก
+     โดยเฉพาะตัวไทยที่มีสระ/วรรณยุกต์ซ้อนหลายชั้นอยู่แล้ว — ปล่อยให้ใช้ตัวหนังสือขาว+เงาเข้มแบบ .big-btn ปกติ
+     เหมือนปุ่ม "สร้างห้อง"/"เข้าห้อง" หน้าแรก */
+  line-height: 1.4; /* เผื่อที่แนวตั้งให้สระบน/ล่าง+วรรณยุกต์ไม่ชนกัน (เดิม 1.1 จาก .big-btn แคบไปสำหรับข้อความยาว) */
   text-decoration: none;
 }
 
@@ -54,13 +55,13 @@
 .auth-form {
   width: 100%;
   display: grid;
-  gap: 9px;
+  gap: 6px;
   text-align: left;
 }
 
 .auth-form .input {
   width: 100%;
-  min-height: 46px;
+  min-height: 40px;
 }
 
 .auth-divider {
@@ -86,8 +87,8 @@
 }
 
 .auth-mode-toggle {
-  min-height: 44px;
-  padding: 6px 12px;
+  min-height: 36px;
+  padding: 4px 12px;
   border: 0;
   background: transparent;
   color: var(--blue);
@@ -103,7 +104,7 @@
 
 .auth-message {
   width: 100%;
-  padding: 10px 14px;
+  padding: 6px 14px;
   border: 2px solid var(--red);
   border-radius: var(--r-ctl);
   background: var(--cream);

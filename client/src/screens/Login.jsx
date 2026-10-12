@@ -15,6 +15,8 @@ import {
 import { firebaseAuth, firebaseReady } from "../firebase";
 import Logo from "../components/Logo";
 import Ribbon from "../components/Ribbon";
+import AudioDock from "../components/AudioDock";
+import { Icon } from "../components/Icons";
 
 const AUTH_ERRORS = {
   "auth/invalid-credential": "อีเมลหรือรหัสผ่านไม่ถูกต้อง",
@@ -159,14 +161,19 @@ export default function Login({ enabled, error, returnTo, onAuthenticated }) {
 
   return (
     <main className="screen auth-screen">
+      <button type="button" className="back-btn" onClick={() => navigate("/")}>
+        <Icon name="arrowL" size={14} /> กลับ
+      </button>
+      {/* หน้านี้ไม่ได้อยู่ใต้ .top-dock ของ App.jsx (Login คืน JSX ก่อนถึงจุดนั้น) ครอบเองที่นี่แทน
+          เพื่อให้ปุ่มเพลง/เสียงลอยมุมขวาบนเหมือนหน้าอื่น ใช้ CSS ชุดเดียวกัน (theme.css .top-dock) */}
+      <div className="top-dock">
+        <AudioDock />
+      </div>
       <div className="auth-card panel">
         <Logo />
         <Ribbon tone="red">SIGN IN</Ribbon>
         <h1>เข้าสู่ระบบ (ไม่บังคับ)</h1>
         <p>เข้าสู่ระบบด้วย Google หรืออีเมล เพื่อให้คะแนนผูกกับบัญชีของคุณ — ไม่เข้าสู่ระบบก็เล่นได้ทุกโหมดเหมือนเดิม</p>
-        <button type="button" className="big-btn big-btn--pink auth-guest" onClick={() => navigate(target, { replace: true })}>
-          เล่นเลยแบบ Guest
-        </button>
         {(message || firebaseError) && (
           <p className="auth-message" role="alert">{message || firebaseError}</p>
         )}
