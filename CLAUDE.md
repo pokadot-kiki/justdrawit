@@ -1437,6 +1437,50 @@ server แยกฟังก์ชัน `applySettings(room, data)` ใช้�
 · ปิด Chrome/server ทดสอบและลบโปรไฟล์ชั่วคราวครบทุกรอบ (เช็คด้วย `lsof`/`pgrep`/`find` — ไม่มีอะไรค้าง)
 · **ยังไม่ได้ merge เข้า `main`** ตามที่สั่ง (`branch login-optional` อยู่ในเครื่องเท่านั้น)
 
+### เสร็จแล้ว (หน้า SET UP ตามภาพอ้างอิง `setup-screen.png` — แตะแค่ client + เทสเบราว์เซอร์ + เอกสาร ไม่แตะ `server/` และ `events.md` · ยังไม่ commit)
+รายละเอียดดีไซน์อยู่ใน DESIGN.md หัวข้อ "หน้า SET UP ตามภาพอ้างอิง"
+- `SetUp.jsx`: การ์ดแข่งเดี่ยว/แข่งทีม (คอมโพเนนต์ `ModeCard` มีท้ายการ์ด "ผู้เล่น x–y คน" + ป้าย) · กล่อง "แข่งกับ AI" ข้างในมีการ์ด SOLO VS AI · ป้าย "เลือกอยู่" (`SelectedBadge`) · ชื่อผู้เล่นมีคำว่า "ผู้เล่น" กำกับ · ตรรกะ/state/payload ของ `create_room` และ `onStartSolo` เหมือนเดิม **ยกเว้นเอาปุ่มจำนวนทีมออก** (ผู้ใช้ยืนยัน · เลือกในห้องรอแทน `create_room` จึงไม่ส่ง `teamCount` server ใช้ค่าเริ่มต้น 2)
+- **การ์ด MULTIPLAYER VS AI ไม่ได้ทำ** (server ไม่มีโหมดนี้ · ผู้ใช้สั่งซ่อนจนกว่าระบบจะพัฒนาและทดสอบเสร็จ)
+- `styles/setup.css` ใหม่ (import ใน `main.jsx` ต่อจาก `lobby.css`) · ลบ CSS `.mode-card*` เดิมออกจาก `theme.css`
+- ชื่อการ์ดทีมเปลี่ยน "ทีม A vs B" → "แข่งทีม" ⇒ แก้ `tests/browser/mobile-team.mjs` `refresh.mjs` `setup-solo.mjs` ที่คลิกการ์ดด้วยข้อความนี้ · `setup-solo.mjs` เพิ่มเช็คตำแหน่งกล่องตามภาพ · ไม่มีกล่องทับกัน · ตัวเลขผู้เล่นตรงกับ server · ซ่อน MULTIPLAYER · 390px เรียงบนลงล่าง
+- บทเรียน: ไฟล์ CSS ที่โหลดทีหลังทับกฎ `@media` ของไฟล์ก่อนหน้าได้ — `.setup { grid-template-columns: 330px … }` ใน `setup.css` ทับ "≤ 900px คอลัมน์เดียว" ของ `theme.css` การ์ดบนมือถือถูกบีบเป็นแถบกว้าง ~30px **และเทสรอบแรกผ่าน** เพราะเช็คแค่ล้นแนวนอน/ทับกัน (แถบแคบไม่ทับใคร) → เจอจากการดูภาพหน้าจอ แล้วเพิ่มเช็คลำดับบนลงล่างและความกว้างขั้นต่ำ
+
+### เสร็จแล้ว (โหมด Multiplayer vs AI — ย้ายมาจาก branch `feat/mp-vs-ai` ของ repo `pokadot-kiki/justdrawit` ด้วย patch · แตะ server + client + `events.md` หัวข้อ 10)
+- **server** ไฟล์ใหม่ `server/mp-ai.js` (แยกจาก index.js ที่ยาว ~2,300 บรรทัด) ใช้ของเดิมผ่านพารามิเตอร์: `ai.pickWord`/`ai.soloWords` (คำ Solo) · `aiDrawings.pick/schedule` (ภาพช่วง 2) · `makeHint` · `normalize` · `ai.scoreFor` (คะแนนช่วง 2) · `endGame` (จบเกม/Leaderboard multi/กลับห้องรอ)
+  - `ai.evaluateDrawing` + `ai.drawScore` ใหม่ใน `ai.js`: ประเมินภาพหนึ่งภาพ คืนความมั่นใจต่อคำที่ถูก (โมเดล = ความน่าจะเป็นจริง · Claude = 0.75 คงที่เมื่อถูก · จำลอง = สุ่ม) · คะแนน 100–500 / 0
+  - ช่วง 1 ภาพเก็บที่ server เท่านั้น (`mpai_submit`) ไม่มี stroke/ภาพรั่วก่อน `mpai_gallery` · ประเมินทีละภาพ ภาพละครั้ง เพดาน `MPAI_EVAL_TIMEOUT_MS` (10 วิ) พัง/ช้า = 0 คะแนน ไม่ค้าง
+  - ช่วง 2 ไม่มีคำตอบก่อน `mpai_watch_end` · ข้อความทาง `guess` ระหว่างช่วงนี้ไม่ถูกส่งต่อเป็นแชท
+  - คะแนน/ภาพเก็บใน `room.mp.entries` (แยกจาก players) → คนออกแล้วยังอยู่ในอันดับ (`left: true`) · เงื่อนไขจบช่วงนับเฉพาะคนออนไลน์ · คนออกไม่ทำให้เกมจบ
+  - env สำหรับเทสเท่านั้น: `MPAI_TIME_OVERRIDE` `MPAI_GALLERY_MS` `MPAI_REST_MS` `MPAI_EVAL_TIMEOUT_MS` `AI_MOCK_CONFIDENCE`
+- **client** `hooks/useMpAi.js` (ผูกที่ App) · `screens/MpAiGame.jsx` · `styles/mpai.css` · การ์ด **MULTIPLAYER VS AI** ในกล่อง "แข่งกับ AI" ของหน้า SET UP (เคียงกับ SOLO VS AI ตามภาพอ้างอิง · CSS ใน `styles/setup.css` คลาส `ai-panel__cards`) · ตัวเลือก "แข่งกับ AI" ในห้องรอ · `GameOverModal` แสดงคะแนนวาด/ทายเมื่อ ranking มี `drawPoints`
+- **เทส** `server/tests/mpai.js` 54 เช็ค (ต่อท้าย `npm test` เพราะ smoke.js ใกล้เพดาน 300 วิ) · `tests/browser/mpai.mjs` 30 เช็ค (2 แท็บ ที่ 1440×900 และ 390×844)
+- **ข้อสันนิษฐาน**: เริ่มเกมต้อง ≥ 2 คน (กติกาเดิมของห้อง) · เล่น `settings.rounds` รอบ (หนึ่งรอบ = ช่วง 1 + ช่วง 2) · เวลาต่อช่วง = `drawTime` · ช่วง 1 ทุกคนเห็นคำ (ทุกคนเป็นคนวาด) · คะแนนช่วง 1 ใช้ความมั่นใจของคำอันดับหนึ่งเมื่อตรงกับคำ
+- **ข้อจำกัด**: ภาพช่วง 1 ไม่ได้เก็บในเครื่อง → รีเฟรชกลางช่วง 1 ภาพบนกระดานหาย (ภาพล่าสุดที่ส่งอัตโนมัติยังอยู่ที่ server และถูกประเมิน ถ้าไม่วาดทับ) · โหมด Claude ไม่มีความมั่นใจจริง · ยังไม่ได้ลองกับโมเดลจริง/คนวาดจริง (เทสใช้โหมดจำลอง) · ยังไม่ได้ลองบนไอแพดจริง
+- **ตอนย้ายเข้าโปรเจกต์นี้ (10 ต.ค.)**: backup ก่อนแก้ `~/Desktop/justdrawit-after-pr2-BACKUP-before-mpai-20261010.zip` · patch ใช้ได้เกือบหมด ที่เหลือวางเองตามโครงของโปรเจกต์นี้ (`returnToLobby` · `App.jsx` · `WaitingRoom.jsx` · `GameOverModal.jsx` · `main.jsx` · `SetUp.jsx` · เอกสาร) · ข้อความบนการ์ดบอกตามกติกาจริง (แข่งรายคน ไม่ใช่ co-op แบบในภาพอ้างอิง)
+
+### เสร็จแล้ว (ปรับ Multiplayer vs AI ช่วง 1/2 + ห้องรอ — 10 ต.ค. · แตะ server + client + `events.md` หัวข้อ 10 · backup ก่อนแก้ `~/Desktop/justdrawit-after-pr2-BACKUP-before-4fixes-20261010.zip`)
+- **ช่วง 1** AI ทายเป็นระยะแบบ Solo: `mpai_snapshot` (เช็คเดียวกับ `ai_snapshot`) · server ใช้ `SNAPSHOT_MIN_GAP_MS` + ทีละภาพต่อคน + `ai.guessImage` ตัวเดียวกับ Solo (`guessImage` คืน `confidence` เพิ่ม) · คำทายส่งถึงเจ้าของภาพคนเดียว (`mpai_ai_guess`) · ทายถูก = เสร็จ คะแนน `drawScore` · คนอื่นได้แค่ `mpai_done` · แกลเลอรีเมื่อ AI ทายถูกครบทุกคนที่ออนไลน์หรือหมดเวลา (คนที่ยังไม่ผ่านได้ทายภาพล่าสุดที่ยังไม่ถูกดูอีกครั้ง) · ลบ `ai.evaluateDrawing` (ไม่มีใครใช้แล้ว)
+- **ช่วง 2** ทายผ่าน `guess` + กติกาแชทโหมดปกติ (`chat_message` `correct_guess` ****** คนถูกคุยกันเอง) · ลบ `mpai_guess` `mpai_guess_reply` `mpai_submit` `mpai_submitted`
+- **หลุด**: รอ `MPAI_OFFLINE_WAIT_MS` (5 วิ) ก่อนเลิกรอ — รีเฟรชไม่ทำให้ช่วงจบ (เจอจากเทส: เดิมรีเฟรชของคนสุดท้ายที่ยังไม่เสร็จทำให้แกลเลอรีเปิดทันที)
+- **client** `aiSnapshot.js` ใหม่ (จังหวะส่งภาพ ใช้ร่วมกับ `SoloAI.jsx`) · `MpAiGame.jsx` (แชทคำทายของ AI · แชทร่วม `Chat`) · `useMpAi.js` · `TEAM_COUNT_CHOICES` ใน `roomOptions.js`
+- **ห้องรอ** (`WaitingRoom.jsx` `ChallengeCards.jsx` `lobby.css`): เลขกล่องนับตามลำดับจริง (ไม่มี 1.5) · กล่องโหมด/กล่องเศษกว้างเต็มแถว · Mini Challenge สีประจำกติกา ป้ายมุม hover ยก/กระดิก (ปิดตาม data-motion) · มาสคอตไม่ถูกตัด — ดู DESIGN.md
+- ข้อจำกัด: ขอ "1–5" แต่มีตั้งค่า 6 กล่อง (ทีม 7) จึงนับ 1–6 / 1–7 ตามจริง ไม่ตัดตั้งค่าออก · รีเฟรชแล้วประวัติแชทช่วง 2 ไม่กลับมา (เหมือนโหมดปกติ) · ภาพบนกระดานช่วง 1 หายเมื่อรีเฟรช (ภาพล่าสุดที่ส่งแล้วยังอยู่ที่ server) · ยังไม่ได้ลองกับโมเดลจริง/คนวาดจริง (เทสใช้โหมดจำลอง)
+
+### เสร็จแล้ว (รวม `main` เข้า `feature/justdrawit-improvements` — merge ในเครื่อง 12 ต.ค. · conflict 23 ไฟล์ · ยังไม่ push)
+`upstream/main` (`c5836ec` — มี Firebase login แบบไม่บังคับ + กันโกงเขียนตัวหนังสือ + งานโหมดทีม/Leaderboard) รวมเข้า `feature/justdrawit-improvements` (`fc157d9` — Multiplayer vs AI, โปรไฟล์, แกลเลอรีทีม, หน้า SET UP ใหม่)
+**สองฝั่งเขียนกติกาเดียวกันขัดกัน ผู้ใช้ตัดสินแล้ว:**
+- **โหมดทีมใช้กติกาของ `main`**: 2–4 ทีม (A–D) · ทีมละ ≥ 2 คน ห่างกันไม่เกิน 1 คน (`TEAM_UNBALANCED`) · ความจุห้อง = `settings.maxPlayers` · คะแนนทีม = ค่าเฉลี่ย · ชื่อทีมใน `settings.teamNames` (ตรวจซ้ำ/คำหยาบ/rate limit) · จัดสมดุล + ขอสลับตัว
+  ⇒ ของ feature ที่ยกเลิก: ทีม E · "ทีมละ 2 คนพอดี" (`TEAM_FULL` `TEAM_INCOMPLETE` `TEAM_SETTINGS_INVALID`) · `room.teamNames` · `client/src/teamRoomView.js` (+เทส) · เทส 27b (5 ทีม)
+- **เก็บของ feature ในโหมดทีม**: แกลเลอรีหลังจบตา (`round_end.gallery` + `team_gallery_close`) · `game_end.teamRanking` มี `name` + `members` (`score` เป็นค่าเฉลี่ย)
+- **Mini Challenge ใช้กติกาของ feature**: ทุกตาสุ่มหนึ่งแบบจากที่เปิด โอกาสเท่ากันรวม Standard · รายการว่าง = `INVALID_CHALLENGES` ⇒ จังหวะ "ตาแรกไม่มี · ~1/3 · ไม่ติดกัน" ของ main ไม่ใช้แล้ว (env `CHALLENGE_NO_PACING` `CHALLENGE_ODDS` ไม่มีผลแล้ว)
+- **กฎทีมมีที่เดียว** `shared/teamRules.json` (`ids` A–D · `minTeams` 2 · `minPlayers` 2) → `server/team-membership.js` และ `client/src/roomOptions.js` (`TEAM_MIN_PLAYERS` แทน `TEAM_CAPACITY`)
+- ห้องรอ: โครงกล่องตั้งค่าของ feature (ลิสต์ + เลขตามลำดับ · โหมดเต็มแถว 3 ตัวเลือก) + กฎของ main ("จำนวนทีม" โชว์เสมอ ล็อกเมื่อไม่ใช่โหมดทีม · "จำนวนผู้เล่นสูงสุด" ใช้ทุกโหมด) = 7 กล่องเสมอ
+- เพิ่มเอง 1 จุด: `update_profile` (ของ feature) ผ่านตัวกรองคำไม่เหมาะสมของ main ด้วย (`INAPPROPRIATE_NAME`) ไม่งั้นเปลี่ยนชื่อกลางห้องจะเลี่ยงตัวกรองได้
+- Firebase login ของ main อยู่ครบและยังไม่บังคับ (ไฟล์ `auth-session.js` `firebase-auth.js` `Login.jsx` `auth.css` `leaderboard.js` เหมือน main ทุกตัวอักษร) · ต้อง `npm install` ใหม่ทั้ง client/server เพราะมี dependency `@firebase/*`
+- **เทสที่แก้ (ตกอยู่แล้วบน feature ก่อน merge — รันเทียบจาก worktree ของ `fc157d9` ได้ผ่าน 828 ตก 4)**: "Solo reconnect ใช้ชื่อใหม่" (เทสต่อ socket ไม่มี playerKey แต่ `ai_resume` ต้องมี) · "ยกปากกาหลัง Clear" (ลืม `clearAll` ก่อนนับ) · "จบเกม: ทั้งสองคนมีคะแนน"/"กระดาน multi" (อันดับแข่งเดี่ยวเก็บคนที่ออกแล้วไว้ด้วย `left: true`) — แก้ที่ตัวเทส ไม่ได้แก้พฤติกรรม server
+- ทดสอบ: `npm test` ผ่าน 2 รอบติดกัน ไม่มีข้อตก (smoke 962 และ 937 ข้อ — จำนวนขยับตาม Mini Challenge ที่สุ่มได้ · mpai 64) · `npm run build` ผ่าน · เทสหน่วย server ของ feature (`team-membership` `team-gallery` `team-final-results` `challenge-selection` `profile-unit` `log-answer`) ผ่าน
+- **ยังไม่ได้ทำ/ข้อจำกัด**: ไม่ได้รันเทสเบราว์เซอร์ (`tests/browser/`) หลัง merge — `team-options.mjs` `team-balance.mjs` `mpai.mjs` `setup-solo.mjs` อาจต้องปรับ selector เพราะห้องรอ/SET UP ใช้โครงของ feature · เทสหน่วย client 3 ไฟล์ (`GameOverModal` `Scoreboard` `ProfileModal` `.test.js`) ไม่ผ่านบน Windows (`window/document is not defined` ตอนโหลดโมดูล) ยังไม่ได้ไล่ว่าเป็นเพราะเครื่องหรือเพราะ merge · ไม่ได้ลองเล่นจริงในเบราว์เซอร์
+
 ### ยังไม่ได้ทำ (ตามลำดับใน PROMPTS.md)
 - (ไม่มีแล้ว — ข้อ 8 เสร็จ)
 

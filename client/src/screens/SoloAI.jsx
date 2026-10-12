@@ -18,10 +18,9 @@ import { Icon } from "../components/Icons";
 import { Sparkles, PAGE_SPARKLES } from "../components/Critter";
 import GuessInput from "../components/GuessInput";
 
-// ส่งภาพให้ AI ดูทุก 5 วินาที (server รับห่างกันได้ไม่ต่ำกว่า 4 วิ)
-const SNAPSHOT_MS = 5000;
-const SNAPSHOT_WIDTH = 512;
-const THINK_TIMEOUT_MS = 20000; // server รอ AI สูงสุด 15 วิ เผื่อไว้อีกนิดกันค้างถ้าตอบหาย
+// จังหวะส่งภาพให้ AI ดู (ใช้ร่วมกับ Multiplayer vs AI)
+import { SNAPSHOT_MS, SNAPSHOT_WIDTH, THINK_TIMEOUT_MS } from "../aiSnapshot";
+import { appendSoloGuess } from "../soloGuessHistory";
 // แปรงหนาสุดใน Solo — วัดแล้วแปรงหนามาก (24px ในภาพ 512px) ทำให้ AI ทายถูกแค่ครึ่งเดียว (84% → 49%)
 // เป็นแค่การช่วยผู้เล่น ไม่ใช่กติกากันโกง (server ไม่ได้จำกัด)
 const SOLO_MAX_SIZE = 12;
@@ -69,11 +68,12 @@ const DIFFICULTIES = [
   ["hard", "ยาก"],
 ];
 
-export default function SoloAI({ initialName = "", boot = null, onName, onBack }) {
+export default function SoloAI({ initialName = "", boot = null, onName, onBack, profile, onEditProfile }) {
   // intro = กรอกชื่อ · starting = ส่ง ai_start แล้วรอด่านแรก · playing = ช่วง 1 เราวาด AI ทาย
   // watch = ช่วง 2 ดูภาพที่เล่นซ้ำแล้วพิมพ์ทาย · rest = พักระหว่างช่วง · over = จบเกม
   const [phase, setPhase] = useState("intro");
   const [name, setName] = useState(initialName);
+  useEffect(() => setName(initialName), [initialName]);
   // ระดับ "เริ่มต้น" ของชุดคำ — server ไล่คำให้ยากขึ้นตามด่านจากระดับนี้เอง (เวลาเท่ากันทุกด่าน)
   // มาจากหน้า SET UP (boot) ถ้าเข้าทางนั้น ไม่งั้นเริ่มที่ง่าย
   const [difficulty, setDifficulty] = useState(boot?.difficulty ?? "easy");
@@ -207,8 +207,11 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
       play("roundStart");
     };
     const onGuess = (d) => {
+      if (phaseRef.current !== "playing" || d?.roundId !== roundRef.current?.roundId) return;
+      const currentRoundId = roundRef.current.roundId;
       setThink(false);
-      setGuesses((g) => [...g, { text: String(d.guess ?? ""), correct: Boolean(d.correct) }]);
+      if (d.source === "mock") setRound((current) => current ? { ...current, aiMode: "mock" } : current);
+      setGuesses((g) => appendSoloGuess(g, d, currentRoundId, "playing"));
       if (d.correct) play("aiCorrect"); // AI ทายถูก (ดีใจ เพราะเราวาดรู้เรื่อง)
     };
     const onRoundEnd = (d) => {
@@ -359,7 +362,8 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
       watchRef.current = null;
       setRound({ ...st.round, resumeLeft: st.timeLeft });
       setTimeLeft(st.timeLeft);
-      setGuesses((st.guesses || []).map((text) => ({ text: String(text), correct: false })));
+      setGuesses((st.guesses || []).reduce((history, guess) =>
+        appendSoloGuess(history, guess, st.round.roundId, "playing"), []));
       // ภาพที่เราวาดไว้ในช่วงนี้ (เก็บในแท็บ) — ใช้เฉพาะถ้าเป็นด่าน/คำเดียวกับที่ server บอก
       try {
         const saved = JSON.parse(store.get(CANVAS_KEY) || "null");
@@ -605,7 +609,6 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
       ))}
     </span>
   );
-  const lastGuess = guesses[guesses.length - 1];
   // "มุมมอง" ที่หน้าจอต้องโชว์: ช่วง 2 (ดูภาพแล้วทาย) รวมตอนพักหลังจบช่วง 2 ที่หน้าต่างเฉลยยังเปิดอยู่ · นอกนั้นเป็นช่วง 1 (เราวาด)
   // ใช้ตัวเดียวกันตัดสินทั้งแถบคำ กล่องขวา และเครื่องมือ จึงไม่มีทางที่ส่วนหนึ่งโชว์ช่วงใหม่แต่อีกส่วนค้างช่วงเก่า
   const view = phase === "watch" || (phase === "rest" && result?.kind === "guess") ? "watch" : "draw";
@@ -637,7 +640,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
           <Timer timeLeft={live ? timeLeft : null} />
         </div>
 
-        <TopIcons onInfo={() => setShowInfo(true)} onExit={() => setShowExit(true)} />
+        <TopIcons onInfo={() => setShowInfo(true)} onExit={() => setShowExit(true)} profile={profile ? { ...profile, name } : null} onEditProfile={onEditProfile} />
       </header>
 
       <main className="game game--solo">
@@ -722,21 +725,21 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
             <section className="panel ai-box" aria-live="polite">
               <h2 className="panel__title">AI คิดว่า...</h2>
               <div className="ai-box__body">
-                {lastGuess ? (
-                  <p className={`ai-box__guess${lastGuess.correct ? " ai-box__guess--ok" : ""}`}>
-                    <Icon name={lastGuess.correct ? "check" : "question"} size={24} /> {lastGuess.text}
-                  </p>
+                {guesses.length ? (
+                  <ol className="solo-ai__history" aria-label="คำที่ AI ทายจากภาพของคุณ">
+                    {guesses.map((guess, i) => (
+                      <li key={i} className={`solo-ai__history-item${guess.correct ? " solo-ai__history-item--ok" : ""}`}>
+                        <Icon name={guess.correct ? "check" : "question"} size={16} />
+                        <span>{guess.text}</span>
+                      </li>
+                    ))}
+                  </ol>
                 ) : (
                   <p className="ai-box__hint">
-                    {thinking ? "กำลังดูภาพ..." : "วาดเลย AI จะดูภาพทุก 5 วินาที"}
+                    {thinking ? "กำลังดูภาพ..." : round?.aiMode === "mock" ? "ไม่มี AI ทายภาพจริงในขณะนี้" : `วาดเลย AI จะดูภาพทุก ${SNAPSHOT_MS / 1000} วินาที`}
                   </p>
                 )}
-                {lastGuess && thinking && <p className="ai-box__hint">กำลังดูภาพใหม่...</p>}
-                {guesses.length > 1 && (
-                  <p className="ai-box__past">
-                    ก่อนหน้า: {guesses.slice(0, -1).map((g) => g.text).join(" · ")}
-                  </p>
-                )}
+                {guesses.length > 0 && thinking && <p className="ai-box__hint">กำลังดูภาพใหม่...</p>}
               </div>
               {round && MODE_TEXT[round.aiMode] && (
                 <p className={`ai-box__mode${round.aiMode === "mock" ? " ai-box__mode--mock" : ""}`}>
@@ -800,7 +803,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack }
       )}
 
       {phase === "over" && final && (
-        <Modal labelledBy="solo-over-title">
+        <Modal labelledBy="solo-over-title" panelClassName="modal__panel--solo-over">
           <Mascot mood="trophy" className="mascot--modal" />
           <h2 className="modal__title" id="solo-over-title">
             จบเกม

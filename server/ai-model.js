@@ -1,10 +1,11 @@
-// ---------- สมอง AI แบบโมเดลในเครื่อง (Quick, Draw! MobileViT) ----------
+// ---------- สมอง AI แบบโมเดลในเครื่อง (QuickDraw 345 SE-ResNet) ----------
 // รันที่ server เท่านั้น ไม่ผูกกับ socket · โหลดไม่ได้ = คืน false แล้วให้ ai.js ใช้สมองถัดไป ห้ามล่ม
-// โมเดล: VinayHajare/quickdraw-mobilevit-small-onnx (MIT) · 345 คำ · อินพุต [1,1,28,28] เส้นขาวบนพื้นดำ
+// โมเดล: zarqankhn/quickdraw-345-tflite (Apache 2.0) แปลงเป็น ONNX · 345 คำ · อินพุต [1,28,28,1]
+// สคริปต์ฝึกใช้ bitmap Quick Draw ตรงๆ /255: พื้นดำ = 0 เส้นสว่าง = 1 (ตรวจด้วยภาพวงกลมจริง)
 const fs = require("fs");
 const path = require("path");
 
-const MODEL_DIR = process.env.AI_MODEL_DIR || path.join(__dirname, "models");
+const MODEL_DIR = process.env.AI_MODEL_DIR || path.join(__dirname, "models", "quickdraw345");
 const SIZE = 28;
 const INK_MIN = 40; // ความเข้มต่ำสุด (0–255) ที่นับว่าเป็นเส้น ตัดสัญญาณรบกวนของ JPEG
 
@@ -19,11 +20,8 @@ function isReady() {
 async function load() {
   try {
     const onnx = require("onnxruntime-node");
-    const config = JSON.parse(fs.readFileSync(path.join(MODEL_DIR, "config.json"), "utf8"));
-    const ids = Object.keys(config.id2label).map(Number);
-    const list = [];
-    for (const id of ids) list[id] = config.id2label[id];
-    if (list.length < 2 || list.some((x) => typeof x !== "string")) throw new Error("config.json ไม่ถูกรูปแบบ");
+    const list = fs.readFileSync(path.join(MODEL_DIR, "labels.txt"), "utf8").trimEnd().split(/\r?\n/);
+    if (list.length !== 345 || new Set(list).size !== 345 || list.some((x) => !x.trim())) throw new Error("labels.txt ไม่ถูกรูปแบบ");
     const s = await onnx.InferenceSession.create(path.join(MODEL_DIR, "model.onnx"));
     labels = list;
     session = s;
@@ -148,21 +146,13 @@ async function preprocess(image) {
     .toBuffer();
   if (small.length !== SIZE * SIZE) throw new Error("ย่อภาพได้ขนาดไม่ตรง");
 
-  // ยืดความเข้มให้เส้นที่เข้มสุดเต็ม 255 (กันภาพจางจากการย่อ)
+  // ยืดความเข้มให้ตรงกับภาพฝึก: พื้นดำ = 0, เส้นสว่าง = 1
   let max = 0;
   for (const v of small) if (v > max) max = v;
   const out = new Float32Array(SIZE * SIZE);
   if (max === 0) return null;
   for (let i = 0; i < out.length; i++) out[i] = Math.min(1, small[i] / max);
   return out;
-}
-
-function softmax(logits) {
-  let max = -Infinity;
-  for (const v of logits) if (v > max) max = v;
-  const exps = Array.from(logits, (v) => Math.exp(v - max));
-  const sum = exps.reduce((a, b) => a + b, 0);
-  return exps.map((e) => e / sum);
 }
 
 // ทายภาพ · allowed = Set ของชื่อคลาสอังกฤษที่ยอมให้ตอบ (คำที่อยู่ในเกม) · คืนอันดับสูงสุดก่อน
@@ -172,16 +162,18 @@ async function classify(image, { allowed = null, top = 5 } = {}) {
   const pixels = await preprocess(image);
   if (!pixels) return null;
   const onnx = require("onnxruntime-node");
-  const feeds = { [session.inputNames[0]]: new onnx.Tensor("float32", pixels, [1, 1, SIZE, SIZE]) };
+  const feeds = { [session.inputNames[0]]: new onnx.Tensor("float32", pixels, [1, SIZE, SIZE, 1]) };
   const result = await session.run(feeds);
-  const logits = result[session.outputNames[0]].data;
-  // ตัดคลาสที่ไม่ได้อยู่ในเกมทิ้งก่อนคิดความน่าจะเป็น: AI ต้องเลือกจากคำที่เกมมี ไม่ตอบคำที่ไม่มีให้ทาย
+  const scores = result[session.outputNames[0]]?.data;
+  if (!scores || scores.length !== labels.length || Array.from(scores).some((v) => !Number.isFinite(v) || v < 0 || v > 1)) {
+    throw new Error("ผลโมเดล AI ไม่ถูกรูปแบบ");
+  }
+  // โมเดลให้ softmax มาแล้ว: กรองเฉพาะคำในเกม แต่คงความมั่นใจจริงของแต่ละคำไว้ใช้คิดคะแนน
   const keep = [];
   for (let i = 0; i < labels.length; i++) if (!allowed || allowed.has(labels[i])) keep.push(i);
   if (keep.length === 0) return null;
-  const probs = softmax(keep.map((i) => logits[i]));
   return keep
-    .map((i, k) => ({ label: labels[i], prob: probs[k] }))
+    .map((i) => ({ label: labels[i], prob: scores[i] }))
     .sort((a, b) => b.prob - a.prob)
     .slice(0, top);
 }
