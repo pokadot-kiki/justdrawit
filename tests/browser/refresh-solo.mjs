@@ -92,7 +92,7 @@ const drawStroke = async (c, path) => {
 };
 const base = `http://localhost:${PORT}`;
 const INK = `(()=>{const c=document.querySelector(".board canvas");if(!c)return -1;const d=c.getContext("2d").getImageData(0,0,c.width,c.height).data;let n=0;for(let i=0;i<d.length;i+=4){if(d[i+3]>0&&(d[i]<200||d[i+1]<200||d[i+2]<200))n++}return n})()`;
-const startServer = (extra) => { server = spawn("node", ["index.js"], { cwd: `${ROOT}/server`, env: { ...process.env, PORT: String(PORT), SCORES_FILE: `${SP}/scores-s.json`, AI_MODE: "mock", AI_NEXT_DELAY_MS: "1200", ...extra }, stdio: process.env.DEBUG_SRV ? "inherit" : "ignore" }); return sleep(1500); };
+const startServer = (extra) => { server = spawn("node", ["index.js"], { cwd: `${ROOT}/server`, env: { ...process.env, NODE_ENV: "test", JDI_TEST_AUTH_BYPASS: "1", PORT: String(PORT), SCORES_FILE: `${SP}/scores-s.json`, AI_MODE: "mock", AI_NEXT_DELAY_MS: "1200", ...extra }, stdio: process.env.DEBUG_SRV ? "inherit" : "ignore" }); return sleep(1500); };
 const stopServer = async () => { try { server?.kill(); } catch {} await sleep(400); };
 const open = async (c) => { await c.send("Page.navigate", { url: `${base}/setup` }); await sleep(1000); await click(c, ".mode-card--ai"); await click(c, ".setup__create"); await waitFor(c, `document.querySelector(".board canvas")`, 10000); await sleep(500); };
 const stat = (c) => c.ev(`(()=>{const t=document.querySelector(".topbar__stats")?.innerText.replace(/\s+/g," ")||"";const all=document.querySelector(".topbar")?.innerText||"";return {url:location.pathname,stats:t.trim(),timer:(all.match(/(\d\d):(\d\d)/)||[]).slice(1).map(Number),intro:!!document.querySelector("#solo-name"),flag:sessionStorage.getItem("jdi.soloActive")}})()`);

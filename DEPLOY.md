@@ -73,6 +73,14 @@ git push -u origin deploy   # ส่ง branch deploy ขึ้น GitHub (ค�
 ### 2.4 ใส่ Environment Variables
 เลื่อนลงไปส่วน **Environment Variables** (ถ้าไม่เห็นให้กด **Advanced**) กด **Add Environment Variable** ทีละตัว (ช่องซ้าย = Key, ช่องขวา = Value):
 
+ก่อนกรอก ให้ตั้ง Firebase Authentication:
+1. สร้าง Firebase project และเพิ่ม Web app
+2. ใน **Authentication → Sign-in method** เปิด **Email/Password** และ **Google**
+3. ใน **Authentication → Settings → Authorized domains** เพิ่มโดเมน Render จริง (เช่น `justdrawit.onrender.com`) และตรวจว่ามี `localhost` สำหรับพัฒนา
+4. คัดลอก Web config จาก Firebase project settings มาใช้ในค่าด้านล่าง · Email/Password ต้องยืนยันอีเมลก่อนเข้าเกม
+
+สร้าง `AUTH_SESSION_SECRET` ใน Terminal ด้วยคำสั่ง `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` แล้วคัดลอกผลลัพธ์ไปใส่ใน Render (ยาว 32 bytes ขึ้นไป):
+
 | Key | Value |
 |---|---|
 | `NODE_VERSION` | `22` |
@@ -80,7 +88,14 @@ git push -u origin deploy   # ส่ง branch deploy ขึ้น GitHub (ค�
 | `FORCE_HTTPS` | `1` |
 | `UPSTASH_REDIS_REST_URL` | วางค่าจาก Notes (ขั้นที่ 1) |
 | `UPSTASH_REDIS_REST_TOKEN` | วางค่าจาก Notes (ขั้นที่ 1) |
+| `FIREBASE_API_KEY` | `apiKey` จาก Firebase Web config |
+| `VITE_FIREBASE_API_KEY` | ค่าเดียวกับ `FIREBASE_API_KEY` |
+| `VITE_FIREBASE_AUTH_DOMAIN` | `authDomain` จาก Firebase Web config |
+| `VITE_FIREBASE_PROJECT_ID` | `projectId` จาก Firebase Web config |
+| `VITE_FIREBASE_APP_ID` | `appId` จาก Firebase Web config |
+| `AUTH_SESSION_SECRET` | ค่าสุ่มที่สร้างจากคำสั่งด้านบน |
 
+- `FIREBASE_API_KEY` เป็นค่า Web config ไม่ใช่รหัสผ่าน ส่วน `AUTH_SESSION_SECRET` เป็นความลับของ server
 - **ไม่ต้องใส่** `PORT` (Render ตั้งให้เอง) และ **ไม่ต้องใส่** `ALLOWED_ORIGINS` — เกมอนุญาตโดเมน `onrender.com` ของคุณเองอัตโนมัติจากค่า `RENDER_EXTERNAL_URL` ที่ Render ตั้งให้ (ใส่ `ALLOWED_ORIGINS` ก็ต่อเมื่อวันหน้าผูกโดเมนของตัวเอง เช่น `https://game.example.com`)
 - ค่า token ผิดสักตัวอักษรก็ใช้ไม่ได้ ให้ใช้ปุ่มคัดลอก/วางเท่านั้น ห้ามพิมพ์เอง
 
@@ -102,7 +117,7 @@ git push -u origin deploy   # ส่ง branch deploy ขึ้น GitHub (ค�
 
 ## ขั้นที่ 3 — ทดสอบว่าใช้ได้จริง
 
-1. เปิดลิงก์ → ต้องเห็นหน้าแรกของเกม ตรวจว่ามีรูป 🔒 (https) หน้าที่อยู่
+1. เปิดลิงก์ → ต้องเห็นหน้าเข้าสู่ระบบ ตรวจว่ามีรูป 🔒 (https) หน้าที่อยู่ แล้วลองเข้าสู่ระบบด้วยบัญชี Google ที่อนุญาตไว้
 2. กด **SOLO** เล่นหนึ่งด่านให้ได้คะแนน (หรือเล่นจนเสียชีวิตครบ) → ไปหน้า Leaderboard ต้องเห็นชื่อคุณ
 3. ส่งลิงก์ให้เพื่อนสักคน ลองสร้างห้อง/เข้าห้องด้วยรหัส วาด-ทายกันได้ไหม
 4. **ทดสอบว่าคะแนนไม่หาย:** บน Render กดปุ่ม **Manual Deploy → Restart service** (หรือ **Clear build cache & deploy**) รอ Live อีกครั้ง → เปิด Leaderboard ต้องยังเห็นคะแนนเดิม
@@ -128,6 +143,9 @@ git push -u origin deploy   # ส่ง branch deploy ขึ้น GitHub (ค�
 |---|---|
 | Build ล้ม (แดง) | เปิด Logs ดูบรรทัดสุดท้ายก่อน error · กด **Manual Deploy → Clear build cache & deploy** ลองอีกครั้ง (ปัญหาเน็ตชั่วคราวเกิดได้) |
 | ใน log ขึ้น `AI Solo: โหมด mock` | โหลดโมเดลตอน build ไม่สำเร็จ (เว็บ Hugging Face ล่มชั่วคราว) เกมยังเล่นได้แต่ Solo จะเดาสุ่ม → กด **Manual Deploy → Clear build cache & deploy** ลองใหม่ |
+| หน้าเว็บแจ้งว่ายังไม่ได้ตั้งค่า Firebase | ตรวจ `FIREBASE_API_KEY`, `AUTH_SESSION_SECRET` และตัวแปร `VITE_FIREBASE_*` ว่าครบและเป็นค่าจาก Firebase project เดียวกัน แล้วกด Deploy ใหม่ |
+| Google แจ้งว่าโดเมนไม่ได้รับอนุญาต | เพิ่มโดเมน Render จริงใน **Firebase Authentication → Settings → Authorized domains** |
+| สมัครอีเมลแล้วเข้าเล่นไม่ได้ | เปิด Email/Password ใน Firebase Authentication และกดยืนยันอีเมลจากกล่องจดหมายก่อนเข้าสู่ระบบอีกครั้ง |
 | ใน log ขึ้น `ต่อ Upstash ไม่สำเร็จ` | ค่า `UPSTASH_REDIS_REST_URL` หรือ `..._TOKEN` ผิด/ติดช่องว่าง → ไปที่ Render → **Environment** → แก้ค่าให้ตรงกับ Upstash (ใช้ปุ่ม Copy) → Save (Render จะ deploy ใหม่เอง) · ระหว่างนี้คะแนนจะเก็บในไฟล์ (หายเมื่อรีสตาร์ท) |
 | ขึ้น "Application failed to respond" / health check ไม่ผ่าน | เช็คว่าตั้ง `HOST` = `0.0.0.0` · Start Command = `npm start` · Health Check Path = `/healthz` |
 | หน้าเว็บขึ้นแต่ "ต่อ server ไม่ได้" ปุ่มกดไม่ได้ | รอสักครู่ (กำลังปลุก) แล้วรีเฟรช · ถ้ายังเป็น ดู Logs ว่า server ล่มหรือไม่ |

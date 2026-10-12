@@ -99,7 +99,7 @@ try {
   // คะแนนตัวอย่างให้ตาราง Leaderboard มีแถวให้เลื่อน
   // เกมเล่นกับเพื่อน 16 คะแนน (ชื่อสุดท้ายยาว) ให้ตารางมีแถวมากกว่าที่พอดีกับแผง
   execSync(`node -e 'const l=require("./leaderboard");const n=["Tar","Mew","Joy","Ploy","Bank","Fah","Ice","Nut","Beam","Pim","Oat","Kan","Ning","Gun","Max","ช้างน้อยซนน่ารักมาก"];n.forEach((x,i)=>l.saveScore({name:x,score:2000-i*90,levelReached:0,board:"multi"}))'`, { cwd: `${ROOT}/server`, env: { ...process.env, SCORES_FILE: `${SP}/scores-b.json` }, stdio: "ignore" });
-  server = spawn("node", ["index.js"], { cwd: `${ROOT}/server`, env: { ...process.env, PORT: String(PORT), SCORES_FILE: `${SP}/scores-b.json`, AI_MODE: "mock", AI_MOCK_CHANCE: "0", CHALLENGE_ODDS: "1", CHALLENGE_NO_PACING: "1", CHALLENGE_INTRO_MS: "0" }, stdio: "ignore" });
+  server = spawn("node", ["index.js"], { cwd: `${ROOT}/server`, env: { ...process.env, NODE_ENV: "test", JDI_TEST_AUTH_BYPASS: "1", PORT: String(PORT), SCORES_FILE: `${SP}/scores-b.json`, AI_MODE: "mock", AI_MOCK_CHANCE: "0", CHALLENGE_ODDS: "1", CHALLENGE_NO_PACING: "1", CHALLENGE_INTRO_MS: "0" }, stdio: "ignore" });
   chrome = spawn((process.env.CHROME_BIN || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"), [`--remote-debugging-port=${DBG}`, `--user-data-dir=${PROFILE}`, "--headless=new", "--mute-audio", "--no-first-run", "--window-size=1500,1000", "about:blank"], { stdio: "ignore" });
   for (let i = 0; i < 50; i++) { try { await fetch(`http://127.0.0.1:${DBG}/json/version`); break; } catch { await sleep(200); } }
   await sleep(1500);
