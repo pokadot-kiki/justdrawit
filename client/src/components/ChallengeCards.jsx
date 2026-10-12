@@ -45,7 +45,15 @@ export default function ChallengeCards({ enabled = DEFAULT_CHALLENGES, isHost })
                 <span className="lb-ch__title">{c.title}</span>
                 <span className="lb-ch__desc">{c.desc}</span>
               </span>
-              <span className={`lb-ch__badge lb-ch__badge--${on ? "on" : "off"}`}>{on ? "เปิดอยู่ ✓" : "ปิด"}</span>
+              <span className={`lb-ch__badge lb-ch__badge--${on ? "on" : "off"}`}>
+                {on ? (
+                  <>
+                    <Icon name="check" size={12} /> เปิดอยู่
+                  </>
+                ) : (
+                  "ปิด"
+                )}
+              </span>
             </>
           );
           return isHost ? (

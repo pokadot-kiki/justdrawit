@@ -672,18 +672,18 @@ const Canvas = forwardRef(function Canvas({ canDraw, tool, color, size, onAction
       dbgView.points < 3
         ? `จุดน้อยเกินไป (${dbgView.points} จุด) ลากยาวอีกหน่อย`
         : dbgView.curves === 0
-          ? "เส้นตรงล้วน ⚠️ ไม่ได้ใช้เส้นโค้งเลย"
+          ? "เส้นตรงล้วน ไม่ได้ใช้เส้นโค้งเลย"
           : `ใช้เส้นโค้ง ${dbgView.curves} ช่วง`;
     dbgText = [
       "?debug=1 · โหมดดีบักชั่วคราว",
-      `getCoalescedEvents : ${HAS_COALESCED ? "มี" : "ไม่มี ✗"}`,
+      `getCoalescedEvents : ${HAS_COALESCED ? "มี" : "ไม่มี"}`,
       `ชนิด pointer       : ${dbgView.pointerType}`,
       `pointermove        : ${dbgView.moves} ครั้ง · ได้ ${dbgView.points} จุด`,
       `จุดห่างกันเฉลี่ย    : ${dbgView.spacing.toFixed(1)} px  (เฉลี่ยรวมจุดซ้ำ ซึ่งระยะเป็น 0)`,
       `จุดซ้ำตำแหน่งเดิม   : ${dbgView.dupes} จุด · ห่างไม่ถึง 1px อีก ${dbgView.nearDupes} จุด`,
       // ★ ค่านี้คือตัวชี้ขาด: จุดซ้ำมีระยะ 0 จึงฉุดค่าเฉลี่ยข้างบนให้ต่ำกว่าความจริง
       //   ระยะระหว่างจุดที่ไม่ซ้ำต่างหากที่บอกว่าที่จริงแล้วจุดห่างกันแค่ไหน
-      `จุดที่ไม่ซ้ำ        : ${dbgView.distinct} จุด ★`,
+      `จุดที่ไม่ซ้ำ        : ${dbgView.distinct} จุด`,
       `   ห่างกันเฉลี่ย    : ${dbgView.distinctSpacing.toFixed(1)} px  (เกิน ~25px = เริ่มเห็นมุม)`,
       `กรองทิ้งแล้ว       : ${dbgView.dropped} จุด  (ขยับไม่ถึง 1px · ตัวแก้ข้อ 2)`,
       `เส้นล่าสุด         : ${verdict}`,

@@ -406,6 +406,9 @@
 }
 
 .lb-ch__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 1px 8px;
   border: 2px solid var(--ink);
   font-family: var(--font-head);
