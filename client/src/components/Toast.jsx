@@ -3,7 +3,7 @@
 export default function Toast({ toast }) {
   if (!toast) return null;
   return (
-    <div className="toast" role="alert">
+    <div className={toast.tone === "coin" ? "toast toast--coin" : "toast"} role={toast.tone === "coin" ? "status" : "alert"}>
       {toast.text}
     </div>
   );

@@ -410,3 +410,62 @@
     font-size: 10px;
   }
 }
+
+/* ==========================================================================
+   แจ้งเตือน coin: toast ตอนได้ coin และสรุปท้ายเกม (GameOverModal)
+   ========================================================================== */
+.toast--coin {
+  background: var(--yellow);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.game-coins {
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  border: var(--border);
+  border-radius: var(--r-ctl);
+  background: #fffbea;
+  text-align: center;
+}
+
+.game-coins__total {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 17px;
+}
+
+.game-coins__list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 12px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+
+.game-coins__note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.game-coins--guest {
+  background: var(--tab-idle);
+}
+
+.game-coins--guest .game-coins__note {
+  margin: 0;
+}

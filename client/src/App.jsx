@@ -10,6 +10,7 @@ import { initialName, loadAvatar, saveAvatar, saveName } from "./playerName";
 import { AVATARS } from "./avatars";
 import { getUserAuth } from "./prefs";
 import ProfileModal from "./components/ProfileModal";
+import { addGains, coinToastText, emptyCoinSummary } from "./coinText";
 import WaitingRoom from "./screens/WaitingRoom";
 import Game from "./screens/Game";
 import Leaderboard from "./screens/Leaderboard";
@@ -102,13 +103,29 @@ export default function App() {
     return () => { active = false; };
   }, [loggedIn, showProfile]);
 
+  // coin ที่ได้ในเกมนี้ (ไว้สรุปท้ายเกม) — บวกจาก gains ของ wallet_update · เริ่มนับใหม่ทุกครั้งที่เกมเริ่ม
+  // เป็นตัวเลขสำหรับแสดงผลเท่านั้น (รีเฟรชกลางเกมแล้วนับเฉพาะหลังรีเฟรช) ยอดจริงอยู่ที่ server
+  const [gameCoins, setGameCoins] = useState(emptyCoinSummary);
   useEffect(() => {
     const onWallet = (data) => {
-      if (Number.isFinite(data?.coins)) setWallet({ coins: data.coins, earnedToday: data.earnedToday, dailyCap: data.dailyCap, dailyBonusClaimed: data.dailyBonusClaimed });
+      if (!Number.isFinite(data?.coins)) return;
+      setWallet({ coins: data.coins, earnedToday: data.earnedToday, dailyCap: data.dailyCap, dailyBonusClaimed: data.dailyBonusClaimed });
+      setGameCoins((sum) => addGains(sum, data.gains));
+      const text = coinToastText(data.gains);
+      if (text) showToast(text, "coin");
     };
+    const onStart = () => setGameCoins(emptyCoinSummary());
     socket.on("wallet_update", onWallet);
-    return () => socket.off("wallet_update", onWallet);
+    socket.on("game_started", onStart);
+    return () => {
+      socket.off("wallet_update", onWallet);
+      socket.off("game_started", onStart);
+    };
+    // showToast ใช้แค่ setState กับ ref จึงผูกครั้งเดียวได้
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // สรุป coin ท้ายเกม: ล็อกอิน = ยอดของเกมนี้ · guest ที่ล็อกอินได้ = ข้อความชวนล็อกอิน · เกมไม่เปิดระบบล็อกอิน = ไม่โชว์
+  const coinInfo = loggedIn ? { summary: gameCoins } : auth.enabled ? { login: true } : null;
 
   useEffect(() => {
     if (route.screen === "login" && auth.user) navigate("/", { replace: true });
@@ -135,8 +152,9 @@ export default function App() {
   // โหมด Multiplayer vs AI: ผูก event ไว้ที่ App เหมือน useGame (event แรกมาก่อนหน้าจอเกมจะเกิด)
   const { mp, sendSnapshot: mpSnapshot } = useMpAi(me?.playerId);
 
-  function showToast(text) {
-    setToast({ text, id: Date.now() });
+  // tone: "error" (แดง ค่าเริ่มต้น) · "coin" (เหลือง ตอนได้ coin)
+  function showToast(text, tone = "error") {
+    setToast({ text, tone, id: Date.now() });
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 3500);
   }
@@ -434,6 +452,7 @@ export default function App() {
           onLeave={handleLeave}
           onToast={showToast}
           onEditProfile={() => setShowProfile(true)}
+          coinInfo={coinInfo}
         />
       )}
 
@@ -456,6 +475,7 @@ export default function App() {
           // Toast ตัวกลางอยู่ที่ App หน้าเกมจึงขอยืมใช้ (เช่นตอนกดคัดลอกรหัสห้อง)
           onToast={showToast}
           onEditProfile={() => setShowProfile(true)}
+          coinInfo={coinInfo}
         />
       )}
 

@@ -5,12 +5,13 @@ import Confetti from "./Confetti";
 import Avatar from "./Avatar";
 import YouTag from "./YouTag";
 import { Icon } from "./Icons";
+import { summaryRows } from "../coinText";
 
 const MEDALS = ["medal1", "medal2", "medal3"];
 
 // จบเกม — แท่นรางวัลอันดับ 1-3 และอันดับครบทุกคนของโหมดรายคน
 // ทุกคนมีปุ่มกลับห้องรอ (back_to_lobby → server พาทุกคนกลับพร้อมกัน หรือพาเองเมื่อครบเวลา) กับกลับหน้าแรก (leave_room) · หัวห้องมีปุ่มเล่นอีกรอบเลย (start_game)
-export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLobby, returnAt = null, onLeave, teamRanking = null, winner = null, myTeam = null, meId = null, teamNames = {} }) {
+export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLobby, returnAt = null, onLeave, teamRanking = null, winner = null, myTeam = null, meId = null, teamNames = {}, coinInfo = null }) {
   // โหมดทีม: ประกาศทีมที่ชนะ (เสมอ = winner เป็น null) พลุเล่นเหมือนเดิมเพราะอยู่ในกล่องเดียวกัน
   const teamMode = Boolean(teamRanking);
   const teamName = (t) => teamNames[t] || `ทีม ${t}`;
@@ -151,6 +152,29 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
               </li>
             ))}
           </ol>
+        </section>
+      )}
+
+      {/* coin ที่ได้ในเกมนี้ (ตัวเลขจาก server ผ่าน wallet_update) · guest เห็นข้อความชวนล็อกอิน · ไม่มีระบบล็อกอิน = ไม่โชว์ */}
+      {coinInfo?.summary && (
+        <section className="game-coins" aria-label="coin ที่ได้ในเกมนี้">
+          <p className="game-coins__total">
+            <Icon name="coin" size={20} /> เกมนี้ได้ <b>+{coinInfo.summary.total}</b> coin
+          </p>
+          {coinInfo.summary.total > 0 ? (
+            <ul className="game-coins__list">
+              {summaryRows(coinInfo.summary).map(([label, amount]) => (
+                <li key={label}>{label} <b>+{amount}</b></li>
+              ))}
+            </ul>
+          ) : (
+            <p className="game-coins__note">ทายถูกหรือเล่นจนจบเกมกับเพื่อนเพื่อรับ coin (ได้สูงสุดตามเพดานต่อวัน)</p>
+          )}
+        </section>
+      )}
+      {coinInfo?.login && (
+        <section className="game-coins game-coins--guest" aria-label="coin">
+          <p className="game-coins__note"><Icon name="coin" size={16} /> เข้าสู่ระบบเพื่อเก็บ coin จากการเล่น</p>
         </section>
       )}
 

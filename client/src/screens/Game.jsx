@@ -29,6 +29,7 @@ import { Sparkles, PAGE_SPARKLES } from "../components/Critter";
  * เพราะหน้านี้เกิดตอนได้ game_started เท่านั้น event ที่มาก่อนหน้าจะหลุด
  */
 export default function Game({
+  coinInfo = null,
   room,
   meId,
   game,
@@ -395,6 +396,7 @@ export default function Game({
           onBackToLobby={backToLobby}
           returnAt={game.returnAt}
           onLeave={onLeave}
+          coinInfo={coinInfo}
         />
       )}
 
