@@ -26,6 +26,8 @@ const os = require("os");
 const SCORES_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "jdi-scores-"));
 const SCORES_FILE = path.join(SCORES_DIR, "scores.json");
 process.env.SCORES_FILE = SCORES_FILE;
+// กระเป๋า coin ของ server ทดสอบทุกตัว (สืบทอด env นี้) ใช้ไฟล์ชั่วคราวเหมือนคะแนน — ห้ามเขียนลง server/data/wallets.json ของจริง
+process.env.WALLET_FILE = path.join(SCORES_DIR, "wallets.json");
 // ช่วง "ดูภาพแล้วทาย" ของ Solo: ปกติชี้ไปไฟล์ที่ไม่มี เพื่อให้ข้อ 21-25 ไม่ขึ้นกับว่าเครื่องนี้ดาวน์โหลดภาพไว้หรือยัง
 // (server ทุกตัวที่เทสสตาร์ทสืบทอดค่านี้) · ข้อ 26 ตั้งค่าเฉพาะของมันเอง
 const NO_DRAWINGS_FILE = path.join(os.tmpdir(), "jdi-no-drawings.json");

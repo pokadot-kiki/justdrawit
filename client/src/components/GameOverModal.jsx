@@ -5,7 +5,6 @@ import Confetti from "./Confetti";
 import Avatar from "./Avatar";
 import YouTag from "./YouTag";
 import { Icon } from "./Icons";
-import { addCoins, getUserAuth, SHOP_ENABLED } from "../prefs";
 
 const MEDALS = ["medal1", "medal2", "medal3"];
 
@@ -37,20 +36,6 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
         {p.left ? " · ออกแล้ว" : ""}
       </span>
     );
-
-  // ระบบเหรียญ: ปิดไว้ก่อน (ดูเหตุผลที่ SHOP_ENABLED ใน prefs.js) ไม่ได้ลบโค้ด — ตัวแปร/useEffect ด้านล่างจึงไม่ทำงานจริง
-  const auth = SHOP_ENABLED && getUserAuth();
-  const baseCoins = 100;
-  const myPlayer = ranking.find((p) => p.playerId === meId);
-  const score = myPlayer?.score || 0;
-  const totalEarned = auth ? baseCoins + Math.floor(score / 5) : 0;
-
-  useEffect(() => {
-    if (SHOP_ENABLED && auth && totalEarned > 0) {
-      addCoins(totalEarned);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   return (
     <Modal labelledBy="game-over-title" panelClassName={`modal__panel--game-over${teamMode ? " modal__panel--team-over" : ""}`}>
@@ -167,22 +152,6 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
             ))}
           </ol>
         </section>
-      )}
-
-      {/* ── Economy & Reward System Breakdown — ปิดไว้ก่อน (ดูเหตุผลที่ SHOP_ENABLED ใน prefs.js) ไม่ได้ลบโค้ด ── */}
-      {SHOP_ENABLED && (
-        <div className="game-over__coins">
-          <h3 className="game-over__coins-title">เหรียญรางวัล</h3>
-          {auth ? (
-            <p className="game-over__coins-note">
-              คุณได้รับ <b>+{totalEarned}</b> เหรียญ! (เหรียญพื้นฐาน 100 + คะแนนผลงาน)
-            </p>
-          ) : (
-            <p className="game-over__coins-note game-over__coins-note--guest">
-              คุณเล่นในโหมด Guest (0 เหรียญ) — กรุณาล็อกอินเข้าสู่ระบบเพื่อสะสมเหรียญ
-            </p>
-          )}
-        </div>
       )}
 
       <div className="modal__actions">

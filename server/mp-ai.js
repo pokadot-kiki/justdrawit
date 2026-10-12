@@ -36,7 +36,7 @@ const EVAL_TIMEOUT_MS = envMs("MPAI_EVAL_TIMEOUT_MS", 10000);           // เ�
 // คนหลุด: รอสั้นๆ ก่อนเลิกนับว่าเขาต้องทำให้เสร็จ — รีเฟรช (1–2 วิ) จึงไม่ทำให้ช่วงจบกลางคัน แต่คนที่หลุดจริงไม่ถ่วงห้องเกินนี้
 const OFFLINE_WAIT_MS = envMs("MPAI_OFFLINE_WAIT_MS", 5000);
 
-module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, makeHint, normalize, roomState, endGame, snapshotGapMs, drawBudgetRatio, drawColor, drawSize, rollChallenge, introMsFor, canvasPayload, createPrivateBoard, closePrivateStroke }) {
+module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, makeHint, normalize, roomState, endGame, snapshotGapMs, drawBudgetRatio, drawColor, drawSize, rollChallenge, introMsFor, canvasPayload, createPrivateBoard, closePrivateStroke, awardGuessCoins }) {
   const bank = () => ai.soloWords(wordBank); // คำที่มีชื่ออังกฤษให้โมเดลรู้จัก (ai-words.json) · ไม่มีไฟล์ใช้คลังคำปกติ
   const online = (room) => room.players.filter((p) => p.connected !== false);
   // callback ที่ตั้งไว้ก่อนเปลี่ยนช่วง/ห้องถูกลบ/เกมจบ จะเห็น token ไม่ตรงแล้วเลิกทำงานเอง
@@ -470,6 +470,7 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
       const e = entryOf(room, player);
       e.guessPoints += points;
       syncScore(room, e);
+      awardGuessCoins?.(room, player.id, null, w.solved.size === 1); // coin เฉพาะช่วงทาย (AI เป็นคนวาด จึงไม่มีส่วนของคนวาด)
       publish("correct_guess", { playerId: player.id, name: player.name, system: true, kind: "correct", text: `${player.name} ทายถูก` });
       io.to(room.code).emit("mpai_correct", { playerId: player.id, name: player.name, points });
       io.to(room.code).emit("room_update", roomState(room));

@@ -712,6 +712,19 @@ const HALF = {
     "..kkbb",
     "....kk",
   ],
+  // เหรียญ coin (กระเป๋า coin · server/wallet.js)
+  coin: [
+    "...kkk",
+    ".kkyyy",
+    ".kyYYy",
+    "kyYyyk",
+    "kyYykk",
+    "kyYykk",
+    "kyYyyk",
+    ".kyyyy",
+    ".kkyyy",
+    "...kkk",
+  ],
   star: [
     ".....k",
     ".....k",

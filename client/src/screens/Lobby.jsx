@@ -7,8 +7,6 @@ import AvatarPicker from "../components/AvatarPicker";
 import JoinModal from "../components/JoinModal";
 import OpenRooms from "../components/OpenRooms";
 import { Icon } from "../components/Icons";
-import AvatarShopModal from "../components/AvatarShopModal";
-import { getCoins, getUserAuth, SHOP_ENABLED } from "../prefs";
 import { randomName } from "../playerName";
 import { useEnterRoom } from "../hooks/useEnterRoom";
 
@@ -28,10 +26,7 @@ export default function Lobby({
 }) {
   // เปิดจากลิงก์เชิญ (?room=12345) → กล่องใส่รหัสขึ้นเองพร้อมรหัสที่เติมไว้แล้ว
   const [joining, setJoining] = useState(Boolean(inviteCode));
-  const [showShop, setShowShop] = useState(false);
   const { busy, enter } = useEnterRoom({ connected, onEntered, onError });
-  const auth = getUserAuth();
-  const coins = getCoins();
 
   const name = profile.name;
 
@@ -56,20 +51,6 @@ export default function Lobby({
           <Ribbon tone="red">PLAY</Ribbon>
 
           <AvatarPicker value={profile.avatar} onChange={(avatar) => onProfile({ ...profile, avatar })} onEdit={onEditProfile} />
-
-          {/* ร้านค้าอวตาร + ตัวนับเหรียญ: ปิดไว้ก่อน (ดูเหตุผลที่ SHOP_ENABLED ใน prefs.js) ไม่ได้ลบโค้ด */}
-          {SHOP_ENABLED && (
-            <div style={{ textAlign: "center", margin: "-6px 0 10px 0" }}>
-              <button
-                type="button"
-                className="btn"
-                style={{ fontSize: "12px", padding: "4px 12px", background: "#fef08a", color: "#854d0e", border: "1px solid #eab308", fontWeight: "bold" }}
-                onClick={() => setShowShop(true)}
-              >
-                ร้านค้าอวตาร ({auth ? `${coins} เหรียญ` : "Guest"})
-              </button>
-            </div>
-          )}
 
           <label className="field__label" htmlFor="player-name">
             CHOOSE YOUR NAME
@@ -121,12 +102,6 @@ export default function Lobby({
       </div>
 
       {joining && <JoinModal initialCode={inviteCode ?? ""} busy={busy} onSubmit={join} onClose={() => setJoining(false)} />}
-      {SHOP_ENABLED && showShop && (
-        <AvatarShopModal
-          onClose={() => setShowShop(false)}
-          onSelectAvatar={(idx) => onProfile({ ...profile, avatar: idx })}
-        />
-      )}
     </div>
   );
 }

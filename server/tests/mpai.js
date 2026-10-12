@@ -57,7 +57,7 @@ fs.writeFileSync(drawingsFile, JSON.stringify({ [oneWord.en]: [[[0.2, 0.2, 0.8, 
 
 function startServer(port, extraEnv) {
   const env = {
-    ...process.env, PORT: port, SCORES_FILE: path.join(TMP, `scores-${port}.json`), AI_DRAWINGS_FILE: drawingsFile,
+    ...process.env, PORT: port, SCORES_FILE: path.join(TMP, `scores-${port}.json`), WALLET_FILE: path.join(TMP, `wallets-${port}.json`), AI_DRAWINGS_FILE: drawingsFile,
     MPAI_GALLERY_MS: "300", MPAI_REST_MS: "300", REJOIN_GRACE_MS: "1500", LOBBY_RETURN_MS: "60000", ...extraEnv,
   };
   const srv = spawn(process.execPath, ["index.js"], { cwd: SERVER_DIR, stdio: ["ignore", "pipe", "pipe"], env });

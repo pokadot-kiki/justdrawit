@@ -94,7 +94,7 @@
   justify-items: center;
   gap: 10px;
   margin-bottom: 14px;
-  padding: 34px 12px 14px;
+  padding: 42px 12px 14px; /* แถวบนสำหรับป้าย PREVIEW กับชิป coin */
   border: var(--border);
   border-radius: var(--r-card);
   background: var(--white);
@@ -113,6 +113,41 @@
   font-weight: 700;
   font-size: 11px;
   letter-spacing: 0.06em;
+}
+
+/* ยอด coin (มุมขวาบนของการ์ดพรีวิว ตรงข้ามป้าย PREVIEW) — ตัวเลขมาจาก server เท่านั้น */
+.pe__coins {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 104px);
+  padding: 2px 9px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-pill);
+  background: var(--yellow);
+  box-shadow: var(--shadow-xs);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.pe__coins small {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.pe__coins--guest {
+  background: var(--tab-idle);
+  box-shadow: none;
+  font-size: 11px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pe__stage {
@@ -210,7 +245,7 @@
   align-content: center;
   gap: 6px;
   min-width: 0;
-  min-height: 168px;
+  min-height: 172px;
   padding: 22px 4px 10px;
   border: var(--border);
   border-radius: var(--r-ctl);
@@ -299,7 +334,7 @@
   .pe__preview {
     gap: 8px;
     margin-bottom: 8px;
-    padding: 14px 10px 10px;
+    padding: 32px 10px 10px; /* เว้นแถวบนให้ป้าย PREVIEW กับชิป coin ไม่ทับวงอวตาร */
   }
 
   .pe__stage {
@@ -318,6 +353,16 @@
 
   .pe__hint {
     margin-top: 4px;
+  }
+
+  .pe__coins {
+    right: 8px;
+    padding: 1px 7px;
+    font-size: 13px;
+  }
+
+  .pe__coins--guest {
+    font-size: 10px;
   }
 
   .pe__sub {

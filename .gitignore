@@ -151,3 +151,6 @@ vite.config.ts.timestamp-*
 server/models/
 screenshots-*/
 .DS_Store
+
+# กระเป๋า coin (ไฟล์สำรองตอนไม่มี Upstash) ไม่ต้อง commit
+server/data/wallets.json*

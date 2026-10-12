@@ -12,6 +12,7 @@ const { hasBadWord } = require("./profanity");
 const authSession = require("./auth-session");
 const firebaseAuth = require("./firebase-auth");
 const leaderboard = require("./leaderboard");
+const wallet = require("./wallet");
 const ai = require("./ai");
 const aiDrawings = require("./ai-drawings");
 const teamGallery = require("./team-gallery");
@@ -94,6 +95,12 @@ function requestUser(req) {
   return authSession.readSession(token, AUTH_SESSION_SECRET);
 }
 
+// บัญชีของคนที่ล็อกอิน (ใช้ผูกคะแนน Leaderboard และกระเป๋า coin) = แฮชของ Firebase UID · guest = null
+// ไม่ส่งค่านี้ออกไปหา client เลย
+function accountIdOf(user) {
+  return user ? crypto.createHash("sha256").update(`jdi:score-account:v1:${user.sub}`).digest("hex") : null;
+}
+
 // ── ตัวตนผู้เล่นแบบถาวร (playerId) ──
 // socket.id เปลี่ยนทุกครั้งที่รีเฟรชหน้า จึงใช้เป็น "ตัวตน" ไม่ได้ ถ้าใช้ รีเฟรชทีเดียวก็กลายเป็นคนใหม่
 // client เก็บ "กุญแจลับ" (playerKey) ไว้ในแท็บ แล้วส่งมาตอนต่อ socket ทุกครั้ง (handshake.auth)
@@ -117,7 +124,7 @@ io.use((socket, next) => {
     : authSession.readSession(cookie, AUTH_SESSION_SECRET);
   // user === null = เล่นแบบ Guest (ไม่ได้ล็อกอิน หรือไม่ได้ตั้งค่า Firebase บน server เลย) — ไม่ปฏิเสธการเชื่อมต่อ
   socket.data.user = user;
-  socket.data.accountId = user ? crypto.createHash("sha256").update(`jdi:score-account:v1:${user.sub}`).digest("hex") : null;
+  socket.data.accountId = accountIdOf(user);
   socket.data.persistent = persistent;
   socket.data.pid = persistent
     ? crypto.createHash("sha256").update(user ? `${user.sub}:${key}` : key).digest("hex").slice(0, 20)
@@ -150,6 +157,15 @@ app.get("/api/auth/me", (req, res) => {
     enabled: AUTH_CONFIGURED,
     user: user ? { name: user.name, email: user.email } : null,
   });
+});
+
+// ยอด coin ของบัญชีที่ล็อกอินอยู่ (อ่านอย่างเดียว — ไม่มี API หรือ event ไหนให้ client เพิ่ม coin เอง)
+// guest (ไม่มี session) = 401 · server ให้ coin เองตอนเกิดเหตุการณ์จริงในเกม แล้วแจ้งผ่าน event wallet_update
+app.get("/api/wallet", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const balance = wallet.get(accountIdOf(requestUser(req)));
+  if (!balance) return res.status(401).json({ error: "LOGIN_REQUIRED" });
+  res.json(balance);
 });
 
 app.post("/api/auth/session", async (req, res) => {
@@ -582,6 +598,37 @@ function startTeamDrawing(room, word) {
 }
 
 // ทายในโหมดทีม — ทุกอย่างผ่านเลนของทีมผู้ทาย (แชทผิด/ถูก คำใบ้ ✅) ไม่รั่วไปทีมอื่น
+// ══════════════════════════════════════════════════════════════════════
+// Coin (เฟส B1) — server เป็นคนให้เองตอนเกิดเหตุการณ์จริง ไม่มี event ให้ client ขอเพิ่ม
+// ตัวเลขและเกณฑ์ทั้งหมดอยู่ใน shared/coinRules.json · ยอดเก็บใน wallet.js (Redis คีย์แยกจากคะแนน)
+// ══════════════════════════════════════════════════════════════════════
+const COIN_RULES = wallet.RULES;
+// ห้องที่คนน้อยเกินไปไม่ได้ coin (นับเฉพาะคนที่ยังต่ออยู่)
+const coinEligible = (room) => room.players.filter((p) => p.connected !== false).length >= COIN_RULES.minPlayers;
+
+// ประตูเดียวของการให้ coin: guest (ไม่มี accountId) · ห้องคนน้อย · ชนเพดานต่อวัน = ไม่ได้อะไร
+// ได้แล้วแจ้งเจ้าของคนเดียวผ่านห้องส่วนตัวชื่อ playerId (คนอื่นในห้องไม่เห็นยอดของเรา)
+function awardCoins(room, pid, reasons) {
+  if (!coinEligible(room)) return null;
+  const accountId = room.scoreAccountIds?.get(pid);
+  if (!accountId) return null;
+  const result = wallet.award(accountId, reasons);
+  if (result) io.to(pid).emit("wallet_update", result);
+  return result;
+}
+
+// ทายถูกหนึ่งครั้ง: คนทาย +guessCorrect (+firstGuess ถ้าเป็นคนแรกของตา) · คนวาด +drawerPerGuesser
+// drawerId = null เมื่อไม่มีคนวาดที่เป็นผู้เล่น (Multiplayer vs AI ช่วงทาย: AI เป็นคนวาด)
+// คนทายกับคนวาดเป็นบัญชีเดียวกัน (เปิดสองแท็บ) = ไม่ให้ทั้งคู่ กันทายภาพตัวเองปั๊ม coin
+function awardGuessCoins(room, guesserId, drawerId, first) {
+  const accounts = room.scoreAccountIds;
+  const guesserAccount = accounts?.get(guesserId);
+  if (drawerId && guesserAccount && guesserAccount === accounts.get(drawerId)) return;
+  awardCoins(room, guesserId, first ? ["guessCorrect", "firstGuess"] : ["guessCorrect"]);
+  // คนวาดได้เฉพาะเมื่อคนทายเป็นบัญชีที่ล็อกอิน: แท็บ guest ที่มาทายให้ ไม่ทำให้คนวาดได้ coin
+  if (drawerId && guesserAccount) awardCoins(room, drawerId, "drawerPerGuesser");
+}
+
 function handleTeamGuess(socket, room, player, text) {
   const lane = room.teams?.[player.team];
   if (!lane) return;
@@ -610,6 +657,8 @@ function handleTeamGuess(socket, room, player, text) {
     drawer.score += 50;
     room.roundGains[drawer.id] = (room.roundGains[drawer.id] || 0) + 50;
   }
+  // coin: คนแรกของตา = คนแรกของทีมที่ทายถูกก่อน (ทั้งห้องมีได้คนเดียวต่อตา)
+  awardGuessCoins(room, socket.data.pid, drawer?.id ?? null, lane.rank === 1 && lane.guessedIds.size === 1);
   socket.emit("chat_message", { ...msg, correct: true });
   socket.to(lane.code).emit("chat_message", { ...msg, text: "******", correct: true });
   io.to(lane.code).emit("correct_guess", { playerId: socket.data.pid, name: player.name, team: lane.team });
@@ -1376,6 +1425,8 @@ function endGame(room) {
       });
     }
   }
+  // coin: เล่นจนจบ + โบนัสเกมแรกของวัน (wallet.js ให้โบนัสวันละครั้ง และไม่นับเข้าเพดาน) — เฉพาะคนที่ยังอยู่และยังต่ออยู่
+  for (const p of room.players) if (p.connected !== false) awardCoins(room, p.id, ["finishGame", "dailyBonus"]);
   io.to(room.code).emit("game_end", endedPayload(room));
   io.to(room.code).emit("room_update", roomState(room));
 }
@@ -1628,7 +1679,7 @@ const IMAGE_RE = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
 const mpAi = require("./mp-ai")({
   io, rooms, ai, aiDrawings, wordBank: WORD_BANK, makeHint, normalize, roomState, endGame,
   snapshotGapMs: SNAPSHOT_MIN_GAP_MS, drawBudgetRatio: DRAW_BUDGET_RATIO, drawColor: DRAW_COLOR, drawSize: DRAW_SIZE,
-  rollChallenge, introMsFor, canvasPayload,
+  rollChallenge, introMsFor, canvasPayload, awardGuessCoins,
   closePrivateStroke: closeStroke,
   createPrivateBoard: (pid, challenge) => {
     const board = { code: pid, challenge, mpAiPrivate: true, penUsed: false };
@@ -2313,6 +2364,7 @@ io.on("connection", (socket) => {
         drawer.score += 50;
         room.roundGains[drawer.id] = (room.roundGains[drawer.id] || 0) + 50;
       }
+      awardGuessCoins(room, socket.data.pid, drawer?.id ?? null, room.guessedIds.size === 1); // coin (server ให้เอง)
 
       // ช่องโกง 3 (ไอเดียเรา): คนทายเห็นคำตัวเอง คนอื่นเห็นเป็น ******
       socket.emit("chat_message", { ...msg, correct: true });
@@ -2540,7 +2592,7 @@ io.on("connection", (socket) => {
 const PORT = Number(process.env.PORT) || 3000; // เทสเปิด server ตัวที่สองบนพอร์ตอื่นได้
 // โหลดคลังคำ/โมเดลของ Solo ให้เสร็จก่อนเปิดรับคน (ไม่ throw โหลดไม่ได้ก็ใช้สมองอื่น)
 // leaderboard.init() = โหลดคะแนนจาก Upstash ถ้าตั้ง env ไว้ (ไม่ตั้ง = ใช้ไฟล์ ไม่ทำอะไร) · ไม่ throw
-Promise.all([ai.init(), leaderboard.init()]).then(() => {
+Promise.all([ai.init(), leaderboard.init(), wallet.init()]).then(() => {
   aiDrawings.load();
   // ไม่ระบุ host = รับทุกการเชื่อมต่อ (เครื่องอื่นในวง Wi-Fi เดียวกันเข้าได้)
   // HOST=0.0.0.0 ไว้ให้ตอน deploy บน Render (ต้องฟังที่ 0.0.0.0 ตามที่ Render ต้องการ)
@@ -2584,7 +2636,7 @@ process.on("unhandledRejection", (reason) => {
 // ถูกสั่งปิด (deploy ใหม่/รีสตาร์ทบน Render ส่ง SIGTERM): เขียนคะแนนที่ค้างลง Upstash ให้เสร็จก่อนค่อยดับ จะได้ไม่เสียคะแนนล่าสุด
 for (const sig of ["SIGTERM", "SIGINT"]) {
   process.on(sig, async () => {
-    await leaderboard.flush();
+    await Promise.all([leaderboard.flush(), wallet.flush()]);
     process.exit(0);
   });
 }

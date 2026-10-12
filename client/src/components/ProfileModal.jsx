@@ -5,6 +5,17 @@ import { AvatarArt, Icon } from "./Icons";
 import { AVATARS } from "../avatars";
 import { NAME_MAX_LEN, randomName } from "../playerName";
 import { profileInputError } from "../profileValidation";
+import coinRules from "../../../shared/coinRules.json" with { type: "json" };
+
+// ข้อความ "ได้ coin ยังไง" (โชว์เมื่อชี้/แตะค้างที่ชิป) — ตัวเลขอ่านจากไฟล์เดียวกับที่ server ใช้
+const COIN_HELP = [
+  `ทายถูก +${coinRules.guessCorrect}`,
+  `ทายถูกคนแรก +${coinRules.firstGuess}`,
+  `มีคนทายภาพเราถูก +${coinRules.drawerPerGuesser} ต่อคน`,
+  `เล่นจนจบเกม +${coinRules.finishGame}`,
+  `จบเกมแรกของวัน +${coinRules.dailyBonus}`,
+  `ได้สูงสุดวันละ ${coinRules.dailyCap} (ไม่นับโบนัสรายวัน)`,
+].join(" · ");
 
 const ERROR_TEXT = {
   INVALID_NAME: "ชื่อผู้เล่นไม่ถูกต้อง",
@@ -23,7 +34,9 @@ const ERROR_TEXT = {
 // ข้อมูลที่บันทึกยังเป็น { name, avatar } ชุดเดิมผ่าน onSave (App ส่งต่อเป็น update_profile ตอนอยู่ในห้อง/Solo)
 // server เป็นคนตรวจชื่อจริง (รูปแบบ · ชื่อซ้ำ · คำไม่เหมาะสม) ฝั่งนี้แค่ช่วยเตือนก่อนส่ง
 // แท็บของแต่งตัว (กรอบ หมวก แว่น ฯลฯ) ยังไม่มี รอเฟส B ที่ต้องมี coin ฝั่ง server ก่อน
-export default function ProfileModal({ profile, onSave, onClose }) {
+// wallet = ยอดจาก server ของคนที่ล็อกอิน ({ coins, earnedToday, dailyCap }) · null = guest หรือยังโหลดไม่เสร็จ
+// canLogin = เกมเปิดระบบล็อกอินและเรายังไม่ได้ล็อกอิน → ชวนล็อกอินเพื่อเก็บ coin (guest ไม่ได้ coin)
+export default function ProfileModal({ profile, onSave, onClose, wallet = null, canLogin = false }) {
   const [name, setName] = useState(profile.name);
   const [avatar, setAvatar] = useState(profile.avatar);
   const [busy, setBusy] = useState(false);
@@ -95,6 +108,15 @@ export default function ProfileModal({ profile, onSave, onClose }) {
           <section className="pe__side" aria-label="พรีวิวโปรไฟล์">
             <div className="pe__preview">
               <span className="pe__tag">PREVIEW</span>
+              {wallet ? (
+                <span className="pe__coins" title={`${COIN_HELP} · วันนี้ได้แล้ว ${wallet.earnedToday}/${wallet.dailyCap}`} aria-label={`มี ${wallet.coins} coin`}>
+                  <Icon name="coin" size={16} /> <b>{wallet.coins.toLocaleString("en-US")}</b> <small>COIN</small>
+                </span>
+              ) : canLogin ? (
+                <span className="pe__coins pe__coins--guest" title={COIN_HELP}>
+                  <Icon name="coin" size={14} /> เข้าสู่ระบบเพื่อเก็บ coin
+                </span>
+              ) : null}
               <div className="pe__stage">
                 <AvatarArt index={avatar} size={132} label={`อวตาร ${AVATARS[avatar] ?? AVATARS[0]}`} />
               </div>

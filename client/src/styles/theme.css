@@ -5993,18 +5993,6 @@ select[class] {
 .modal__panel--team-over .team-podium__member { overflow-wrap: anywhere; }
 .modal__panel--team-over .team-standings { margin-top: 14px; }
 
-.game-over__coins {
-  margin: 14px 0;
-  padding: 10px 12px;
-  border: 2px solid #c69212;
-  border-radius: var(--r-sm);
-  background: #fff3c4;
-  color: var(--ink);
-}
-
-.game-over__coins-title { margin: 0; font-family: var(--font-head); font-size: 17px; line-height: 1.35; }
-.game-over__coins-note { margin: 4px 0 0; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
-.game-over__coins-note--guest { color: #9f3024; }
 
 .modal__panel--game-over .modal__actions,
 .modal__panel--solo-over .modal__actions {

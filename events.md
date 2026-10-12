@@ -943,6 +943,46 @@ AI พัง/ช้าเกินเพดาน (10 วิ) ตอนทาย
   - มีแกลเลอรีแล้ว: `gallery` (หน้าตาเดียวกับ `mpai_gallery`) · ช่วง `watch_end`: `watchEnd`
   - ช่วง `watch`/`watch_end`: `watch: { category, time, hintAt, hint, strokes, serverNow, solvedIds, myPoints, chat }` — ก่อนเฉลย **ไม่มีคำตอบ** · `chat` มีเฉพาะข้อความรอบปัจจุบันที่ผู้เล่นคนนั้นมีสิทธิ์เห็น
 
+## 11. Coin — กระเป๋า coin ต่อบัญชี (เฟส B1)
+เจ้าของ server: `server/wallet.js` + จุดให้ coin ใน `server/index.js` / `server/mp-ai.js` · เจ้าของหน้าจอ: หน้าแต่งโปรไฟล์
+
+**หลักการ (ห้ามละเมิด):** server เป็นคนให้ coin เองตอนเกิดเหตุการณ์จริงในเกม **ไม่มี event หรือ API ไหนให้ client ขอเพิ่ม/แก้ยอด**
+event ที่ client ส่งมาเองชื่ออะไรก็ตาม (`wallet_update` `add_coins` ฯลฯ) ไม่มี handler = ไม่เกิดอะไร · ช่อง `coins`/`accountId` ที่แนบมากับ event อื่นถูกเมิน
+บัญชี = `accountId` ที่ server สร้างจาก session ที่ล็อกอิน (ไม่ส่งออกไปหา client) · **guest ไม่มีบัญชี จึงไม่ได้ coin**
+ยอดเก็บใน Upstash Redis คีย์ `jdi:wallets:v1` (แยกจากคะแนน `jdi:scores:v1`) · ไม่ตั้ง Upstash = ไฟล์ `server/data/wallets.json` พร้อมคำเตือนตอนสตาร์ท
+
+### ตัวเลข (ทั้งหมดอยู่ใน `shared/coinRules.json` ไฟล์เดียว server กับหน้าเว็บอ่านร่วมกัน)
+| เหตุการณ์ (`reason`) | coin | ให้ตอนไหน |
+|---|---|---|
+| `guessCorrect` | +10 | ทายถูก (แข่งเดี่ยว · แข่งทีม · Multiplayer vs AI เฉพาะช่วงทาย) |
+| `firstGuess` | +5 | ทายถูกเป็นคนแรกของตา (โหมดทีม = คนแรกของทีมที่ทายถูกก่อน ทั้งห้องมีคนเดียวต่อตา) |
+| `drawerPerGuesser` | +3 ต่อคน | คนวาด เมื่อมี **ผู้เล่นที่ล็อกอิน** ทายภาพถูก (guest ทายถูก คนวาดไม่ได้) · mpai ไม่มี (AI เป็นคนวาด) |
+| `finishGame` | +5 | อยู่ในห้องและยังต่ออยู่ตอนเกมจบ (`game_end`) |
+| `dailyBonus` | +20 | ตอนจบเกมแรกของวัน (วันละครั้ง · **ไม่นับเข้าเพดาน**) |
+
+- **เพดานต่อวัน** `dailyCap` = 300 coin ต่อบัญชี (ไม่นับ `dailyBonus`) · ใกล้ถึงเพดานได้เท่าที่เหลือ · ถึงแล้วไม่ได้อีกจนขึ้นวันใหม่ · วันใหม่นับตามเวลาไทย (`timeZone`)
+- **ห้องคนน้อย** ผู้เล่นที่ยังต่ออยู่ในห้องน้อยกว่า `minPlayers` (2) = ไม่มีใครในห้องได้ coin (คะแนนในเกมยังได้ตามปกติ)
+- **บัญชีเดียวกันเป็นทั้งคนวาดและคนทาย** (เปิดสองแท็บ) = ไม่ได้ทั้งคู่
+- **Solo ไม่ได้ coin** (ทุกช่วง) · Multiplayer vs AI ช่วงวาดให้ AI ทายไม่ได้ coin
+
+### `GET /api/wallet` (HTTP · อ่านอย่างเดียว · ใช้ session cookie)
+```js
+// 200
+{ coins: 1250, earnedToday: 45, dailyCap: 300, dailyBonusClaimed: true }
+// 401 เมื่อไม่ได้ล็อกอิน (guest)
+{ error: "LOGIN_REQUIRED" }
+```
+`earnedToday` = ที่ได้วันนี้ไม่นับโบนัสรายวัน · ตอบพร้อม `Cache-Control: no-store` · ไม่มี method อื่น (POST/PUT/PATCH/DELETE ไม่มีผล)
+
+### `wallet_update` S → เจ้าของคนเดียว
+```js
+{ coins: 1265, earnedToday: 60, dailyCap: 300, dailyBonusClaimed: true, gains: [{ reason: "guessCorrect", amount: 10 }, { reason: "firstGuess", amount: 5 }] }
+```
+ส่งทุกครั้งที่ server ให้ coin (ผ่านห้องส่วนตัวชื่อ playerId — คนอื่นในห้องไม่เห็นยอดของเรา) · `gains` = เฉพาะรายการที่ได้จริงในครั้งนั้น (`amount` อาจน้อยกว่าตารางเมื่อใกล้เพดาน)
+ไม่ได้อะไรเลย (guest · ถึงเพดาน · ห้องคนน้อย) = **ไม่ส่ง event** · ไม่มี `accountId`/อีเมลใน payload
+
+---
+
 ## 9. Error
 
 ### `game_error` S → client คนเดียว
@@ -1047,3 +1087,4 @@ AI พัง/ช้าเกินเพดาน (10 วิ) ตอนทาย
 | 10 ต.ค. | Codex | **Mini Challenge ทุกตาเมื่อเปิด** — ใช้ชนิดจาก `shared/challengeRules.json`; ถ้ามีแบบพิเศษเปิด `none` ไม่เข้ากองสุ่มและไม่มีการข้ามตา; ไม่มีแบบพิเศษใช้ Standard; รายการว่างส่ง `INVALID_CHALLENGES` พร้อมข้อความไทย |
 | 10 ต.ค. | Codex | **รูปแบบวาดสี่แบบ** — ตามคำชี้แจงล่าสุด Standard เปิด/ปิดได้อิสระและเข้ากองสุ่มเท่ากับสามกติกาพิเศษ; ทุกตาสุ่มหนึ่งแบบจากที่เปิด ไม่มี gate โอกาสหรือการเลี่ยงแบบเดิม; ปิดหมดถูกปฏิเสธ |
 | 12 ต.ค. | Claude | **รวม `main` เข้า `feature/justdrawit-improvements`** — สองฝั่งเขียนกติกาทีมและ Mini Challenge ต่างกัน ผู้ใช้ตัดสินแล้ว: **โหมดทีมใช้กติกาของ main** (2–4 ทีม รหัส A–D · ทีมละ ≥ 2 คน ห่างกันไม่เกิน 1 คน · ความจุห้อง = `maxPlayers` · คะแนนทีม = ค่าเฉลี่ย · ชื่อทีมอยู่ใน `settings.teamNames` พร้อมตัวกรอง) จึง**ยกเลิก** ทีม E, `TEAM_FULL`, `TEAM_INCOMPLETE`, `TEAM_SETTINGS_INVALID`, `RoomState.teamNames` และ `NOT_READY` เฉพาะโหมดทีม ของแถว 6 ต.ค./10 ต.ค. ฝั่ง feature · **เก็บของ feature**: `round_end.gallery` + `team_gallery_close` และ `game_end.teamRanking` ที่มี `name`/`members` (ค่า `score` เป็นค่าเฉลี่ย · `winner` เป็น `null` เมื่อคะแนนสูงสุดเสมอกัน) · **Mini Challenge ใช้กติกาของ feature** (ทุกตาสุ่มหนึ่งแบบจากที่เปิด โอกาสเท่ากันรวม Standard · รายการว่าง = `INVALID_CHALLENGES`) จึงยกเลิกจังหวะ "ตาแรกไม่มี · ~1/3 · ไม่ติดกัน" ของแถว 5 ต.ค. · โหมด `mpai`, โปรไฟล์, Firebase login (ไม่บังคับ), กันโกงเขียนตัวหนังสือ คงเดิมทั้งหมด |
+| 13 ต.ค. | Claude | **Coin เฟส B1 (หัวข้อ 11 ใหม่)** — `GET /api/wallet` (อ่านยอด · guest 401 `LOGIN_REQUIRED`) · event ใหม่ `wallet_update` S→เจ้าของคนเดียว · server ให้ coin เองตอนทายถูก/จบเกม ตามตัวเลขใน `shared/coinRules.json` (ทายถูก +10 · คนแรก +5 · คนวาด +3 ต่อคนทายที่ล็อกอิน · จบเกม +5 · จบเกมแรกของวัน +20) · เพดาน 300/วัน (ไม่นับโบนัสรายวัน) · ห้องต้องมีคนต่ออยู่ ≥ 2 · guest และ Solo ไม่ได้ coin · ไม่มี event/API ให้ client เพิ่ม coin · event/รูปร่างข้อมูลเดิมไม่เปลี่ยน |

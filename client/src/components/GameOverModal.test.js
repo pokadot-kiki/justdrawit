@@ -13,7 +13,7 @@ const stubs = {
   "./Icons": "import React from 'react'; export function Icon({ name }) { return React.createElement('i', { 'data-icon': name }) }",
   "./Avatar": "import React from 'react'; export default function Avatar({ index }) { return React.createElement('i', { 'data-avatar': index }) }",
   "./YouTag": "import React from 'react'; export default function YouTag() { return React.createElement('span', { className: 'you-tag' }, 'คุณ') }",
-  "../prefs": "export const getUserAuth = () => null; export const addCoins = () => {}",
+  
 };
 const vite = await createServer({
   configFile: false,

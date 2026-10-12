@@ -1,0 +1,10 @@
+{
+  "guessCorrect": 10,
+  "firstGuess": 5,
+  "drawerPerGuesser": 3,
+  "finishGame": 5,
+  "dailyBonus": 20,
+  "dailyCap": 300,
+  "minPlayers": 2,
+  "timeZone": "Asia/Bangkok"
+}

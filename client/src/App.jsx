@@ -50,6 +50,9 @@ export default function App() {
 
   const [connected, setConnected] = useState(socket.connected);
   const [auth, setAuth] = useState({ loading: true, enabled: false, user: null, error: null });
+  // ยอด coin ของบัญชีที่ล็อกอิน (null = guest หรือยังไม่รู้) — มาจาก server เท่านั้น: GET /api/wallet ตอนล็อกอิน/เปิดหน้าแต่งโปรไฟล์
+  // และ event wallet_update ทุกครั้งที่ server ให้ coin · หน้าเว็บไม่มีทางเพิ่ม coin เอง
+  const [wallet, setWallet] = useState(null);
   const [room, setRoom] = useState(null); // RoomState ก้อนล่าสุดจาก server
   const [me, setMe] = useState(null); // { playerId, name, avatar, code } ของเครื่องนี้
   const [inGame, setInGame] = useState(false); // อยู่ในห้องแล้วเกมเริ่มหรือยัง (ห้องรอ ↔ หน้าเกม)
@@ -86,6 +89,25 @@ export default function App() {
         if (active) setAuth({ loading: false, enabled: false, user: null, error: null });
       });
     return () => { active = false; };
+  }, []);
+
+  const loggedIn = Boolean(auth.user);
+  useEffect(() => {
+    if (!loggedIn) return setWallet(null);
+    let active = true;
+    fetch("/api/wallet", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((result) => { if (active && result) setWallet(result); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [loggedIn, showProfile]);
+
+  useEffect(() => {
+    const onWallet = (data) => {
+      if (Number.isFinite(data?.coins)) setWallet({ coins: data.coins, earnedToday: data.earnedToday, dailyCap: data.dailyCap, dailyBonusClaimed: data.dailyBonusClaimed });
+    };
+    socket.on("wallet_update", onWallet);
+    return () => socket.off("wallet_update", onWallet);
   }, []);
 
   useEffect(() => {
@@ -440,7 +462,7 @@ export default function App() {
       {/* หลุดจาก server ระหว่างอยู่ในห้อง: บอกให้รู้ว่ากำลังต่อใหม่ (ต่อติดแล้ว rejoin เองโดยอัตโนมัติ) */}
       {roomReady && !connected && <div className="reconnect-note">การเชื่อมต่อหลุด กำลังต่อใหม่...</div>}
 
-      {showProfile && <ProfileModal profile={roomReady ? { name: me.name, avatar: me.avatar } : profile} onSave={saveProfile} onClose={() => setShowProfile(false)} />}
+      {showProfile && <ProfileModal profile={roomReady ? { name: me.name, avatar: me.avatar } : profile} onSave={saveProfile} onClose={() => setShowProfile(false)} wallet={loggedIn ? wallet : null} canLogin={auth.enabled && !loggedIn} />}
 
       {/* key ผูกกับ id ของ toast เพื่อให้แสดงข้อความซ้ำแล้วเล่นอนิเมชันใหม่ */}
       <Toast key={toast?.id ?? "none"} toast={toast} />

@@ -8,6 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import crypto from "node:crypto";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const OUT = process.argv[2] ? path.resolve(process.argv[2]) : fs.mkdtempSync(path.join(os.tmpdir(), "jdi-browser-shots-"));
@@ -26,9 +27,18 @@ const bad = JSON.parse(fs.readFileSync(path.join(ROOT, "server/data/badwords.jso
 const BAD_WORD = (Array.isArray(bad) ? bad : Object.values(bad).flat()).find((w) => typeof w === "string" && w.length >= 3 && w.length <= 12);
 
 const scores = path.join(os.tmpdir(), `jdi-profile-scores-${process.pid}.json`);
+// กระเป๋า coin ของ server ทดสอบ (ไฟล์ชั่วคราว): บัญชีของโหมดเทส (sub "test-firebase-user") มี 1,250 coin ไว้ตรวจการแสดงผล
+const wallets = path.join(os.tmpdir(), `jdi-profile-wallets-${process.pid}.json`);
+const testAccount = crypto.createHash("sha256").update("jdi:score-account:v1:test-firebase-user").digest("hex");
+fs.writeFileSync(wallets, JSON.stringify({ [testAccount]: { coins: 1250, day: "", earnedToday: 0, bonusDay: "" } }));
+// คีย์/secret ด้านล่างเป็นของปลอมสำหรับเทส — ตั้งไว้เพื่อไม่ให้ server ทดสอบอ่านค่าจริงจาก server/.env และเปิดปุ่มเข้าสู่ระบบให้เห็นข้อความชวนล็อกอิน
 const startServer = (port, extra = {}) => spawn(process.execPath, ["index.js"], {
   cwd: path.join(ROOT, "server"), stdio: "ignore",
-  env: { ...process.env, PORT: String(port), SCORES_FILE: scores, CHALLENGE_INTRO_MS: "0", ...extra },
+  env: {
+    ...process.env, PORT: String(port), SCORES_FILE: scores, WALLET_FILE: wallets, CHALLENGE_INTRO_MS: "0",
+    FIREBASE_API_KEY: "test-not-a-real-key", AUTH_SESSION_SECRET: "profile-test-secret-not-real-0123456789abcdef",
+    UPSTASH_REDIS_REST_URL: "", UPSTASH_REDIS_REST_TOKEN: "", ANTHROPIC_API_KEY: "", ...extra,
+  },
 });
 const servers = [startServer(PORT_GUEST), startServer(PORT_USER, { NODE_ENV: "test", JDI_TEST_AUTH_BYPASS: "1" })];
 const chrome = spawn(CHROME, ["--headless=new", "--mute-audio", "--disable-gpu", `--remote-debugging-port=${DBG}`, `--user-data-dir=${PROFILE}`, "about:blank"], { stdio: "ignore" });
@@ -73,6 +83,9 @@ try {
       wide:[...document.querySelectorAll('body *')].filter(e=>{const r=R(e);return r.width>0&&(r.right>innerWidth+1||r.left<-1)&&e.closest('.modal')}).slice(0,6).map(e=>e.tagName.toLowerCase()+'.'+String(e.className.baseVal??e.className).split(' ')[0]+':'+Math.round(R(e).right)),
       badgeIcon:Math.round(R(p.querySelector('.pe__badge svg')).width),ribbonHitsClose:R(p.querySelector('.pe__ribbon .ribbon')).right>R(p.querySelector('.pe__close')).left-2,ribbonLeft:Math.round(R(p.querySelector('.pe__ribbon .ribbon')).left-pr.left),panelScrollY:p.scrollHeight>p.clientHeight+1,
       gapUnderCards:Math.round(R(p.querySelector('.pe__main')).bottom-R(cards.at(-1)).bottom),avatarInStage:(()=>{const a=R(p.querySelector('.pe__stage .avatar-art')),st=R(p.querySelector('.pe__stage'));return a.left>=st.left&&a.right<=st.right&&a.top>=st.top&&a.bottom<=st.bottom})(),
+      coins:(()=>{const c=p.querySelector('.pe__coins');if(!c)return null;const r=R(c),card=R(p.querySelector('.pe__preview')),st=R(p.querySelector('.pe__stage')),tag=R(p.querySelector('.pe__tag'));
+        const hit=(a,b)=>Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1;
+        return {text:c.textContent.replace(/\s+/g,' ').trim(),guest:c.classList.contains('pe__coins--guest'),inCard:r.left>=card.left&&r.right<=card.right&&r.top>=card.top,hitsStage:hit(r,st),hitsTag:hit(r,tag),clipped:c.scrollWidth>c.clientWidth+1}})(),
       externalImgs:[...document.querySelectorAll('img')].filter(i=>/googleusercontent|http/.test(i.src)&&!i.src.startsWith(location.origin)).length}})()`;
 
   // ───────── 1) ไม่ได้ล็อกอิน: หน้าแรก ─────────
@@ -104,6 +117,7 @@ try {
     ck(`${w}×${h} ริบบิ้นไม่ชนปุ่มปิดและไม่ถูกตัดขอบซ้าย · ไอคอนในป้าย "เลือกอยู่" ขนาดปกติ (${m?.badgeIcon}px) · อวตารอยู่ในวงพรีวิว`, m && !m.ribbonHitsClose && m.ribbonLeft >= 4 && m.badgeIcon <= 14 && m.avatarInStage, JSON.stringify([m?.ribbonHitsClose, m?.ribbonLeft, m?.badgeIcon, m?.avatarInStage]));
     if (h >= 800) ck(`${w}×${h} เห็นครบทั้งหน้าต่างโดยไม่ต้องเลื่อน`, m && !m.panelScrollY, JSON.stringify(m));
     if (w >= 721) ck(`${w}×${h} คอลัมน์ขวาไม่เหลือที่ว่างโหว่ใต้การ์ด (${m?.gapUnderCards}px)`, m && m.gapUnderCards <= 40, String(m?.gapUnderCards));
+    ck(`${w}×${h} ไม่ได้ล็อกอิน: ชิปชวนล็อกอินเพื่อเก็บ coin อยู่ในการ์ดพรีวิว ไม่ทับวงอวตาร/ป้าย PREVIEW ("${m?.coins?.text}")`, m?.coins && m.coins.guest && m.coins.text.includes("เข้าสู่ระบบเพื่อเก็บ coin") && m.coins.inCard && !m.coins.hitsStage && !m.coins.hitsTag && !m.coins.clipped, JSON.stringify(m?.coins));
     await shot(`profile-${label}`);
   }
   ck("ไม่มีรูปจากเว็บภายนอก (googleusercontent ฯลฯ)", (await ev(MEASURE)).externalImgs === 0);
@@ -175,7 +189,20 @@ try {
   await sleep(300);
   const u = await ev(MEASURE);
   ck("ล็อกอินแล้ว: เลย์เอาต์เหมือนเดิม (สองคอลัมน์ · 6 อวตาร · ไม่ล้น)", u && u.twoCol && u.cards === 6 && u.spill.length === 0 && u.scrollW <= u.vw + 1, JSON.stringify(u));
+  ck(`ล็อกอินแล้ว: ชิปแสดงยอด coin จาก server ("${u?.coins?.text}")`, u?.coins && !u.coins.guest && u.coins.text === "1,250 COIN" && u.coins.inCard && !u.coins.hitsStage && !u.coins.hitsTag, JSON.stringify(u?.coins));
   await shot("profile-logged-in");
+  for (const [w, h] of [[390, 844], [320, 640]]) {
+    await size(w, h); await sleep(300);
+    const mu = await ev(MEASURE);
+    ck(`ล็อกอินแล้ว ${w}×${h}: ชิป coin ไม่ล้น ไม่ทับวงอวตาร/ป้าย PREVIEW`, mu?.coins && mu.coins.inCard && !mu.coins.hitsStage && !mu.coins.hitsTag && mu.wide.length === 0 && mu.spill.length === 0, JSON.stringify(mu?.coins));
+    if (w === 390) { ck("ล็อกอินแล้ว 390×844: ยังเห็นครบโดยไม่ต้องเลื่อน", mu && !mu.panelScrollY); await shot("profile-logged-in-390"); }
+  }
+  await size(1440, 900); await sleep(200);
+  // client แก้ยอดเองไม่ได้: ลองเขียน localStorage แบบระบบเหรียญเดิม แล้วเปิดหน้าใหม่ ยอดต้องยังมาจาก server
+  await ev(`localStorage.setItem("jdi.userCoins","999999");localStorage.setItem("jdi.userAuth",JSON.stringify({username:"x"}));localStorage.setItem("jdi.userCoins.x","999999")`);
+  await click(".pe__close"); await sleep(200); await click("#player-name"); await waitFor(modalOpen); await sleep(400);
+  ck("แก้ localStorage (ระบบเหรียญเดิม) แล้วยอดที่แสดงไม่เปลี่ยน — ยอดมาจาก server", (await ev(MEASURE)).coins?.text === "1,250 COIN");
+  await ev(`localStorage.removeItem("jdi.userAuth");localStorage.removeItem("jdi.userCoins");localStorage.removeItem("jdi.userCoins.x")`);
   await ev("document.querySelectorAll('.profile-avatars__item')[2].click()");
   await type("#edit-profile-name", "ล็อกอินแล้ว"); await click(".pe__actions .btn--primary"); await sleep(400);
   ck("ล็อกอินแล้ว: บันทึกได้ ชื่อใหม่ขึ้นที่หน้าแรก", !(await ev(`!!${modalOpen}`)) && (await ev("document.querySelector('#player-name').textContent.trim()")) === "ล็อกอินแล้ว");
@@ -197,7 +224,7 @@ try {
   for (const s of servers) s.kill();
   await sleep(900);
   try { fs.rmSync(PROFILE, { recursive: true, force: true }); } catch {}
-  try { fs.rmSync(scores, { force: true }); } catch {}
+  try { fs.rmSync(scores, { force: true }); fs.rmSync(wallets, { force: true }); } catch {}
   console.log(`สรุป [profile]: ผ่าน ${pass} · ไม่ผ่าน ${fail}\nภาพหน้าจอ: ${OUT}`);
   process.exit(fail ? 1 : 0);
 }
