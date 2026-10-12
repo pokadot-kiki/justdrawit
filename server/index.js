@@ -2559,7 +2559,14 @@ Promise.all([ai.init(), leaderboard.init()]).then(() => {
       console.log("ไม่พบ IP ในวงแลน (ยังไม่ได้ต่อ Wi-Fi?) — เล่นเครื่องเดียวหรือใช้ npm run share ก็ได้");
     }
     if (!HAS_CLIENT) console.log("⚠️  ยังไม่ได้ build หน้าเว็บ (client/dist) — รัน npm run setup ก่อน");
-    console.log(`AI Solo: โหมด ${ai.aiMode()}`);
+    // บอกชัดว่าใช้โมเดลตัวไหนกับโหมดอะไร (Solo กับ Multiplayer vs AI ใช้ตัวเดียวกัน)
+    const st = ai.status();
+    const brain = st.model
+      ? `โมเดลในเครื่อง ${st.model.format} (${st.model.title}) จาก ${path.relative(path.join(__dirname, ".."), st.model.dir).split(path.sep).join("/")}`
+      : st.solo === "claude" ? "Claude (ANTHROPIC_API_KEY)" : "ไม่มีโมเดลและไม่มี API key";
+    console.log(`AI ทายภาพ: ${brain}`);
+    console.log(`AI Solo: โหมด ${st.solo}`);
+    console.log(`AI Multiplayer vs AI: ${st.mpai === "unavailable" ? "ใช้ไม่ได้ (ต้องมี AI จริง — รัน cd server && npm run get-model)" : `โหมด ${st.mpai}`}`);
   });
 });
 

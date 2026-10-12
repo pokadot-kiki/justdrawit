@@ -1881,13 +1881,26 @@ async function main() {
     check("คำไทยไม่ซ้ำกันเลย (ซ้ำ = กำกวม)", new Set(all.map((w) => w.word)).size, all.length);
     check("ชื่ออังกฤษไม่ซ้ำกันเลย", new Set(all.map((w) => w.en)).size, all.length);
 
-    const modelDir = path.join(SERVER_DIR, "models", "quickdraw345");
-    const hasModel = fs.existsSync(path.join(modelDir, "model.onnx")) && fs.existsSync(path.join(modelDir, "labels.txt"));
-    if (!hasModel) {
-      console.log("   ⚠️  ข้ามเทสที่ต้องใช้โมเดล: ยังไม่มี QuickDraw 345 ONNX และ labels.txt");
+    // โมเดลสองตัวตามลำดับของ ai-model.js: quickdraw345 (ตัวใหม่) ก่อน ไม่มีก็ mobilevit (ตัวที่ get-model โหลดให้)
+    const qdDir = path.join(SERVER_DIR, "models", "quickdraw345");
+    const mvDir = path.join(SERVER_DIR, "models");
+    const hasQd = fs.existsSync(path.join(qdDir, "model.onnx")) && fs.existsSync(path.join(qdDir, "labels.txt"));
+    const hasMv = fs.existsSync(path.join(mvDir, "model.onnx")) && fs.existsSync(path.join(mvDir, "config.json"));
+    if (!hasQd && !hasMv) {
+      console.log("   ⚠️  ข้ามเทสที่ต้องใช้โมเดล: ไม่มีทั้ง quickdraw345 และ MobileViT (รัน npm run get-model)");
       return;
     }
-    const labels = new Set(fs.readFileSync(path.join(modelDir, "labels.txt"), "utf8").trimEnd().split(/\r?\n/));
+    const modelDir = hasQd ? qdDir : mvDir;
+    const modelFormat = hasQd ? "quickdraw345" : "mobilevit";
+    const labelFile = hasQd ? "labels.txt" : "config.json";
+    const labels = hasQd
+      ? new Set(fs.readFileSync(path.join(qdDir, "labels.txt"), "utf8").trimEnd().split(/\r?\n/))
+      : new Set(Object.values(JSON.parse(fs.readFileSync(path.join(mvDir, "config.json"), "utf8")).id2label));
+    if (hasMv) {
+      // คำที่ Solo และ Multiplayer vs AI สุ่มให้วาด (ai-words.json ชุดเดียวกัน) โมเดลเก่าต้องรู้จักครบด้วย เพราะเป็นตัวสำรอง
+      const mvLabels = new Set(Object.values(JSON.parse(fs.readFileSync(path.join(mvDir, "config.json"), "utf8")).id2label));
+      check("ทุกชื่ออังกฤษใน ai-words.json โมเดล MobileViT (ตัวสำรอง) รู้จักครบ", all.filter((w) => !mvLabels.has(w.en)).map((w) => w.en), []);
+    }
     check("ทุกชื่ออังกฤษใน ai-words.json เป็นคลาสที่โมเดลรู้จริง", all.filter((w) => !labels.has(w.en)).map((w) => w.en), []);
 
     // วาดรูปตัวอย่างลงกระดานขนาด 512×384 พื้นขาว (เหมือนที่ client ส่ง) · sw = ความหนาเส้น · color = สีเส้น
@@ -1904,6 +1917,25 @@ async function main() {
     await aiLib.init();
     try {
       check("โหลดโมเดลติด → aiMode เป็น model", aiLib.aiMode(), "model");
+      const st = aiLib.status();
+      check("มีโมเดลอยู่: Solo และ Multiplayer vs AI ใช้โมเดลตัวเดียวกัน ไม่มีโหมดไหนถอยไป mock", [st.solo, st.mpai, st.model?.format], ["model", "model", modelFormat]);
+      if (hasMv) {
+        const aiModelLib = require("../ai-model");
+        const halfDir = fs.mkdtempSync(path.join(os.tmpdir(), "jdi-half-model-"));
+        fs.writeFileSync(path.join(halfDir, "labels.txt"), Array.from({ length: 345 }, (_, i) => `c${i}`).join("\n"));
+        fs.writeFileSync(path.join(halfDir, "model.onnx"), "ไม่ใช่โมเดล");
+        const origWarn = console.warn; console.warn = () => {};
+        let ok, picked2, okNone;
+        try {
+          ok = await aiModelLib.load([{ format: "quickdraw345", dir: halfDir }, { format: "mobilevit", dir: mvDir }]);
+          picked2 = aiModelLib.info()?.format;
+          okNone = await aiModelLib.load([{ format: "quickdraw345", dir: path.join(halfDir, "none") }]);
+        } finally { console.warn = origWarn; fs.rmSync(halfDir, { recursive: true, force: true }); }
+        check("quickdraw345 เสีย → ถอยไปใช้ MobileViT (ไม่ตกไปโหมดจำลอง)", [ok, picked2], [true, "mobilevit"]);
+        check("ไม่มีโมเดลสักตัว → load คืน false ไม่ throw", okNone, false);
+        await aiLib.init(); // โหลดชุดปกติกลับมาให้เทสข้างล่างใช้ต่อ
+        check("โหลดกลับตามลำดับปกติ", aiLib.status().model?.format, modelFormat);
+      }
       const bank = aiLib.soloWords({});
       const picked = Array.from({ length: 200 }, () => aiLib.pickWord(bank, "easy"));
       const easySet = new Set(words.easy.map((w) => w.word));
@@ -1950,7 +1982,8 @@ async function main() {
       process.env.AI_MOCK_CHANCE = "1";
       const broken = await aiLib.guessImage({ image: "data:image/png;base64,AAAA", word: "แมว", allWords: ["แมว"], elapsed: 1, time: 60, wrong: [] });
       check("โมเดลพังกลางทาง → ใช้โหมดจำลองต่อ ได้คำตอบปกติ", [broken.guess, broken.correct], ["แมว", true]);
-      check("และ aiMode บอกตามจริงว่าตอนนี้เป็น mock", aiLib.aiMode(), "mock");
+      // ai.js ถอยไปจำลอง "เฉพาะคำขอที่พัง" ไม่ปิดโมเดลทั้งตัว (ภาพเสียภาพเดียวต้องไม่ทำให้ทั้ง server ตกไปโหมดจำลอง)
+      check("ภาพเสียภาพเดียวไม่ปิดโมเดล: คำขอถัดไปยังเป็นโหมด model", aiLib.aiMode(), "model");
       delete process.env.AI_MOCK_CHANCE;
     } finally {
       savedMode === undefined ? delete process.env.AI_MODE : (process.env.AI_MODE = savedMode);
@@ -1958,7 +1991,7 @@ async function main() {
 
     // ผ่าน socket จริงบน server ตัวที่สอง: (ก) มีโมเดล (ข) ไฟล์โมเดลเสีย (ค) ไม่มีไฟล์โมเดล — ต้องเล่นได้ทุกกรณี
     const brokenDir = fs.mkdtempSync(path.join(os.tmpdir(), "jdi-broken-model-"));
-    fs.copyFileSync(path.join(modelDir, "labels.txt"), path.join(brokenDir, "labels.txt"));
+    fs.copyFileSync(path.join(modelDir, labelFile), path.join(brokenDir, labelFile));
     fs.writeFileSync(path.join(brokenDir, "model.onnx"), "ไม่ใช่โมเดล");
     for (const [label, dir, expected] of [["มีโมเดล", modelDir, "model"], ["ไฟล์โมเดลเสีย", brokenDir, "mock"], ["ไม่มีโมเดล", path.join(os.tmpdir(), "jdi-no-model"), "mock"]]) {
       const env = { ...process.env, SCORES_FILE, PORT: ALT_PORT, AI_MODEL_DIR: dir, AI_NEXT_DELAY_MS: "300" };
@@ -1988,6 +2021,56 @@ async function main() {
       }
     }
     fs.rmSync(brokenDir, { recursive: true, force: true });
+
+    // server จริงแบบที่ผู้ใช้เปิด (ไม่ตั้ง AI_MODEL_DIR / AI_MODE / API key): มีโมเดลในเครื่องแล้ว
+    // ทั้ง Solo และ Multiplayer vs AI ต้องใช้โมเดลนั้น — ล้มถ้าโหมดใดถอยไป mock หรือ mpai ตอบ AI_UNAVAILABLE
+    {
+      const env = { ...process.env, SCORES_FILE, PORT: ALT_PORT, AI_NEXT_DELAY_MS: "300", CHALLENGE_INTRO_MS: "0" };
+      for (const k of ["AI_MODE", "AI_MODEL_DIR", "AI_MOCK_CHANCE", "AI_TIME_OVERRIDE", "ANTHROPIC_API_KEY", "MPAI_TIME_OVERRIDE"]) delete env[k];
+      const child4 = spawn(process.execPath, ["index.js"], { cwd: SERVER_DIR, env });
+      let bootLog = "";
+      child4.stdout.on("data", (b) => { bootLog += b; });
+      child4.stderr.on("data", () => {});
+      const socks4 = [];
+      try {
+        let up = false;
+        for (let i = 0; i < 150 && !up; i++) {
+          up = await fetch(`http://localhost:${ALT_PORT}/test.html`).then((r) => r.ok).catch(() => false);
+          if (!up) await new Promise((r) => setTimeout(r, 100));
+        }
+        checkOk("[ค่าเริ่มต้น] server เปิดได้", up);
+        await new Promise((r) => setTimeout(r, 200));
+        check("[ค่าเริ่มต้น] บรรทัดสตาร์ทบอกโมเดลและโหมดของทั้งสองโหมด",
+          [bootLog.includes(`AI ทายภาพ: โมเดลในเครื่อง ${modelFormat} `), bootLog.includes("AI Solo: โหมด model"), bootLog.includes("AI Multiplayer vs AI: โหมด model")],
+          [true, true, true]);
+        const open = async () => { const sk = io(`http://localhost:${ALT_PORT}`, { transports: ["websocket"] }); socks4.push(sk); const P = track(sk); await new Promise((r) => sk.on("connect", r)); return P; };
+        const S = await open();
+        S.socket.emit("ai_start", { name: "DefaultSolo" });
+        check("[ค่าเริ่มต้น] Solo ใช้โมเดล (ไม่ใช่ mock)", (await S.wait("ai_round_start")).aiMode, "model");
+        S.socket.emit("leave_room");
+        const MH = await open(), MG = await open();
+        const made = await emitAck(MH.socket, "create_room", { name: "MpHost", avatar: 0, mode: "mpai", rounds: 1, drawTime: 30, challenges: ["none"] });
+        await emitAck(MG.socket, "join_room", { code: made.code, name: "MpGuest", avatar: 1 });
+        MG.socket.emit("set_ready", { ready: true });
+        await MH.wait("room_update", (r) => r.players.some((p) => p.ready));
+        MH.socket.emit("start_game");
+        await MH.wait("mpai_draw_start", null, 8000);
+        const circle = Array.from({ length: 40 }, (_, i) => ({ x: 0.5 + 0.25 * Math.cos((i / 39) * 2 * Math.PI), y: 0.5 + 0.3 * Math.sin((i / 39) * 2 * Math.PI) }));
+        MH.socket.emit("stroke_start", { x: circle[0].x, y: circle[0].y, color: "#000000", size: 6, tool: "pen" });
+        MH.socket.emit("stroke_points", { points: circle.slice(1) });
+        MH.socket.emit("stroke_end", {});
+        await new Promise((r) => setTimeout(r, 300));
+        MH.socket.emit("mpai_snapshot");
+        const guessed = await MH.tryWait("mpai_ai_guess", null, 8000);
+        const aiErr = MH.dump().filter((e) => e.name === "game_error" && e.args[0]?.code === "AI_UNAVAILABLE").length;
+        check("[ค่าเริ่มต้น] Multiplayer vs AI: โมเดลทายภาพได้จริง ไม่ตอบ AI_UNAVAILABLE", [typeof guessed?.guess === "string" && guessed.guess.length > 0, aiErr], [true, 0]);
+        checkOk("[ค่าเริ่มต้น] คำที่ AI ทายเป็นคำไทยใน ai-words.json", all.some((w) => w.word === guessed?.guess));
+      } finally {
+        for (const sk of socks4) sk.disconnect();
+        child4.kill();
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
   });
 
   await runPart("26. Solo ช่วง AI วาด-เราทาย — ไม่มีคำตอบหลุด · ทายถูก/ผิด/หมดเวลา · ไม่มีไฟล์ภาพแล้วข้ามช่วงสอง", async () => {

@@ -132,16 +132,30 @@ cd server && npm run seed     # ใส่คะแนนตัวอย่าง
 ตัวเลือกเสริมใน `server/.env` (คัดลอกจาก `server/.env.example`): `ANTHROPIC_API_KEY` ให้ Solo ใช้ Claude ดูภาพแทนโมเดลในเครื่อง (ไม่จำเป็น) ·
 ตัวแปรสภาพแวดล้อม `PORT`, `ALLOWED_ORIGINS` (เพิ่มโดเมนที่อนุญาตให้ต่อ socket, คั่นด้วยจุลภาค), `HOST`, `FORCE_HTTPS=1`, `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` (เก็บ Leaderboard ใน Upstash แทนไฟล์)
 
-## โมเดล AI ของโหมด Solo (ฟรี รันในเครื่อง ไม่ต้องมี API key)
+## โมเดล AI ของโหมด Solo และ Multiplayer vs AI (ฟรี รันในเครื่อง ไม่ต้องมี API key)
 
-server รันโมเดลจำแนกภาพวาดที่ฝึกจากชุดข้อมูล Quick, Draw! ด้วย `onnxruntime-node` (หน้าเว็บไม่ได้ตัดสินอะไร) ไฟล์ ~20 MB **ไม่ได้ commit**
-ดาวน์โหลดโดย `npm run setup` (หรือ `cd server && npm run get-model` ซึ่งเช็คว่าโมเดลเป็นสัญญา MIT ก่อนทุกครั้ง ไม่ใช่ = หยุด) ตอนสตาร์ทจะพิมพ์ `AI Solo: โหมด model` ถ้าโหลดติด
-ลำดับสมอง: **โมเดลในเครื่อง → Claude API (ถ้ามี key) → โหมดจำลอง** โหลดไม่ได้หรือพังกลางทางก็ถอยไปตัวถัดไป server ไม่ล่ม
+server รันโมเดลจำแนกภาพวาดที่ฝึกจากชุดข้อมูล Quick, Draw! ด้วย `onnxruntime-node` (หน้าเว็บไม่ได้ตัดสินอะไร) ไฟล์โมเดล **ไม่ได้ commit**
+**สองโหมดใช้โมเดลตัวเดียวกันเสมอ** เลือกตามลำดับนี้ (`server/ai-model.js`):
+
+1. `server/models/quickdraw345/` (`model.onnx` + `labels.txt`) — QuickDraw 345 SE-ResNet · **ไม่มีสคริปต์ดาวน์โหลด** ต้องแปลงจาก TFLite เป็น ONNX เองแล้ววางไฟล์เอง (ไม่มีก็ข้ามไปข้อ 2)
+2. `server/models/` (`model.onnx` + `config.json`) — MobileViT ~20 MB ที่ `npm run setup` ดาวน์โหลดให้ (หรือ `cd server && npm run get-model` ซึ่งเช็คว่าโมเดลเป็นสัญญา MIT ก่อนทุกครั้ง ไม่ใช่ = หยุด)
+
+ตัวแรกไม่มีหรือไฟล์เสีย → ใช้ตัวที่สอง ตอนสตาร์ทจะพิมพ์ให้เห็นว่าใช้ตัวไหนกับโหมดอะไร เช่น
+
+```
+AI ทายภาพ: โมเดลในเครื่อง mobilevit (Quick, Draw! MobileViT) จาก server/models
+AI Solo: โหมด model
+AI Multiplayer vs AI: โหมด model
+```
+
+ลำดับสมองของ **Solo**: โมเดลในเครื่อง → Claude API (ถ้ามี key) → โหมดจำลอง โหลดไม่ได้หรือพังกลางทางก็ถอยไปตัวถัดไป server ไม่ล่ม
+**Multiplayer vs AI ไม่ใช้โหมดจำลอง** (คะแนนคิดจากความมั่นใจของ AI จริง) ถ้าไม่มีทั้งโมเดลและ API key บรรทัดสตาร์ทจะขึ้น `AI Multiplayer vs AI: ใช้ไม่ได้` และในเกมจะขึ้น "AI ตอบไม่ได้ในตอนนี้" — แก้ด้วย `cd server && npm run get-model`
 ช่วงสองของ Solo เล่นซ้ำภาพคนจริงจาก `server/data/ai-drawings.json` (**ไม่ใช่ AI สร้างภาพเอง**) สร้างใหม่ได้ด้วย `cd server && npm run get-drawings` (~3 นาที)
 
 ## เครดิต
 
 - **โมเดล**: [VinayHajare/quickdraw-mobilevit-small-onnx](https://huggingface.co/VinayHajare/quickdraw-mobilevit-small-onnx) สัญญาอนุญาต MIT (ปรับต่อจาก MobileViT-Small ของ Apple)
+- **โมเดลทางเลือก** (ใช้เมื่อวางไฟล์ไว้ที่ `server/models/quickdraw345/` เท่านั้น): [zarqankhn/quickdraw-345-tflite](https://huggingface.co/zarqankhn/quickdraw-345-tflite) สัญญาอนุญาต Apache 2.0 — ต้นทางเป็นไฟล์ TFLite ทีมแปลงเป็น ONNX เอง
 - **ชุดข้อมูล**: [Google Quick, Draw! Dataset](https://github.com/googlecreativelab/quickdraw-dataset) สัญญาอนุญาต CC BY 4.0 — ใช้ฝึกโมเดล และภาพวาดในช่วง "AI วาด" (`server/data/ai-drawings.json`) คัดและแปลงพิกัดจากชุดเดียวกัน เป็นผลงานของผู้เล่นทั่วโลกที่ร่วมวาดให้ชุดข้อมูลนี้
 - **ฟอนต์** (Google Fonts สัญญาอนุญาต SIL Open Font License 1.1 · หน้าเว็บโหลดจาก Google Fonts จึงต้องมีอินเทอร์เน็ตตอนเปิดครั้งแรก ไม่มีเน็ตจะใช้ฟอนต์สำรองของเครื่อง): [Jersey 15](https://fonts.google.com/specimen/Jersey+15) (Sarah Cadigan-Fried) · [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) และ [Prompt](https://fonts.google.com/specimen/Prompt) (Cadson Demak)
 - **เพลงพื้นหลัง**: [Children's March Theme](https://opengameart.org/content/childrens-march-theme) โดย Cleyton Kauffman ([SoundCloud](https://soundcloud.com/cleytonkauffman)) จาก OpenGameArt.org สัญญาอนุญาต [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (ไม่บังคับให้เครดิต แต่ใส่ไว้เพื่อขอบคุณ) · ไฟล์อยู่ที่ `client/public/music/` เกมวนเล่นซ้ำเพลงนี้ ถ้าอยากเปลี่ยน/เพิ่มเพลง แค่ใส่ไฟล์ (.mp3 .ogg .wav .m4a) ในโฟลเดอร์เดียวกัน; ไม่มีไฟล์เพลงเลยปุ่มเพลงจะหายไปเอง
