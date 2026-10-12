@@ -24,6 +24,9 @@ process.env.SCORES_FILE = SCORES_FILE;
 // (server ทุกตัวที่เทสสตาร์ทสืบทอดค่านี้) · ข้อ 26 ตั้งค่าเฉพาะของมันเอง
 const NO_DRAWINGS_FILE = path.join(os.tmpdir(), "jdi-no-drawings.json");
 process.env.AI_DRAWINGS_FILE = NO_DRAWINGS_FILE;
+// กันโกงเขียนตัวหนังสือ: ปิดไว้ใน server ทุกตัวของเทส (กัน server/.env ที่มี GEMINI_API_KEY จริงไปเรียก API จริงระหว่างเทส)
+// · ข้อ 45 เปิดเองกับ Gemini ปลอม
+process.env.TEXT_CHECK = "off";
 // TEST_PORT: ให้เทสรันบนพอร์ตอื่นได้ตอนที่ server จริงของผู้ใช้เปิดพอร์ต 3000 อยู่ (ไม่ต้องคัดลอกโฟลเดอร์ไปแก้เลขพอร์ต)
 const TEST_PORT = process.env.TEST_PORT || "3000";
 const ALT_PORT = process.env.ALT_PORT || String(Number(TEST_PORT) + 10);
@@ -4014,19 +4017,246 @@ async function main() {
     for (const P of people) P.socket.disconnect();
   });
 
+  // ══════════════════════════════════════════════════════════════════
+  // ข้อ 45 — กันโกงเขียนคำตอบเป็นตัวหนังสือบนกระดาน (text-check.js + Gemini ปลอม)
+  // Gemini ปลอมตอบตามที่เทสสั่ง (ไม่ได้อ่านภาพจริง) จึงทดสอบ "ท่อทั้งเส้น" ของเกม: ตรวจเมื่อไร เทียบคำยังไง ลงโทษยังไง ไม่รั่ว
+  // ความแม่นของ OCR จริงทดสอบไม่ได้ในเทสอัตโนมัติ (ต้องใช้ key จริงและเสียเงิน)
+  // ══════════════════════════════════════════════════════════════════
+  await runPart("45. กันโกงเขียนตัวหนังสือ — ภาพปกติไม่โดน · เจอสองครั้งติดกันจึงลงโทษ · คำไม่รั่ว · ทีมแยกกัน · OCR พังเกมเดินต่อ", async () => {
+    const textCheck = require("../text-check");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const box = (x, y) => [{ x, y }, { x: x + 0.05, y: y + 0.08 }, { x: x + 0.1, y }]; // เส้นเล็กขนาดตัวอักษร
+    const strokeOp = (pts) => ({ events: [{ type: "stroke_start", ...pts[0], color: "#000000", size: 6, tool: "pen" }, { type: "stroke_points", points: pts.slice(1) }, { type: "stroke_end" }] });
+
+    // ---- หน่วย: ตัวกรองรูปร่างเส้น + วาดภาพ ----
+    check("เส้นเดียว → ไม่น่าเป็นตัวหนังสือ (ไม่เรียก OCR)", textCheck.looksLikeText([strokeOp(box(0.1, 0.1))]), false);
+    check("สองเส้นเล็ก → น่าเป็นตัวหนังสือ", textCheck.looksLikeText([strokeOp(box(0.1, 0.1)), strokeOp(box(0.3, 0.1))]), true);
+    // ตัวอักษรใหญ่ (สูงครึ่งกระดาน) ต้องผ่าน — เคยถูกกรองทิ้งเพราะเกณฑ์ "เส้นเล็ก < 0.45" (เจอตอนทดสอบจริง)
+    const bigLetter = (x) => [{ x, y: 0.25 }, { x: x + 0.05, y: 0.75 }, { x: x + 0.12, y: 0.3 }];
+    check("ตัวอักษรใหญ่ 3 ตัว (สูง 0.5) → ผ่านตัวกรอง ส่งไปอ่าน", textCheck.looksLikeText([strokeOp(bigLetter(0.1)), strokeOp(bigLetter(0.4)), strokeOp(bigLetter(0.7))]), true);
+    const shape1 = textCheck.shapeCheck([strokeOp(bigLetter(0.1)), strokeOp(bigLetter(0.4))]);
+    check("shapeCheck บอกขนาดเส้นที่วัดได้ (ไว้ดีบัก)", shape1.sizes.map((v) => Number(v.toFixed(2))), [0.5, 0.5]);
+    const cursive = Array.from({ length: 30 }, (_, i) => ({ x: 0.1 + i * 0.025, y: i % 2 ? 0.3 : 0.5 }));
+    check("เส้นเดียวยาวคดไปมา (เขียนติดกัน) → ผ่าน", textCheck.looksLikeText([strokeOp(cursive)]), true);
+    check("ล้างจอแล้วนับใหม่", textCheck.looksLikeText([strokeOp(box(0.1, 0.1)), strokeOp(box(0.3, 0.1)), { events: [{ type: "clear_canvas" }] }]), false);
+    const png = await textCheck.renderPng([strokeOp(box(0.1, 0.1)), { events: [{ type: "draw_shape", shape: "circle", x1: 0.5, y1: 0.5, x2: 0.7, y2: 0.7, color: "#ff0000", size: 4 }] }]);
+    check("วาดเส้น+รูปทรงเป็น PNG ได้", Buffer.from(png || "", "base64").subarray(1, 4).toString(), "PNG");
+    check("กระดานว่าง → ไม่มีภาพ", await textCheck.renderPng([]), null);
+    check("TEXT_CHECK=off → readText ไม่ทำอะไร (fail open)", await textCheck.readText([strokeOp(box(0.1, 0.1)), strokeOp(box(0.3, 0.1))]), null);
+
+    // ---- Gemini ปลอม ----
+    const http = require("http");
+    const GEMINI_KEY = "gm-TEST-SECRET-must-never-leak";
+    const requests = [];
+    let mode = "text"; // text | fail | garbage
+    let queue = []; // คำตอบที่จะใช้ก่อน (ทีละอัน) · หมดแล้วใช้ nextText
+    let nextText = "";
+    let quotaOnce = false; // true = คำขอถัดไปตอบ 429 (โควตาหมด) ครั้งเดียว
+    const stub = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        requests.push({ url: req.url, headers: req.headers, body });
+        if (quotaOnce) { quotaOnce = false; requests[requests.length - 1].status = 429; res.writeHead(429); return res.end("quota"); }
+        if (mode === "fail") { res.writeHead(500); return res.end("boom"); }
+        const text = mode === "garbage" ? "ไม่ใช่ JSON" : JSON.stringify(queue.length ? queue.shift() : { text: nextText, confidence: 0.95 });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }));
+      });
+    });
+    await new Promise((r) => stub.listen(0, r));
+
+    const PORT45 = String(Number(ALT_PORT) + 5);
+    const URL45 = `http://localhost:${PORT45}`;
+    const env = { ...process.env, SCORES_FILE, PORT: PORT45, AI_MODE: "mock", CHALLENGE_ODDS: "0",
+      GEMINI_API_KEY: GEMINI_KEY, GEMINI_API_URL: `http://localhost:${stub.address().port}/v1beta`,
+      TEXT_CHECK_PAUSE_MS: "100", TEXT_CHECK_GAP_MS: "300", TEXT_CHECK_MAX_PER_TURN: "30", TEXT_CHECK_BACKOFF_MS: "500",
+      TEXT_CHECK_GLOBAL_PER_MIN: "1000" }; // เทสนี้เรียก Gemini ปลอมเกิน 12 ครั้ง/นาทีของจริงแน่ๆ จึงยกเพดานให้
+    delete env.TEXT_CHECK;
+    const srv = spawn(process.execPath, ["index.js"], { cwd: SERVER_DIR, stdio: ["ignore", "pipe", "pipe"], env });
+    const srvLog = [];
+    srv.stdout.on("data", (b) => srvLog.push(b.toString()));
+    srv.stderr.on("data", (b) => srvLog.push(b.toString()));
+    const socks = [];
+    try {
+      let up = false;
+      for (let i = 0; i < 100 && !up; i++) {
+        up = await fetch(`${URL45}/test.html`).then((r) => r.ok).catch(() => false);
+        if (!up) await wait(100);
+      }
+      checkOk("server ข้อ 45 (มี Gemini ปลอม) เปิดได้", up);
+      const mk = async () => { const P = track(await connect(URL45)); socks.push(P); return P; };
+      // เขียน "ตัวหนังสือ" = สองเส้นเล็ก (ผ่านตัวกรองรูปร่าง) · x เลื่อนได้ ภาพจะได้เปลี่ยนทุกครั้ง
+      const writeText = (P, x = 0.1) => {
+        for (const dx of [0, 0.15]) {
+          const pts = box(x + dx, 0.2);
+          P.socket.emit("stroke_start", { ...pts[0], color: "#000000", size: 6, tool: "pen" });
+          P.socket.emit("stroke_points", { points: pts.slice(1) });
+          P.socket.emit("stroke_end");
+        }
+      };
+
+      // ---------- classic: H วาด · G1 G2 ทาย ----------
+      const H = await mk();
+      const created = await emitAck(H.socket, "create_room", { name: "TxtH", avatar: 0, rounds: 1, drawTime: 90, challenges: ["none"] });
+      const G1 = await mk();
+      const G2 = await mk();
+      await emitAck(G1.socket, "join_room", { code: created.code, name: "TxtG1", avatar: 1 });
+      await emitAck(G2.socket, "join_room", { code: created.code, name: "TxtG2", avatar: 2 });
+      await wait(150);
+      clearAll(H, G1, G2);
+      H.socket.emit("start_game");
+      const cw = await H.wait("choose_word", null, 5000);
+      H.socket.emit("word_chosen", { word: cw.options[0] });
+      const word = (await H.wait("your_word")).word;
+      await G2.wait("round_start");
+
+      // 1) ภาพปกติ: OCR อ่านไม่เจอตัวหนังสือ → ไม่มีโทษ
+      nextText = "";
+      writeText(H, 0.1);
+      await wait(900);
+      checkOk("ภาพปกติ: เรียก OCR จริง (มีภาพ base64 + key ใน header)", requests.length >= 1 && requests[0].headers["x-goog-api-key"] === GEMINI_KEY && requests[0].body.includes("inline_data"));
+      checkOk("คำขอที่ส่งไป OCR **ไม่มีคำตอบ**", requests.every((r) => !r.body.includes(word)));
+      check("ภาพปกติไม่ถูกลงโทษ", (await G2.quiet("rule_violation", 1)).length, 0);
+
+      // 1b) ภาพปกติที่บังเอิญมีตัวหนังสืออื่น (เช่นเขียนป้าย "ABC" บนรูปบ้าน) มั่นใจ 1.0 → ไม่ใช่คำตอบ ไม่ลงโทษ
+      queue = [{ text: "ABC 123", confidence: 1 }];
+      writeText(H, 0.2);
+      await wait(900);
+      check("มีตัวหนังสืออื่นที่ไม่ใช่คำตอบ (มั่นใจ 1.0) → ไม่ลงโทษ", (await G2.quiet("rule_violation", 1)).length, 0);
+
+      // 2) มั่นใจปานกลาง (0.7–0.9) เจอครั้งเดียวแล้วครั้งถัดไปไม่เจอ (อ่านพลาด) → ไม่ลงโทษ เพราะช่วงนี้ต้องสองครั้งติดกัน
+      const before2 = requests.length;
+      queue = [{ text: word, confidence: 0.8 }, { text: "", confidence: 0.9 }];
+      writeText(H, 0.3);
+      await wait(1200);
+      checkOk("มั่นใจ 0.8 เจอครั้งแรก → นัดตรวจยืนยันอีกครั้งเอง", requests.length - before2 >= 2);
+      check("มั่นใจ 0.8 เจอครั้งเดียวไม่ติดกัน → ไม่ลงโทษ", (await G2.quiet("rule_violation", 1)).length, 0);
+
+      // 3) มั่นใจต่ำ → ไม่นับ
+      queue = [{ text: word, confidence: 0.4 }];
+      writeText(H, 0.5);
+      await wait(1200);
+      check("มั่นใจต่ำกว่า 0.7 → ไม่ลงโทษ", (await G2.quiet("rule_violation", 1)).length, 0);
+
+      // G1 ทายถูก → คนวาดได้ 50 (ไว้ดูการหักคะแนนทีหลัง) · ตายังไม่จบเพราะ G2 ยังไม่ถูก
+      G1.socket.emit("guess", { text: word });
+      await G1.wait("correct_guess");
+      clearAll(H, G1, G2);
+
+      // 4) เขียนคำตอบ (มีข้อความอื่นปน) มั่นใจ 0.95 → ลงโทษทันทีจากการตรวจครั้งเดียว · ครั้งแรก: ล้างภาพ + เตือน ไม่หักคะแนน
+      nextText = `ภาพนี้ ${word}!!`;
+      const before4 = requests.length;
+      writeText(H, 0.1);
+      const v1 = await G2.wait("rule_violation", null, 4000);
+      check("มั่นใจ ≥ 0.9 → ลงโทษทันที (เรียก OCR แค่ครั้งเดียว ไม่รอตรวจยืนยัน)", requests.length - before4, 1);
+      check("ครั้งแรก: strike 1 ไม่หักคะแนน", [v1.strike, v1.penalty, v1.drawerId], [1, 0, H.socket.id]);
+      const cleared = await G2.wait("canvas_history", null, 1000);
+      check("ครั้งแรก: กระดานทุกจอถูกล้าง ย้อนกลับไม่ได้", [cleared.items.length, cleared.canUndo, cleared.canRedo], [0, false, false]);
+      checkOk("คนวาดได้ rule_violation + กระดานว่างด้วย", (await H.tryWait("rule_violation", null, 500)) && (await H.tryWait("canvas_history", (d) => d.items.length === 0, 500)));
+      H.socket.emit("undo");
+      check("กด undo หลังโดนล้าง → เอาตัวหนังสือคืนไม่ได้", (await G2.quiet("canvas_history", 400)).length, 1);
+
+      // 5) ทำอีก มั่นใจปานกลาง 0.8 สองครั้งติด → ครั้งที่สอง: ล้าง + หักคะแนน (คนวาดมี 50 หักได้ 50 ไม่ติดลบ) ตายังเล่นต่อ
+      clearAll(H, G1, G2);
+      const before5 = requests.length;
+      queue = [{ text: word, confidence: 0.8 }, { text: word, confidence: 0.8 }];
+      writeText(H, 0.2);
+      const v2 = await G2.wait("rule_violation", null, 4000);
+      check("มั่นใจ 0.8 → ลงโทษหลังเจอสองครั้งติดกัน (เรียก OCR 2 ครั้ง)", requests.length - before5, 2);
+      check("ครั้งที่สอง: strike 2 หัก 50 (ไม่ให้ติดลบ)", [v2.strike, v2.penalty], [2, 50]);
+      const ru = await G2.wait("room_update", null, 1000);
+      check("คะแนนคนวาดหลังหัก = 0", ru.players.find((p) => p.id === H.socket.id).score, 0);
+      check("ตายังเล่นต่อ (ไม่จบตา)", (await G2.quiet("round_end", 300)).length, 0);
+
+      // คำตอบต้องไม่รั่วถึงคนที่ยังไม่ทายถูก ทั้ง event ใดๆ ก่อนจบตา
+      checkOk("G2 (ยังไม่ทายถูก) ไม่เคยได้รับคำตอบใน event ใดเลย", !JSON.stringify(G2.dump()).includes(word));
+      checkOk("rule_violation มีแค่ drawerId/strike/penalty", Object.keys(v2).sort().join() === "drawerId,penalty,strike");
+      checkOk("key ของ Gemini ไม่หลุดถึง client", ![H, G1, G2].some((P) => JSON.stringify(P.dump()).includes(GEMINI_KEY)));
+      // บรรทัดเตือน "คำยาวเกิน" ตอนสตาร์ทเป็นรายการคลังคำ ไม่ใช่การรั่ว (เหมือนข้อ 30) จึงข้าม
+      const logLines = srvLog.join("").split(/\r?\n/).filter((l) => !l.includes("คำยาวเกิน"));
+      checkOk("log ของ server ไม่มีคำตอบ/ข้อความที่อ่านได้", !logLines.some((l) => l.includes(word)));
+
+      // 6) OCR พัง (500) / ตอบไม่ใช่ JSON → ไม่ลงโทษ เกมเดินต่อจนจบตาได้
+      // 5b) Gemini ตอบ 429 (โควตาหมด) → พักแล้ว "ตรวจภาพเดิมใหม่เองตอนพักจบ" โดยคนวาดไม่ต้องวาดเพิ่ม
+      // (เดิมช่วงพักปฏิเสธการนัด ภาพนั้นจึงไม่ถูกตรวจอีกเลย — เจอจาก log ดีบักตอนทดสอบกับ Gemini จริง)
+      clearAll(H, G1, G2);
+      const before5b = requests.length;
+      quotaOnce = true;
+      writeText(H, 0.3);
+      const v3 = await G2.tryWait("rule_violation", null, 5000);
+      check("หลังโดน 429 แล้วตรวจใหม่เองตอนพักจบ → จับได้ (strike 3)", v3?.strike, 3);
+      check("คำขอแรกหลังเขียนโดน 429 จริง", requests[before5b]?.status, 429);
+
+      clearAll(H, G1, G2); // ทิ้ง rule_violation ของข้อ 5 ก่อนนับใหม่
+      mode = "fail";
+      writeText(H, 0.4);
+      await wait(700);
+      mode = "garbage";
+      writeText(H, 0.6);
+      await wait(700);
+      check("OCR พัง/ตอบมั่ว → ไม่ลงโทษ", (await G2.quiet("rule_violation", 1)).length, 0);
+      H.socket.emit("stroke_start", { x: 0.5, y: 0.5, color: "#000000", size: 6, tool: "pen" });
+      checkOk("OCR พังแล้วยังวาดต่อได้ (ส่งถึงคนทาย)", (await G2.tryWait("stroke_start", null, 1000)) !== null);
+      H.socket.emit("stroke_end");
+      G2.socket.emit("guess", { text: word });
+      checkOk("OCR พังแล้วยังทายถูกจนจบตาได้", (await G2.tryWait("round_end", null, 3000)) !== null);
+      for (const P of [H, G1, G2]) P.socket.disconnect();
+      mode = "text";
+
+      // ---------- โหมดทีม: ลงโทษแยกเลน ไม่ข้ามทีม ----------
+      const T = [await mk()];
+      const tRoom = await emitAck(T[0].socket, "create_room", { name: "TxtT0", avatar: 0, mode: "team", rounds: 1, drawTime: 90, challenges: ["none"] });
+      for (let i = 1; i < 4; i++) {
+        T.push(await mk());
+        await emitAck(T[i].socket, "join_room", { code: tRoom.code, name: `TxtT${i}`, avatar: i });
+      }
+      await wait(150);
+      clearAll(...T);
+      T[0].socket.emit("start_game");
+      const firstChooser = await Promise.race(T.map((P) => P.tryWait("choose_word", null, 5000).then((d) => (d ? { P, d } : new Promise(() => {}))))); // ใช้ tryWait: คนที่ไม่ได้ choose_word ไม่ทำให้ promise ค้าง reject
+      firstChooser.P.socket.emit("word_chosen", { word: firstChooser.d.options[0] });
+      const infos = await Promise.all(T.map((P) => P.wait("round_start", null, 3000)));
+      const lane = (team) => T.filter((P, i) => infos[i].team === team);
+      const drawerOf = (team) => lane(team).find((P) => P.socket.id === infos[T.indexOf(P)].drawerId);
+      const guesserOf = (team) => lane(team).find((P) => P !== drawerOf(team));
+      const tWord = (await drawerOf("A").wait("your_word")).word;
+      clearAll(...T);
+
+      // ทีม B วาดเส้นเดียว (ไม่ผ่านตัวกรอง จึงไม่เรียก OCR) · ทีม A เขียนตัวหนังสือ
+      const DB = drawerOf("B");
+      DB.socket.emit("stroke_start", { x: 0.5, y: 0.5, color: "#000000", size: 6, tool: "pen" });
+      DB.socket.emit("stroke_points", { points: [{ x: 0.9, y: 0.9 }] });
+      DB.socket.emit("stroke_end");
+      nextText = tWord;
+      writeText(drawerOf("A"), 0.1);
+      const vA = await guesserOf("A").wait("rule_violation", null, 4000);
+      check("ทีม A: คนทายในทีมได้ rule_violation", vA.strike, 1);
+      checkOk("ทีม A: กระดานทีม A ถูกล้าง", (await guesserOf("A").tryWait("canvas_history", (d) => d.items.length === 0, 1000)) !== null);
+      check("ทีม B ไม่ได้ rule_violation", (await guesserOf("B").quiet("rule_violation", 400)).length + (await drawerOf("B").quiet("rule_violation", 1)).length, 0);
+      check("กระดานทีม B ไม่ถูกล้าง (ไม่มี canvas_history)", (await guesserOf("B").quiet("canvas_history", 1)).length, 0);
+      checkOk("ทีม B ไม่ได้รับคำตอบเลย", !JSON.stringify(guesserOf("B").dump()).includes(tWord));
+      for (const P of T) P.socket.disconnect();
+    } finally {
+      for (const P of socks) P.socket.disconnect();
+      srv.kill();
+      stub.close();
+    }
+  });
+
   // ปิดทุก socket เพื่อให้โปรเซสจบได้
   for (const rec of [A, B, C, ...others]) rec.socket.disconnect();
 }
 
-// กันเทสค้าง: ถ้าเกิน 300 วิให้หยุด (ข้อ 29 เพิ่มราว 20 วิ) (ไม่หน่วงไม่ให้โปรเซสปิดตัว)
+// กันเทสค้าง: ถ้าเกิน 420 วิให้หยุด (ชุดเทสทั้งชุดใช้ราว 4–5 นาทีแล้ว + ข้อ 45 ราว 15 วิ เดิม 300 วิเฉียดเพดาน) (ไม่หน่วงไม่ให้โปรเซสปิดตัว)
 // เดิมตั้งไว้ 90 วิ ตอนที่ชุดเทสทั้งชุดใช้ราว 35 วิ — ข้อ 5 เพิ่มการสร้างห้องจริง 30 ห้อง
 // กับการรอ "ต้องไม่มีอะไรมา" อีกหลายจุด รวมแล้วราว 50 วิ จึงขยับเพดานขึ้นให้ยังเหลือที่เผื่อเท่าของเดิม
 // (ข้อ 6 กับข้อ 15 กินเวลา 9 + 21 วิอยู่แล้ว เพราะเป็นการรอตัวจับเวลาจริงของเกม ลดไม่ได้)
 const watchdog = setTimeout(() => {
-  console.log("\n❌ เทสค้างเกิน 300 วินาที — ยกเลิก");
+  console.log("\n❌ เทสค้างเกิน 420 วินาที — ยกเลิก");
   stopServer();
   process.exit(1);
-}, 300000);
+}, 420000);
 watchdog.unref();
 
 main()

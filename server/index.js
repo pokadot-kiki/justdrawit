@@ -12,6 +12,7 @@ const { hasBadWord } = require("./profanity");
 const leaderboard = require("./leaderboard");
 const ai = require("./ai");
 const aiDrawings = require("./ai-drawings");
+const textCheck = require("./text-check");
 
 const app = express();
 const server = http.createServer(app);
@@ -373,6 +374,7 @@ function resetLane(lane, word, challenge) {
   lane.skipped = false;  // ไม่มีคนวาด → ข้ามตานี้ของทีมนี้
   lane.done = false;
   resetCanvas(lane);
+  resetTextCheck(lane);
 }
 
 // ให้ socket ของผู้เล่นอยู่ใน room ย่อยของทีมตัวเองเท่านั้น (team = null → ออกจากทั้งหมด)
@@ -1014,6 +1016,109 @@ function resetCanvas(room) {
   room.canvasFrozen = false;
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// กันโกง: คนวาด "เขียนคำตอบเป็นตัวหนังสือ" บนกระดาน (เช่นคำคือ "หมา" แต่เขียนว่า หมา แทนวาดรูปหมา)
+//
+// server มีแต่พิกัดเส้น ไม่มีภาพ → text-check.js วาดเส้นเป็นภาพแล้วให้ OCR (Gemini) อ่าน
+// แล้ว **เกมเทียบเองที่นี่** ด้วย normalize ตัวเดียวกับการทาย (คำตอบไม่เคยถูกส่งออกไปนอก server)
+//
+// ไม่ให้หนัก/ไม่ให้จับผิดคน:
+//   - ตรวจเมื่อคนวาด "หยุด" (หลัง stroke_end/draw_shape รอ TEXT_CHECK_PAUSE_MS) ไม่ใช่ทุกจุด
+//   - กระดานเดียวกันห่างกันอย่างน้อย TEXT_CHECK_GAP_MS · ไม่เกิน TEXT_CHECK_MAX_PER_TURN ครั้งต่อตา · ทีละครั้ง
+//   - ภาพไม่เปลี่ยนจากครั้งก่อน = ไม่ตรวจซ้ำ · ตัวกรองรูปร่างเส้น (looksLikeText) ไม่ผ่าน = ไม่เรียก OCR
+//   - มั่นใจ ≥ TEXT_CHECK_INSTANT_CONF (0.9) = ลงโทษทันทีครั้งเดียว · 0.7–0.9 ต้องเจอ "สองครั้งติดกัน" ก่อน · ต่ำกว่า 0.7 = ไม่นับ
+//   - OCR พัง/ไม่มี key = ไม่มีอะไรเกิดขึ้น (fail open) · ทั้งหมดเป็น async ไม่ขวางการวาด
+//
+// โทษ: ครั้งแรกในตานั้น = ล้างกระดาน + เตือน · ครั้งต่อไป = ล้างกระดาน + หักคะแนนคนวาด (ตายังเล่นต่อ)
+// คนอื่นเห็นแค่ rule_violation (ไม่มีข้อความที่อ่านได้ ไม่มีคำ) · โหมดทีม: board = เลนของทีม ทุกอย่างอยู่ในทีมนั้น
+// ปรับได้ด้วย env: TEXT_CHECK_PAUSE_MS (ค่าเริ่มต้น 1 วิ) · TEXT_CHECK_GAP_MS (3 วิ) · TEXT_CHECK_MAX_PER_TURN (6) — เทสใช้ย่อเวลา
+// ══════════════════════════════════════════════════════════════════════
+const TEXT_CHECK_PAUSE_MS = Number(process.env.TEXT_CHECK_PAUSE_MS) || 1000; // รอคนวาดหยุดกี่ ms ก่อนตรวจ
+const TEXT_CHECK_GAP_MS = Number(process.env.TEXT_CHECK_GAP_MS) || 3000; // กระดานเดียวกันตรวจห่างกันอย่างน้อยเท่านี้
+const TEXT_CHECK_MAX_PER_TURN = Number(process.env.TEXT_CHECK_MAX_PER_TURN) || 6;
+const TEXT_CHECK_MIN_CONF = 0.7; // ต่ำกว่านี้ไม่นับเลย
+const TEXT_CHECK_INSTANT_CONF = 0.9; // ตั้งแต่นี้ขึ้นไป เจอครั้งเดียวลงโทษทันที (อ่านชัดมาก โอกาสผิดต่ำ)
+const TEXT_CHECK_PENALTY = 100;
+
+// board = ห้อง (classic) หรือเลน (ทีม) — เก็บสถานะการตรวจของ "ตานี้" ไว้ที่ตัวมัน
+function resetTextCheck(board) {
+  clearTimeout(board.textCheck?.timer);
+  board.textCheck = { timer: null, busy: false, calls: 0, lastAt: 0, lastSig: "", hits: 0, offences: 0 };
+}
+
+// นัดตรวจครั้งถัดไป (ถ้ายังไม่ได้นัดไว้) · ปิดอยู่/ครบโควตาตาแล้ว = ไม่ทำอะไร
+function scheduleTextCheck(room, board, delay = TEXT_CHECK_PAUSE_MS) {
+  const st = board.textCheck;
+  if (!st || st.timer || st.busy || st.calls >= TEXT_CHECK_MAX_PER_TURN) return;
+  if (!textCheck.isEnabled()) {
+    // ปิดเพราะ "พักหลังโดน 429" = ชั่วคราว → นัดตรวจตอนพักจบ (เดิมทิ้งไปเลย ภาพนั้นจึงไม่ถูกตรวจอีกถ้าคนวาดไม่วาดเพิ่ม)
+    // ปิดด้วยเหตุผลอื่น (ไม่มี key / TEXT_CHECK=off) = ไม่ตรวจเลย (fail open)
+    const left = textCheck.backoffLeft();
+    if (left === 0) return;
+    delay = Math.max(delay, left + 100);
+  }
+  const wait = Math.max(delay, st.lastAt + TEXT_CHECK_GAP_MS - Date.now());
+  st.timer = setTimeout(() => {
+    st.timer = null;
+    runTextCheck(room, board, st).catch((err) => console.warn("ตรวจตัวอักษรพัง (ข้ามไป):", err?.message || err));
+  }, wait);
+}
+
+async function runTextCheck(room, board, st) {
+  // ตาเปลี่ยน/จบไปแล้ว (st ไม่ใช่ตัวเดิม) หรือไม่ได้อยู่ช่วงวาด → เลิก
+  const stillThisTurn = () => board.textCheck === st && room.phase === "drawing" && !!board.word && rooms.get(room.code) === room;
+  if (!stillThisTurn()) return;
+  if (board.strokeOpen) return scheduleTextCheck(room, board); // ยังลากเส้นอยู่ รอให้หยุดก่อน
+  const sig = `${board.canvasOps.length}:${board.canvasEvents}`;
+  if (sig === st.lastSig && st.hits === 0) return; // ภาพเหมือนครั้งก่อนที่ตรวจแล้วไม่เจอ — ไม่ต้องเสียโควตา
+  st.lastSig = sig;
+  if (!textCheck.looksLikeText(board.canvasOps)) return void (st.hits = 0);
+
+  st.busy = true;
+  st.calls++;
+  st.lastAt = Date.now();
+  let result = null;
+  try {
+    result = await textCheck.readText(board.canvasOps);
+  } finally {
+    st.busy = false;
+  }
+  if (!stillThisTurn()) return; // ระหว่างรอ OCR ตาจบไปแล้ว
+
+  // OCR ไม่ได้ผล (503 ล้น/429/เน็ต/เกินเพดาน) ≠ "อ่านแล้วไม่เจอ" → ลองภาพเดิมใหม่ภายหลัง (ยังนับในเพดานต่อตา)
+  // เดิมจำ lastSig ไว้ ภาพเดิมจึงไม่ถูกตรวจซ้ำอีกเลย ถ้าคนวาดไม่วาดเพิ่ม (เจอตอนทดสอบกับ Gemini จริงที่ตอบ 503)
+  if (!result) {
+    st.lastSig = "";
+    return scheduleTextCheck(room, board, TEXT_CHECK_GAP_MS);
+  }
+  // เทียบแบบเดียวกับการทาย (normalize) และนับ "คำตอบเป็นส่วนหนึ่งของข้อความ" ด้วย (เช่นเขียน "หมาตัวนี้")
+  const word = normalize(board.word);
+  const hit = result.confidence >= TEXT_CHECK_MIN_CONF && word.length > 0 && normalize(result.text).includes(word);
+  if (!hit) return void (st.hits = 0);
+  st.hits++;
+  // มั่นใจมาก (≥ 0.9) ลงโทษเลย · มั่นใจปานกลาง (0.7–0.9) เจอครั้งแรก → นัดตรวจยืนยันอีกครั้งก่อน
+  if (result.confidence < TEXT_CHECK_INSTANT_CONF && st.hits < 2) return scheduleTextCheck(room, board, TEXT_CHECK_GAP_MS);
+  st.hits = 0;
+  punishTextCheat(room, board, st);
+}
+
+function punishTextCheat(room, board, st) {
+  st.offences++;
+  st.lastSig = "";
+  let penalty = 0;
+  const drawer = room.players.find((p) => p.id === board.drawerId);
+  if (st.offences >= 2 && drawer) {
+    penalty = Math.min(drawer.score, TEXT_CHECK_PENALTY); // หักไม่ให้ติดลบ
+    drawer.score -= penalty;
+  }
+  // ล้างทั้งภาพและประวัติ (ไม่ใช่ clear_canvas ธรรมดา) — ไม่งั้นคนวาดกดย้อนกลับเอาตัวหนังสือคืนมาได้
+  resetCanvas(board);
+  io.to(board.code).emit("canvas_history", canvasPayload(board)); // ทุกจอในห้อง/ทีมนั้น (รวมคนวาด) ได้กระดานว่าง
+  io.to(board.code).emit("rule_violation", { drawerId: board.drawerId, strike: st.offences, penalty });
+  if (penalty > 0) io.to(room.code).emit("room_update", roomState(room));
+  console.warn(`⚠️  ${board.code}: พบตัวหนังสือบนกระดาน ล้างภาพ (ครั้งที่ ${st.offences} หัก ${penalty})`); // ไม่ log คำ/ข้อความที่อ่านได้
+}
+
 // ---------- ตัวจับเวลา ----------
 function stopTimer(room) {
   clearInterval(room.timer);
@@ -1021,6 +1126,12 @@ function stopTimer(room) {
   clearTimeout(room.introTimer); // ตาจบ/ห้องว่างระหว่างป้ายใหญ่ → เลิกรอ ไม่ให้ไปเริ่มเวลาตาที่จบแล้ว
   room.introTimer = null;
   room.intro = false;
+  // เลิกนัดตรวจตัวหนังสือที่ค้างอยู่ (ทั้งห้องและทุกเลนของทีม) — ตาจบ/ห้องว่างแล้วไม่ต้องตรวจ
+  for (const board of [room, ...laneList(room)]) {
+    if (!board.textCheck) continue;
+    clearTimeout(board.textCheck.timer);
+    board.textCheck.timer = null;
+  }
 }
 
 function startTimer(room, seconds, onEnd) {
@@ -1082,6 +1193,7 @@ function startDrawing(room, word) {
   room.intro = introMs > 0; // ตั้งก่อน emit เพราะ roundInfo อ่านค่านี้
   room.penUsed = false;
   resetCanvas(room); // ขึ้นตาใหม่ = กระดานว่าง ประวัติตาที่แล้วทิ้งทั้งหมด
+  resetTextCheck(room); // ตาใหม่ = นับการเขียนตัวหนังสือใหม่ (โทษไม่ลามไปตาถัดไป)
 
   room.timeLeft = room.settings.drawTime;
   io.to(room.code).emit("round_start", roundInfo(room));
@@ -2116,6 +2228,8 @@ io.on("connection", (socket) => {
       room.penUsed = true;
       io.to(room.code).emit("pen_locked", {});
     }
+    // คนวาดปล่อยมือ = จังหวะ "หยุด" → นัดตรวจตัวหนังสือ (async ไม่ขวางการวาด) · room ตรงนี้อาจเป็นเลนของทีม
+    scheduleTextCheck(rooms.get(socket.data.roomCode), room);
   });
 
   socket.on("fill", (data) => {
@@ -2147,6 +2261,7 @@ io.on("connection", (socket) => {
     const payload = { shape, x1, y1, x2, y2, color, size };
     storeAction(room, "draw_shape", payload);
     socket.to(room.code).emit("draw_shape", payload);
+    scheduleTextCheck(rooms.get(socket.data.roomCode), room); // รูปทรงก็ต่อกันเป็นตัวอักษรได้ (เช่นเส้นตรงหลายเส้น)
   });
 
   // clear_canvas ไม่ได้ล้าง "ประวัติ" ทิ้ง แต่ถูกเก็บเป็นอีกหนึ่งการกระทำ
