@@ -80,12 +80,13 @@ try {
       spill,cards:cards.length,rows:tops.length,selected:cards.filter(c=>c.getAttribute('aria-pressed')==='true').length,badges:p.querySelectorAll('.pe__badge').length,badgeText:p.querySelector('.pe__badge')?.textContent.trim(),
       ribbon:p.querySelector('.pe__ribbon')?.textContent.trim(),minBtn:Math.round(Math.min(...btns.map(b=>b.height))),closeBtn:!!p.querySelector('.pe__close'),
       preview:p.querySelector('.pe__stage svg')?.getAttribute('aria-label')||p.querySelector('.pe__stage [aria-label]')?.getAttribute('aria-label'),name:p.querySelector('.pe__name').textContent,input:p.querySelector('#edit-profile-name').value,
-      wide:[...document.querySelectorAll('body *')].filter(e=>{const r=R(e);return r.width>0&&(r.right>innerWidth+1||r.left<-1)&&e.closest('.modal')}).slice(0,6).map(e=>e.tagName.toLowerCase()+'.'+String(e.className.baseVal??e.className).split(' ')[0]+':'+Math.round(R(e).right)),
+      wide:[...document.querySelectorAll('body *')].filter(e=>{const r=R(e);return r.width>0&&(r.right>innerWidth+1||r.left<-1)&&e.closest('.modal')&&!e.closest('.pe__tabs')}).slice(0,6).map(e=>e.tagName.toLowerCase()+'.'+String(e.className.baseVal??e.className).split(' ')[0]+':'+Math.round(R(e).right)),
       badgeIcon:Math.round(R(p.querySelector('.pe__badge svg')).width),ribbonHitsClose:R(p.querySelector('.pe__ribbon .ribbon')).right>R(p.querySelector('.pe__close')).left-2,ribbonLeft:Math.round(R(p.querySelector('.pe__ribbon .ribbon')).left-pr.left),panelScrollY:p.scrollHeight>p.clientHeight+1,
-      gapUnderCards:Math.round(R(p.querySelector('.pe__main')).bottom-R(cards.at(-1)).bottom),avatarInStage:(()=>{const a=R(p.querySelector('.pe__stage .avatar-art')),st=R(p.querySelector('.pe__stage'));return a.left>=st.left&&a.right<=st.right&&a.top>=st.top&&a.bottom<=st.bottom})(),
+      gapUnderCards:Math.round(R(p.querySelector('.pe__main')).bottom-R(cards.at(-1)).bottom),avatarInStage:(()=>{const a=R(p.querySelector('.pe__stage svg')),st=R(p.querySelector('.pe__stage'));return a.left>=st.left&&a.right<=st.right&&a.top>=st.top&&a.bottom<=st.bottom})(),
       coins:(()=>{const c=p.querySelector('.pe__coins');if(!c)return null;const r=R(c),card=R(p.querySelector('.pe__preview')),st=R(p.querySelector('.pe__stage')),tag=R(p.querySelector('.pe__tag'));
         const hit=(a,b)=>Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1;
         return {text:c.textContent.replace(/\s+/g,' ').trim(),guest:c.classList.contains('pe__coins--guest'),inCard:r.left>=card.left&&r.right<=card.right&&r.top>=card.top,hitsStage:hit(r,st),hitsTag:hit(r,tag),clipped:c.scrollWidth>c.clientWidth+1}})(),
+      tabs:(()=>{const t=p.querySelector('.pe__tabs');if(!t)return null;const r=R(t);return {count:t.querySelectorAll('.pe__tabbtn').length,inPanel:r.left>=pr.left-1&&r.right<=pr.right+1,minH:Math.round(Math.min(...[...t.querySelectorAll('.pe__tabbtn')].map(b=>R(b).height))),labels:[...t.querySelectorAll('.pe__tabbtn')].map(b=>b.textContent.trim())}})(),
       externalImgs:[...document.querySelectorAll('img')].filter(i=>/googleusercontent|http/.test(i.src)&&!i.src.startsWith(location.origin)).length}})()`;
 
   // ───────── 1) ไม่ได้ล็อกอิน: หน้าแรก ─────────
@@ -118,6 +119,7 @@ try {
     if (h >= 800) ck(`${w}×${h} เห็นครบทั้งหน้าต่างโดยไม่ต้องเลื่อน`, m && !m.panelScrollY, JSON.stringify(m));
     if (w >= 721) ck(`${w}×${h} คอลัมน์ขวาไม่เหลือที่ว่างโหว่ใต้การ์ด (${m?.gapUnderCards}px)`, m && m.gapUnderCards <= 40, String(m?.gapUnderCards));
     ck(`${w}×${h} ไม่ได้ล็อกอิน: ชิปชวนล็อกอินเพื่อเก็บ coin อยู่ในการ์ดพรีวิว ไม่ทับวงอวตาร/ป้าย PREVIEW ("${m?.coins?.text}")`, m?.coins && m.coins.guest && m.coins.text.includes("เข้าสู่ระบบเพื่อเก็บ coin") && m.coins.inCard && !m.coins.hitsStage && !m.coins.hitsTag && !m.coins.clipped, JSON.stringify(m?.coins));
+    ck(`${w}×${h} แถวแท็บ 6 แท็บอยู่ในกรอบหน้าต่าง (เลื่อนแนวนอนในแถวได้) ปุ่มสูง ≥ 44px`, m?.tabs && m.tabs.count === 6 && m.tabs.inPanel && m.tabs.minH >= 44 && m.tabs.labels.join(",") === "อวตาร,กรอบ,หมวก,แว่น,คอ,พื้นหลัง", JSON.stringify(m?.tabs));
     await shot(`profile-${label}`);
   }
   ck("ไม่มีรูปจากเว็บภายนอก (googleusercontent ฯลฯ)", (await ev(MEASURE)).externalImgs === 0);

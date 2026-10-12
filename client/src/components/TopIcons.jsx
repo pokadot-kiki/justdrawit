@@ -111,7 +111,7 @@ export function TopIcons({ onInfo, onExit, shareCode = null, onToast, profile = 
   }
   return (
     <div className="top-icons">
-      {profile && onEditProfile && <ProfileTrigger name={profile.name} avatar={profile.avatar} onClick={onEditProfile} />}
+      {profile && onEditProfile && <ProfileTrigger name={profile.name} avatar={profile.avatar} cosmetics={profile.cosmetics} onClick={onEditProfile} />}
       <AudioButtons />
       {/* แชร์ = คัดลอกลิงก์เชิญ · รหัสห้องแสดงอยู่บนปุ่มเลย (ทุกคนในห้องเห็นและกดได้) */}
       {shareCode && (

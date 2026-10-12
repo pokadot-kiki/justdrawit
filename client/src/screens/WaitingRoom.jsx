@@ -144,7 +144,7 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
         key={player.id}
         className={`lb-player${isMe ? " lb-player--me" : ""}${player.connected === false ? " lb-player--away" : ""}`}
       >
-        <Avatar index={player.avatar} />
+        <Avatar index={player.avatar} cosmetics={player.cosmetics} layers="full" />
         <span className="lb-player__info">
           <span className="lb-player__name">
             {player.name}
@@ -258,7 +258,7 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
         <span className="lb-top__code">ห้อง {room.code}</span>
         <span className="lb-top__spacer" />
         <AudioButtons />
-        <ProfileTrigger name={me?.name ?? ""} avatar={me?.avatar ?? 0} onClick={onEditProfile} className="lb-top__me" />
+        <ProfileTrigger name={me?.name ?? ""} avatar={me?.avatar ?? 0} cosmetics={room.players.find((p) => p.id === me?.playerId)?.cosmetics} onClick={onEditProfile} className="lb-top__me" />
         <button type="button" className="btn btn--danger lb-top__leave" onClick={onLeave}>
           <Icon name="door" size={18} /> ออกจากห้อง
         </button>

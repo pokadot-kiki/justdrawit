@@ -13,6 +13,7 @@ const authSession = require("./auth-session");
 const firebaseAuth = require("./firebase-auth");
 const leaderboard = require("./leaderboard");
 const wallet = require("./wallet");
+const cosmetics = require("./cosmetics");
 const ai = require("./ai");
 const aiDrawings = require("./ai-drawings");
 const teamGallery = require("./team-gallery");
@@ -902,6 +903,8 @@ const GUESS_WINDOW_MS = 5000; // ต่อ 5 วินาที (= เฉลี�
 const LOOKUP_MAX = 15;        // ค้นหา/เข้าห้อง (join_room + rejoin) ได้ไม่เกิน 15 ครั้ง
 const LOOKUP_WINDOW_MS = 10000; // ต่อ 10 วินาที (คนพิมพ์รหัสผิดไม่ถึง · สแกนรหัสชนทันที)
 
+const EQUIP_MAX = 10;          // ใส่/ถอดเครื่องประดับได้ไม่เกิน 10 ครั้ง
+const EQUIP_WINDOW_MS = 10000; // ต่อ 10 วินาที ต่อคน
 function rateOk(socket, key, max, windowMs) {
   const now = Date.now();
   const store = (socket.data.rate ??= {});
@@ -2010,7 +2013,7 @@ io.on("connection", (socket) => {
       code,
       hostId: socket.data.pid,
       status: "lobby",
-      players: [{ id: socket.data.pid, name, avatar: cleanAvatar(data.avatar), score: 0, isHost: true, team: null, connected: true, ready: false }],
+      players: [{ id: socket.data.pid, name, avatar: cleanAvatar(data.avatar), score: 0, isHost: true, team: null, connected: true, ready: false, cosmetics: cosmetics.sanitize(data.cosmetics, socket.data.accountId) }],
       scoreAccountIds: new Map([[socket.data.pid, socket.data.accountId]]),
       settings: { mode: "classic", rounds: 3, drawTime: 60, difficulty: "mixed", maxPlayers: MAX_PLAYERS, visibility: "private", challenges: [...DEFAULT_CHALLENGES], teamCount: 2, teamNames: { ...TEAM_DEFAULT_NAMES } },
       swapRequests: [], // คำขอสลับตัวที่ค้างอยู่ (โหมดทีม)
@@ -2043,7 +2046,7 @@ io.on("connection", (socket) => {
 
     leaveRoom(socket);
     dropSoloSession(socket.data.pid);
-    const joiner = { id: socket.data.pid, name, avatar: cleanAvatar(data.avatar), score: 0, isHost: false, team: null, connected: true, ready: false };
+    const joiner = { id: socket.data.pid, name, avatar: cleanAvatar(data.avatar), score: 0, isHost: false, team: null, connected: true, ready: false, cosmetics: cosmetics.sanitize(data.cosmetics, socket.data.accountId) };
     if (isTeamMode(room)) joiner.team = autoTeam(room); // โหมดทีม: เข้าทีมที่คนน้อยกว่าอัตโนมัติ (รวมคนเข้ากลางเกม)
     if (isTeamMode(room) && !joiner.team) return callback({ ok: false, error: "ROOM_FULL" });
     room.players.push(joiner);
@@ -2136,6 +2139,22 @@ io.on("connection", (socket) => {
   });
 
   // เตะผู้เล่นออก — หัวห้องเท่านั้น (server ตรวจซ้ำเสมอ) · เตะตัวเองไม่ได้
+  // ใส่/ถอดเครื่องประดับหนึ่งช่อง (itemId: null = ถอด) — เปลี่ยนได้เฉพาะของตัวเอง (ใช้ playerId ของ socket นี้เท่านั้น)
+  // server ตรวจว่าไอเทมมีจริง ตรงช่อง และมีสิทธิ์ใช้ (cosmetics.check) · ผ่านแล้วทั้งห้องเห็นชุดใหม่ผ่าน room_update
+  // จำกัดความถี่ EQUIP_MAX ครั้งต่อ EQUIP_WINDOW_MS ต่อคน (กันกดรัวจนทั้งห้องได้ room_update ถี่)
+  socket.on("equip", (data, callback) => {
+    if (typeof callback !== "function") return;
+    if (!rateOk(socket, "equip", EQUIP_MAX, EQUIP_WINDOW_MS)) return callback({ ok: false, error: "TOO_MANY_ATTEMPTS" });
+    const room = rooms.get(socket.data.roomCode);
+    const player = room?.players.find((p) => p.id === socket.data.pid);
+    if (!player) return callback({ ok: false, error: "NOT_IN_ROOM" });
+    const result = cosmetics.check(data?.slot, data?.itemId === undefined ? null : data.itemId, socket.data.accountId);
+    if (!result.ok) return callback(result);
+    player.cosmetics = { ...cosmetics.empty(), ...player.cosmetics, [result.slot]: result.itemId };
+    callback({ ok: true, cosmetics: player.cosmetics });
+    io.to(room.code).emit("room_update", roomState(room));
+  });
+
   socket.on("kick_player", (data) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room) return;

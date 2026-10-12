@@ -397,6 +397,7 @@ export default function Game({
           returnAt={game.returnAt}
           onLeave={onLeave}
           coinInfo={coinInfo}
+          looks={Object.fromEntries(room.players.map((p) => [p.id, p.cosmetics]))}
         />
       )}
 

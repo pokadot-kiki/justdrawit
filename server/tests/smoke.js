@@ -2580,7 +2580,10 @@ async function main() {
         }
         if (!checkIntro && rs.intro) await guesser.wait("intro_end", null, 4000); // ตาที่มีป้ายใหญ่ ต้องรอป้ายหายก่อนทายถึงจะนับ
         guesser.socket.emit("guess", { text: word });
-        await guesser.wait("round_end", null, 5000);
+        // รอ round_end ของ "ทั้งสองคน" ก่อนล้างบัฟเฟอร์: แต่ละ socket ได้ event ของตัวเองคนละจังหวะ ถ้าล้างตอนคนทายได้ round_end
+        // แต่ correct_guess/round_end ของคนวาดยังมาไม่ถึง event เหล่านั้นจะค้างไปโผล่ในตาถัดไป (ตาถัดไปคนวาดกลายเป็นคนทาย)
+        // แล้วเช็ค "ช่วงป้ายใหญ่: ทายถูกก็ไม่นับ" จะนับ correct_guess ของตาก่อนเป็นของตานี้ (server ทำถูกอยู่แล้ว — ตรวจแยกแล้ว)
+        await Promise.all([guesser.wait("round_end", null, 5000), drawer.wait("round_end", null, 5000)]);
         drawer.clear(); guesser.clear();
         return out;
       }

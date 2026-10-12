@@ -348,6 +348,7 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
           returnAt={game.returnAt}
           onLeave={onLeave}
           coinInfo={coinInfo}
+          looks={Object.fromEntries(room.players.map((p) => [p.id, p.cosmetics]))}
         />
       )}
 

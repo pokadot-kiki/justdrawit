@@ -11,6 +11,7 @@ import { AVATARS } from "./avatars";
 import { getUserAuth } from "./prefs";
 import ProfileModal from "./components/ProfileModal";
 import { addGains, coinToastText, emptyCoinSummary } from "./coinText";
+import { SLOTS, cleanLook, loadLook, sameLook, saveLook } from "./cosmetics";
 import WaitingRoom from "./screens/WaitingRoom";
 import Game from "./screens/Game";
 import Leaderboard from "./screens/Leaderboard";
@@ -60,6 +61,9 @@ export default function App() {
   // ชื่อ + อวตารที่เลือกในหน้าแรก อยู่ที่นี่เพื่อให้ติดไปหน้า SET UP / Solo ได้ ไม่ต้องกรอกซ้ำ
   const [profile, setProfile] = useState(() => ({ name: initialName(getUserAuth()?.username), avatar: loadAvatar(AVATARS.length, getUserAuth()?.username) }));
   const [showProfile, setShowProfile] = useState(false);
+  // เครื่องประดับที่ใส่ (จำในเบราว์เซอร์เหมือนอวตาร) — ในห้อง ของจริงคือค่าที่ server เก็บและส่งมากับ room_update
+  const [look, setLook] = useState(loadLook);
+  useEffect(() => saveLook(look), [look]);
   // ค่าเริ่ม Solo ที่ส่งมาจากหน้า SET UP (เลือกโหมด "แข่งกับ AI") → SoloAI เริ่มเกมทันทีด้วยความยากนี้
   // null = เข้า /solo ตรง ๆ (เช่นรีเฟรช) จะเห็นหน้ากรอกชื่อตามปกติ
   const [soloBoot, setSoloBoot] = useState(null);
@@ -220,13 +224,30 @@ export default function App() {
   useEffect(() => saveName(profile.name, getUserAuth()?.username), [profile.name]);
   useEffect(() => saveAvatar(profile.avatar, AVATARS.length, getUserAuth()?.username), [profile.avatar]);
 
-  async function saveProfile(next) {
+  // ใส่/ถอดทีละช่องที่เปลี่ยนผ่าน event equip (server ตรวจสิทธิ์ทุกครั้ง) → คืนชุดล่าสุดที่ server ยืนยัน หรือรหัส error
+  async function equipChanges(current, wanted) {
+    let confirmed = current;
+    for (const slot of SLOTS) {
+      if ((current?.[slot] ?? null) === (wanted[slot] ?? null)) continue;
+      const res = await new Promise((resolve) => {
+        socket.timeout(6000).emit("equip", { slot, itemId: wanted[slot] ?? null }, (err, result) => resolve(err ? { ok: false, error: "CONNECT_FAILED" } : result));
+      });
+      if (!res?.ok) return { ok: false, error: res?.error ?? "SERVER_ERROR", cosmetics: confirmed };
+      confirmed = res.cosmetics;
+    }
+    return { ok: true, cosmetics: confirmed };
+  }
+
+  // next = { name, avatar, cosmetics } จากหน้าแต่งโปรไฟล์
+  async function saveProfile({ cosmetics: wantedLook, ...next }) {
+    const wanted = cleanLook(wantedLook ?? look);
     if (route.screen !== "room" && route.screen !== "solo") {
       setProfile(next);
+      setLook(wanted); // นอกห้อง: จำไว้ในเบราว์เซอร์ แล้วแนบไปให้ server ตรวจตอนสร้าง/เข้าห้อง
       return { ok: true };
     }
     if (!socket.connected) return { ok: false, error: "CONNECT_FAILED" };
-    return new Promise((resolve) => {
+    const saved = await new Promise((resolve) => {
       socket.timeout(6000).emit("update_profile", next, (err, result) => {
         if (err) return resolve({ ok: false, error: "CONNECT_FAILED" });
         if (!result?.ok) {
@@ -245,6 +266,16 @@ export default function App() {
         resolve({ ok: true });
       });
     });
+    if (!saved.ok) return saved;
+    if (route.screen !== "room") {
+      setLook(wanted); // Solo: ไม่มีใครเห็นชุด แค่จำไว้
+      return saved;
+    }
+    const mine = room?.players.find((p) => p.id === meRef.current?.playerId)?.cosmetics ?? null;
+    if (sameLook(mine, wanted)) return saved;
+    const equipped = await equipChanges(mine, wanted);
+    if (equipped.cosmetics) setLook(cleanLook(equipped.cosmetics));
+    return equipped.ok ? { ok: true } : { ok: false, error: equipped.error };
   }
 
   // ล้างสถานะห้องในเครื่อง (ไม่ได้บอก server — คนเรียกเป็นคนตัดสินใจว่าต้องส่ง leave_room ไหม)
@@ -321,6 +352,8 @@ export default function App() {
   const goHome = () => navigate("/");
   // อยู่ที่ URL ของห้อง และข้อมูลห้องนั้นมาถึงแล้ว
   const roomReady = route.screen === "room" && me && room && room.code === routeCode;
+  // เครื่องประดับของเราเอง: ในห้อง = ค่าที่ server เก็บ (มากับ room_update) · นอกห้อง = ที่จำไว้ในเบราว์เซอร์
+  const myLook = (roomReady && room?.players.find((p) => p.id === me?.playerId)?.cosmetics) || look;
   // กลับมาห้องรอหลังจบเกม (inGame จริง→เท็จ ทั้งที่ยังอยู่ในห้อง) = ล้างแชทของเกมก่อนหน้า
   const wasInGame = useRef(false);
   useEffect(() => {
@@ -380,6 +413,7 @@ export default function App() {
       )}
       {route.screen === "lobby" && (
         <Lobby
+          look={look}
           key={inviteCode ?? "home"} // ลิงก์เชิญเปลี่ยน = สร้างหน้าใหม่ให้กล่องเข้าห้องเปิดพร้อมรหัสนั้น
           connected={connected}
           profile={profile}
@@ -482,7 +516,7 @@ export default function App() {
       {/* หลุดจาก server ระหว่างอยู่ในห้อง: บอกให้รู้ว่ากำลังต่อใหม่ (ต่อติดแล้ว rejoin เองโดยอัตโนมัติ) */}
       {roomReady && !connected && <div className="reconnect-note">การเชื่อมต่อหลุด กำลังต่อใหม่...</div>}
 
-      {showProfile && <ProfileModal profile={roomReady ? { name: me.name, avatar: me.avatar } : profile} onSave={saveProfile} onClose={() => setShowProfile(false)} wallet={loggedIn ? wallet : null} canLogin={auth.enabled && !loggedIn} />}
+      {showProfile && <ProfileModal profile={roomReady ? { name: me.name, avatar: me.avatar } : profile} onSave={saveProfile} onClose={() => setShowProfile(false)} wallet={loggedIn ? wallet : null} canLogin={auth.enabled && !loggedIn} cosmetics={myLook} />}
 
       {/* key ผูกกับ id ของ toast เพื่อให้แสดงข้อความซ้ำแล้วเล่นอนิเมชันใหม่ */}
       <Toast key={toast?.id ?? "none"} toast={toast} />

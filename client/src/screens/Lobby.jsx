@@ -19,6 +19,7 @@ export default function Lobby({
   profile,
   onProfile,
   onEditProfile,
+  look = null,
   inviteCode,
   onEntered,
   onError,
@@ -50,7 +51,7 @@ export default function Lobby({
           <Critter name="star" className="crit crit--side-left" />
           <Ribbon tone="red">PLAY</Ribbon>
 
-          <AvatarPicker value={profile.avatar} onChange={(avatar) => onProfile({ ...profile, avatar })} onEdit={onEditProfile} />
+          <AvatarPicker value={profile.avatar} onChange={(avatar) => onProfile({ ...profile, avatar })} onEdit={onEditProfile} look={look} />
 
           <label className="field__label" htmlFor="player-name">
             CHOOSE YOUR NAME

@@ -79,6 +79,66 @@
 .pe__main {
   grid-area: main;
   align-self: stretch;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pe__main > .profile-avatars {
+  flex: 1;
+}
+
+/* แท็บ: อวตาร + เครื่องประดับ 5 ช่อง (จอแคบเลื่อนแนวนอนในแถวเดียว) */
+.pe__tabs {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 4px 4px 2px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.pe__tabbtn {
+  position: relative;
+  flex: none;
+  min-height: 44px;
+  padding: 4px 13px;
+  border: var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--white);
+  color: var(--ink);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.pe__tabbtn--active {
+  background: var(--yellow);
+  box-shadow: var(--shadow-xs);
+}
+
+.pe__tabbtn:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.pe__tabbtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* จุดเขียวมุมแท็บ = ช่องนี้ใส่ของอยู่ */
+.pe__tabdot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  background: var(--green);
 }
 
 .pe__actions {
@@ -160,9 +220,14 @@
   background: var(--tab-idle);
 }
 
-.pe__stage > .avatar-art {
-  width: 124px;
-  height: 124px;
+/* พรีวิว: อวตาร + เครื่องประดับเต็มวง (ผืน 24 ช่อง ถูกตัดเป็นวงกลมตามกรอบ) */
+.pe__stage {
+  overflow: hidden;
+}
+
+.pe__stage > .avatar-look {
+  width: 100%;
+  height: 100%;
 }
 
 .pe__name {
@@ -209,21 +274,6 @@
   border: var(--border);
   border-radius: var(--r-card);
   background: var(--white);
-}
-
-/* ป้ายหมวด (หน้าตาเหมือนแท็บที่เลือกอยู่ — ตอนนี้มีหมวดเดียว) */
-.pe__tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 14px;
-  border: var(--border);
-  border-radius: var(--r-ctl);
-  background: var(--yellow);
-  box-shadow: var(--shadow-xs);
-  font-family: var(--font-head);
-  font-weight: 700;
-  font-size: 16px;
 }
 
 .pe__sub {
@@ -274,6 +324,12 @@
 .profile-avatars__item > .avatar-art {
   width: 76px;
   height: 76px;
+}
+
+/* การ์ดไอเทม: ตัวอย่างบนผืน 24 ช่อง (ตัวอวตารกิน 16) จึงต้องใหญ่กว่าการ์ดอวตารเล็กน้อยให้เห็นไอเทมชัด */
+.profile-avatars__item > .avatar-look {
+  width: 100px;
+  height: 100px;
 }
 
 .profile-avatars__label {
@@ -342,9 +398,24 @@
     height: 104px;
   }
 
-  .pe__stage > .avatar-art {
-    width: 76px;
-    height: 76px;
+  /* มือถือ: แถวแท็บเลื่อนด้วยนิ้ว ไม่โชว์แถบเลื่อน (แท็บสุดท้ายที่โผล่ครึ่งเดียวบอกว่าเลื่อนได้) · ซ่อนบรรทัดอธิบายให้เห็นครบในจอเดียว */
+  .pe__tabs {
+    gap: 5px;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .pe__tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .pe__main .pe__sub {
+    display: none;
+  }
+
+  .pe__tabbtn {
+    padding: 4px 11px;
+    font-size: 14px;
   }
 
   .pe__name {
@@ -388,6 +459,11 @@
   .profile-avatars__item > .avatar-art {
     width: 44px;
     height: 44px;
+  }
+
+  .profile-avatars__item > .avatar-look {
+    width: 54px;
+    height: 54px;
   }
 }
 
@@ -468,4 +544,42 @@
 
 .game-coins--guest .game-coins__note {
   margin: 0;
+}
+
+/* ==========================================================================
+   เครื่องประดับบนอวตารในห้อง (Avatar.jsx): ห้องรอ/จบเกม = ครบทุกชั้น · แถบคะแนน/ปุ่มโปรไฟล์ = หมวก แว่น คอ
+   กล่องของ .avatar-chip ขนาดเท่าเดิม (ไม่ดันเลย์เอาต์) — รูปผืน 24 ช่องวางซ้อนตรงกลาง ส่วนเกินยื่นออกนอกวงได้
+   ========================================================================== */
+.avatar-chip--look {
+  position: relative;
+  overflow: visible;
+}
+
+.avatar-chip__look {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  /* ตัวอวตารอยู่ต่ำกว่ากลางผืน 1 ช่อง (เผื่อที่หมวก) จึงยกขึ้น 1/24 ให้หน้าอยู่กลางวงเหมือนเดิม */
+  transform: translate(-50%, -54.2%);
+  line-height: 0;
+  pointer-events: none;
+}
+
+.avatar-chip--bg {
+  border-color: transparent;
+  background: transparent;
+}
+
+.avatar-chip--frame {
+  border-color: transparent;
+}
+
+/* หน้าแรก: อวตารใหญ่ใส่ชุดเต็มวง */
+.avatar-picker__stage:has(.avatar-look) {
+  overflow: hidden;
+}
+
+.avatar-picker__stage .avatar-look {
+  width: 100%;
+  height: 100%;
 }

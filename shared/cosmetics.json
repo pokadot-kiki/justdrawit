@@ -1,0 +1,20 @@
+{
+  "slots": ["frame", "hat", "glasses", "neck", "background"],
+  "items": [
+    { "id": "frame_gold", "slot": "frame", "name": "วงแหวนทอง", "free": true },
+    { "id": "frame_dash", "slot": "frame", "name": "เส้นประ", "free": true },
+    { "id": "frame_stars", "slot": "frame", "name": "ดาวล้อม", "free": true },
+    { "id": "hat_cap", "slot": "hat", "name": "หมวกแก๊ปแดง", "free": true },
+    { "id": "hat_beanie", "slot": "hat", "name": "หมวกไหมพรม", "free": true },
+    { "id": "hat_straw", "slot": "hat", "name": "หมวกฟาง", "free": true },
+    { "id": "glasses_round", "slot": "glasses", "name": "แว่นกลม", "free": true },
+    { "id": "glasses_dark", "slot": "glasses", "name": "แว่นดำพิกเซล", "free": true },
+    { "id": "glasses_3d", "slot": "glasses", "name": "แว่นสามมิติ", "free": true },
+    { "id": "neck_bow", "slot": "neck", "name": "โบว์แดง", "free": true },
+    { "id": "neck_scarf", "slot": "neck", "name": "ผ้าพันคอ", "free": true },
+    { "id": "neck_tie", "slot": "neck", "name": "เนกไท", "free": true },
+    { "id": "bg_sky", "slot": "background", "name": "ท้องฟ้ามีเมฆ", "free": true },
+    { "id": "bg_dots", "slot": "background", "name": "ม่วงลายจุด", "free": true },
+    { "id": "bg_grass", "slot": "background", "name": "ทุ่งหญ้า", "free": true }
+  ]
+}

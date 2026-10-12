@@ -79,7 +79,7 @@ export default function Scoreboard({
           <li className={classes.join(" ")} key={p.id}>
             {/* แถวทุกแถวเรียงเหมือนกันเป๊ะ: อวตาร (ติ๊กทายถูกทับมุมอวตาร) · ชื่อ + ป้าย · คะแนนใหญ่ชิดขวา */}
             <span className="score-row__avatar">
-              <Avatar index={p.avatar} large />
+              <Avatar index={p.avatar} large cosmetics={p.cosmetics} layers="compact" />
               {hasGuessed && (
                 <span className="score-row__check" title="ทายถูกแล้ว">
                   <Icon name="check" size={12} label="ทายถูกแล้ว" />
