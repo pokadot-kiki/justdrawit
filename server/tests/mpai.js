@@ -20,6 +20,9 @@ const io = require(path.join(path.dirname(require.resolve("socket.io/package.jso
 const ai = require("../ai");
 
 const SERVER_DIR = path.join(__dirname, "..");
+// เทสต้องไม่ใช้ค่าจริงจาก server/.env ของเครื่องนักพัฒนา (เช่นคีย์ Firebase / Upstash / Claude) — server ที่เทสเปิดสืบทอด env จากตรงนี้
+// และ dotenv ไม่เขียนทับตัวแปรที่มีอยู่แล้ว (แม้เป็นค่าว่าง) จึงตั้งเป็นค่าว่างไว้ก่อน เทสข้อไหนต้องใช้ค่า จะตั้งเองตอนเปิด server ของข้อนั้น
+for (const k of ["FIREBASE_API_KEY", "AUTH_SESSION_SECRET", "ANTHROPIC_API_KEY", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"]) process.env[k] ??= "";
 const PORT_A = process.env.MPAI_PORT || "3061";
 const PORT_B = String(Number(PORT_A) + 1);
 const API_PORT = String(Number(PORT_A) + 2);

@@ -37,6 +37,9 @@ process.env.TEXT_CHECK = "off";
 const TEST_PORT = process.env.TEST_PORT || "3000";
 const ALT_PORT = process.env.ALT_PORT || String(Number(TEST_PORT) + 10);
 const URL = `http://localhost:${TEST_PORT}`;
+// เทสต้องไม่ใช้ค่าจริงจาก server/.env ของเครื่องนักพัฒนา (เช่นคีย์ Firebase / Upstash / Claude) — server ที่เทสเปิดสืบทอด env จากตรงนี้
+// และ dotenv ไม่เขียนทับตัวแปรที่มีอยู่แล้ว (แม้เป็นค่าว่าง) จึงตั้งเป็นค่าว่างไว้ก่อน เทสข้อไหนต้องใช้ค่า จะตั้งเองตอนเปิด server ของข้อนั้น
+for (const k of ["FIREBASE_API_KEY", "AUTH_SESSION_SECRET", "ANTHROPIC_API_KEY", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"]) process.env[k] ??= "";
 const SECRET_KEY = "sk-ant-TEST-SECRET-must-never-leak";
 
 // ใช้ client ของ socket.io ที่มีอยู่ใน node_modules แล้วรันบน Node ได้เลย
