@@ -102,14 +102,14 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
       {/* ── Economy & Reward System Breakdown — ปิดไว้ก่อน (ดูเหตุผลที่ SHOP_ENABLED ใน prefs.js) ไม่ได้ลบโค้ด ── */}
       {SHOP_ENABLED && (
         <div style={{ margin: "16px 0", padding: "12px", background: "#fefce8", border: "1px solid #fef08a", borderRadius: "8px", textAlign: "center" }}>
-          <h3 style={{ margin: 0, fontSize: "14px", color: "#a16207" }}>💰 สรุปเหรียญรางวัลประจำรอบ (Coin Rewards)</h3>
+          <h3 style={{ margin: 0, fontSize: "14px", color: "#a16207" }}>สรุปเหรียญรางวัลประจำรอบ (Coin Rewards)</h3>
           {auth ? (
             <p style={{ margin: "6px 0 0 0", fontSize: "13px", color: "#854d0e" }}>
               คุณได้รับ <b>+{totalEarned}</b> เหรียญ! (เหรียญพื้นฐาน 100 + คะแนนผลงาน)
             </p>
           ) : (
             <p style={{ margin: "6px 0 0 0", fontSize: "12px", color: "#dc2626" }}>
-              ⚠️ คุณเล่นในโหมด Guest (0 เหรียญ) — กรุณาล็อกอินเข้าสู่ระบบเพื่อสะสมเหรียญ
+              คุณเล่นในโหมด Guest (0 เหรียญ) — กรุณาล็อกอินเข้าสู่ระบบเพื่อสะสมเหรียญ
             </p>
           )}
         </div>

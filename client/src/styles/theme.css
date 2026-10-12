@@ -1174,6 +1174,40 @@ input {
   padding: 10px 16px;
 }
 
+/* ช่วยเดาคำ — แถวปุ่มคำแนะนำเหนือช่องพิมพ์ (GuessInput.jsx ใช้ร่วมกันทุกช่องทาย) */
+.guess-suggest {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.guess-suggest__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: var(--border);
+  border-radius: var(--r-pill, 999px);
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-head);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.guess-suggest__pill:hover,
+.guess-suggest__pill:focus-visible {
+  background: var(--yellow);
+}
+
+/* ปุ่มไมค์ (ตอบด้วยเสียง) — สถานะกำลังฟังใช้สีแดงเหมือนปุ่มอันตราย/ตัวจับเวลา */
+.chat__mic--on {
+  background: var(--red);
+  color: var(--white);
+}
+
 /* ---- หน้าต่างลอย ใช้ทั้ง เลือกคำ สรุปตา จบเกม ---- */
 
 .modal {

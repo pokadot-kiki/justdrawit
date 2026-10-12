@@ -1,50 +1,73 @@
-// Word Suggestion Engine — แรงบันดาลใจทั่วไปจากแนวคิด predictive-keyboard
-// (https://github.com/dogterbox/predictive-keyboard) แต่คลังคำ (GAME_WORDS) และโค้ดจับคู่คำด้านล่าง
-// เป็นงานเขียนเองทั้งหมด (prefix/substring matching ธรรมดา ไม่ได้ใช้โค้ดหรือข้อมูลจาก repo ที่อ้างถึง)
-// ไม่มีสัญญาอนุญาตจากภายนอกเกี่ยวข้อง
+// ช่วยเดาคำในช่องทาย — คำแนะนำคำนวณในเบราว์เซอร์ทั้งหมด ไม่ส่งอะไรไป server
+//
+// คลังคำ: client/public/data/guess-words.json (สร้างโดย client/scripts/get-guess-words.mjs)
+//   มาจาก PyThaiNLP (https://github.com/PyThaiNLP/pythainlp) สัญญาอนุญาต CC0-1.0
+//   (Creative Commons Zero — ใช้ซ้ำ/ดัดแปลงได้อิสระ ไม่บังคับเครดิต) รายละเอียดเต็มดูที่หัวไฟล์ get-guess-words.mjs
+//   คำเรียงจาก "ใช้บ่อย" ไปหา "ใช้น้อย" ตามข้อมูลความถี่จริงจาก Thai National Corpus — ไม่เกี่ยวกับคลังคำของเกมเราเลย
+//   (ไม่ได้ดึงหรือให้น้ำหนักจาก words.json/ai-words.json แต่อย่างใด กันไม่ให้กลายเป็นการใบ้คำตอบ)
+// ไฟล์นี้อยู่ใน client/public/ (ไม่ถูกมัดรวมเข้า bundle หลักของ Vite) โหลดด้วย fetch() ตอนเปิดช่องทายครั้งแรกเท่านั้น
 
-const GAME_WORDS = [
-  "แมว", "หมา", "ปลา", "นก", "งู", "ช้าง", "เป็ด", "ไก่", "กบ", "เต่า",
-  "กล้วย", "ส้ม", "ไข่ดาว", "แตงโม", "ขนมปัง", "ไอศกรีม", "นม", "แอปเปิล",
-  "ร่ม", "แว่นตา", "หวี", "แก้วน้ำ", "เก้าอี้", "โต๊ะ", "หนังสือ", "ดินสอ",
-  "กรรไกร", "นาฬิกา", "หมวก", "เสื้อ", "กางเกง", "รองเท้า", "โทรศัพท์", "เตียง",
-  "ช้อน", "มีด", "หม้อ", "รถยนต์", "จักรยาน", "เครื่องบิน", "เรือ", "กระต่าย",
-  "เสือ", "สิงโต", "หมี", "ลิง", "ยีราฟ", "ม้า", "วัว", "ควาย", "หมู",
-  "ทุเรียน", "มะม่วง", "มะพร้าว", "สับปะรด", "สตรอเบอร์รี่", "องุ่น", "ช็อกโกแลต",
-  "พิซซ่า", "แฮมเบอร์เกอร์", "คอมพิวเตอร์", "กระเป๋า", "พัดลม", "ตู้เย็น", "โทรทัศน์",
-  "หลอดไฟ", "กระจก", "สบู่", "แปรงฟัน", "ยาสีฟัน", "ผ้าเช็ดตัว", "รถพยาบาล",
-  "รถดับเพลิง", "มอเตอร์ไซค์", "เฮลิคอปเตอร์", "จระเข้", "ม้าลาย", "จิ้งจอก",
-  "นกเพนกวิน", "ปลาวาฬ", "ฉลาม", "ปลาหมึก", "ปู", "กุ้ง", "หอย", "ผีเสื้อ",
-  "พริก", "มะเขือเทศ", "แครอท", "มะละกอ", "ฝรั่ง", "เงาะ", "มังคุด", "ลิ้นจี่",
-  "โดนัท", "เค้ก", "คุกกี้", "ก๋วยเตี๋ยว", "ต้มยำกุ้ง", "ผัดไทย", "ข้าวมันไก่",
-  "แปรง", "หวีผม", "เข็มขัด", "แหวน", "สร้อยคอ", "นาฬิกาข้อมือ", "กุญแจ", "กระเป๋าสตางค์",
-  "กล้องถ่ายรูป", "หูฟัง", "ไมโครโฟน", "วิทยุ", "โคมไฟ", "เก้าอี้โยก", "โซฟา",
-  "ถังขยะ", "จาน", "ชาม", "แก้ว", "ถ้วย", "ส้อม", "หม้อหุงข้าว", "กระทะ",
-  "เตาอบ", "ไมโครเวฟ", "เครื่องซักผ้า", "แอร์", "ไดร์เป่าผม", "เข็มทิศ", "ไฟฉาย"
-];
+const DATA_URL = "/data/guess-words.json";
+let wordsPromise = null;
 
-function normalize(str) {
-  return String(str || "").trim().toLowerCase();
+function loadWords() {
+  if (!wordsPromise) {
+    wordsPromise = fetch(DATA_URL)
+      .then((r) => (r.ok ? r.json() : []))
+      .catch(() => []);
+  }
+  return wordsPromise;
 }
 
-export function predictWords(input, limit = 3) {
+function normalize(str) {
+  return String(str || "").trim();
+}
+
+// ระยะห่างแบบ Levenshtein ทั่วไป ตัดจบเร็วถ้าความยาวต่างกันเกิน maxDist อยู่แล้ว (คำสั้นๆ จึงไวมาก)
+function levenshtein(a, b, maxDist) {
+  if (Math.abs(a.length - b.length) > maxDist) return maxDist + 1;
+  const m = a.length, n = b.length;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+// จับคู่: คำขึ้นต้นตรงกันก่อนเสมอ (เรียงตามความถี่ของคลังคำ = ลำดับในไฟล์) แล้วค่อยเติมด้วยคำสะกดใกล้เคียง
+// (กันพิมพ์ผิดเล็กน้อย) เฉพาะตอนคำขึ้นต้นตรงยังไม่ครบ limit — ไม่แตะคลังคำของเกมเราเลยทั้งสองขั้น
+export async function predictWords(input, limit = 3) {
   const query = normalize(input);
   if (!query) return [];
+  const words = await loadWords();
+  if (!words.length) return [];
 
-  // Match words starting with the prefix or containing the substring
-  const exactPrefix = [];
-  const contains = [];
-
-  for (const word of GAME_WORDS) {
-    const normWord = normalize(word);
-    if (normWord === query) continue; // Skip exact match since user already typed it
-    if (normWord.startsWith(query)) {
-      exactPrefix.push(word);
-    } else if (normWord.includes(query)) {
-      contains.push(word);
+  const prefixMatches = [];
+  for (const w of words) {
+    if (w === query) continue;
+    if (w.startsWith(query)) {
+      prefixMatches.push(w);
+      if (prefixMatches.length >= limit) break; // คลังคำเรียงตามความถี่อยู่แล้ว เจอครบก่อนแปลว่าได้ตัวที่ใช้บ่อยสุดแล้ว
     }
   }
 
-  const results = [...exactPrefix, ...contains];
-  return results.slice(0, limit);
+  const fuzzyMatches = [];
+  if (prefixMatches.length < limit && query.length >= 2) {
+    const maxDist = query.length <= 3 ? 1 : 2;
+    for (const w of words) {
+      if (prefixMatches.includes(w)) continue;
+      if (Math.abs([...w].length - [...query].length) > maxDist) continue;
+      if (levenshtein(query, w, maxDist) <= maxDist) {
+        fuzzyMatches.push(w);
+        if (prefixMatches.length + fuzzyMatches.length >= limit) break;
+      }
+    }
+  }
+
+  return [...prefixMatches, ...fuzzyMatches].slice(0, limit);
 }
