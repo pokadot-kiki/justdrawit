@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 //     (เดิมเรนเดอร์ในหน้านั้นตรงๆ แล้วกฎ CSS ของหน้าแรกไปทับ position: fixed ทำให้กล่องหลุดไปล่างสุดและดันหน้าเลื่อน)
 //   - onClose: ใส่เมื่อปิดได้ → กด Esc หรือคลิกนอกกล่อง (บนม่าน) เพื่อปิด · ไม่ใส่ = กล่องที่ต้องตอบ (เลือกคำ สรุปตา จบเกม) ปิดเองไม่ได้
 //   - ระหว่างเปิด ล็อกไม่ให้หน้าข้างหลังเลื่อน
-export default function Modal({ children, labelledBy, onClose }) {
+export default function Modal({ children, labelledBy, onClose, panelClassName = "" }) {
   useEffect(() => {
     if (!onClose) return undefined;
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -28,7 +28,7 @@ export default function Modal({ children, labelledBy, onClose }) {
       // คลิกที่ม่านเอง (ไม่ใช่ข้างในกล่อง) = ปิด · ใช้ mousedown กันลากเลือกข้อความในกล่องแล้วปล่อยนอกกล่องปิดเอง
       onMouseDown={(e) => onClose && e.target === e.currentTarget && onClose()}
     >
-      <div className="modal__panel" role="dialog" aria-modal="true" aria-labelledby={labelledBy}>
+      <div className={`modal__panel${panelClassName ? ` ${panelClassName}` : ""}`} role="dialog" aria-modal="true" aria-labelledby={labelledBy}>
         {children}
       </div>
     </div>,

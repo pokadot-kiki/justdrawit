@@ -14,6 +14,9 @@ const firebaseAuth = require("./firebase-auth");
 const leaderboard = require("./leaderboard");
 const ai = require("./ai");
 const aiDrawings = require("./ai-drawings");
+const teamGallery = require("./team-gallery");
+const { validateProfile, applyRoomProfile } = require("./profile");
+const teamFinalResults = require("./team-final-results");
 const textCheck = require("./text-check");
 
 const app = express();
@@ -202,12 +205,12 @@ app.get("/api/leaderboard", (req, res) => {
 app.get("/api/rooms", (req, res) => {
   const list = [];
   for (const room of rooms.values()) {
-    if (room.settings.visibility !== "public" || room.players.length >= room.settings.maxPlayers) continue;
+    if (room.settings.visibility !== "public" || room.players.length >= roomCapacity(room)) continue;
     list.push({
       code: room.code,
       host: room.players.find((p) => p.id === room.hostId)?.name ?? "",
       players: room.players.length,
-      maxPlayers: room.settings.maxPlayers, // ค่าที่หัวห้องตั้ง (4/6/8) ไม่ใช่เพดานของระบบ
+      maxPlayers: roomCapacity(room),
       status: room.status,
       mode: room.settings.mode,
       difficulty: room.settings.difficulty,
@@ -248,8 +251,11 @@ function lanAddresses() {
 
 // ---------- ที่เก็บข้อมูลห้อง ----------
 const rooms = new Map(); // key = รหัสห้อง, value = ข้อมูลห้อง
-const MAX_PLAYERS = 8; // เพดานของระบบ (นำเสนอไว้ว่ารองรับ 2–8 คน) · หัวห้องตั้งต่ำกว่านี้ได้ผ่าน settings.maxPlayers
-const MAX_PLAYER_CHOICES = [4, 6, 8]; // โหมดทีมต้องมีทีมละ 2 คน → ตัวเลือกต่ำสุดจึงเป็น 4
+const MAX_PLAYERS = 8; // เพดานของทุกโหมด (หัวห้องตั้งได้ 4/6/8 ผ่าน settings.maxPlayers)
+const MAX_PLAYER_CHOICES = [4, 6, 8]; // ตัวเลือกความจุโหมดที่ไม่ใช่ทีม
+const { rules: TEAM_RULES, teamChoices: TEAM_COUNT_CHOICES, getTeams: roomTeams, teamCount } = require("./team-membership");
+// ความจุห้อง = ค่าที่หัวห้องตั้ง (ทุกโหมด) — โหมดทีมไม่มีเพดานต่อทีม ใช้กฎ "ห่างกันไม่เกิน 1 คน" แทน
+const roomCapacity = (room) => room.settings.maxPlayers || MAX_PLAYERS;
 
 // ---------- ฟังก์ชันช่วย ----------
 function makeRoomCode() {
@@ -290,7 +296,7 @@ function roomState(room) {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// โหมดทีม (ข้อ 8) — ทีม A กับ B วาดคำเดียวกันพร้อมกัน แต่ละทีมมี "เลน" (lane) ของตัวเอง
+// โหมดทีม (ข้อ 8) — ทุกทีมวาดคำเดียวกันพร้อมกัน แต่ละทีมมี "เลน" (lane) ของตัวเอง
 //
 // เลน = ก้อนข้อมูลหน้าตาเดียวกับ "ห้อง" ในโหมด classic (กระดาน ประวัติ ย้อนกลับ คำใบ้ คนทายถูก ปากกา)
 // และมี code เป็น "48213:A" / "48213:B" (Socket.IO room ย่อย) ฟังก์ชันวาดเดิมทุกตัว
@@ -299,10 +305,9 @@ function roomState(room) {
 // ══════════════════════════════════════════════════════════════════════
 // รหัสทีมข้างใน "คงที่เสมอ" A B C D — ใช้แยกห้องย่อย (Socket.IO room) และคีย์ข้อมูลทุกที่
 // ชื่อทีมที่ผู้เล่นตั้งเป็นแค่ "ป้ายแสดงผล" (room.settings.teamNames) ห้ามเอาไปใช้แทนรหัสนี้เด็ดขาด
-const TEAM_CODES = ["A", "B", "C", "D"];
-const TEAM_COUNT_CHOICES = [2, 3, 4];
+const TEAM_CODES = TEAM_RULES.ids; // ["A","B","C","D"] จาก shared/teamRules.json (TEAM_COUNT_CHOICES = 2-4 มาจากไฟล์เดียวกัน)
 const TEAM_DEFAULT_NAMES = { A: "ทีมแดง", B: "ทีมฟ้า", C: "ทีมเขียว", D: "ทีมเหลือง" };
-const TEAM_MIN_PLAYERS = 2;      // ทุกทีมต้องมีอย่างน้อยเท่านี้ถึงเริ่มเกมได้
+const TEAM_MIN_PLAYERS = TEAM_RULES.minPlayers;      // ทุกทีมต้องมีอย่างน้อยเท่านี้ถึงเริ่มเกมได้
 const FIRST_TEAM_BONUS = 100;    // ทีมที่ทายถูกก่อน ได้โบนัสต่อสมาชิกที่ทายถูก
 const TEAMNAME_MAX = 6;          // เปลี่ยนชื่อทีมได้ไม่เกิน 6 ครั้ง
 const TEAMNAME_WINDOW_MS = 10000; // ต่อ 10 วินาที (กันกดรัว)
@@ -312,9 +317,6 @@ const SWAP_MAX = 5;              // ขอสลับตัวได้ไม�
 const SWAP_WINDOW_MS = 10000;
 
 const isTeamMode = (room) => room.settings.mode === "team";
-const teamCount = (room, t) => room.players.filter((p) => p.team === t).length;
-// ทีม "ที่ใช้งานจริง" ของห้องนี้ ตามจำนวนที่หัวห้องตั้ง (2-4) — ทุกที่ที่เคยวนลูป TEAMS คงที่ ให้วนลูปนี้แทน
-const roomTeams = (room) => TEAM_CODES.slice(0, room.settings.teamCount || 2);
 const teamRoom = (room, t) => `${room.code}:${t}`;
 const teamNameOf = (room, t) => room.settings.teamNames?.[t] || TEAM_DEFAULT_NAMES[t] || t;
 
@@ -521,8 +523,9 @@ function teamRoundInfo(room, lane) {
     nextDrawerId: next,
     hint: lane.hintOpen && lane.word ? makeHint(lane.word) : null,
     hintAt: hintAt(room),
-    time: room.timeLeft,
-    challenge: room.challenge ?? { type: "none" },
+    time: room.settings.drawTime,
+    timeLeft: room.timeLeft,
+    challenge: room.challenge ?? { type: STANDARD_CHALLENGE },
     intro: Boolean(room.intro),
     guessedIds: [...lane.guessedIds],
     solvedTeams: roomTeams(room).filter((t) => room.teams[t].solved), // ชื่อทีมเท่านั้น ไม่มีชื่อคน/คำ
@@ -532,6 +535,8 @@ function teamRoundInfo(room, lane) {
 function nextTeamTurn(room) {
   if (!rooms.has(room.code) || room.status !== "playing") return;
   if (room.teamTurn >= room.teamTotalTurns) return endGame(room);
+  if (room.lastTeamRoundEnd) io.to(room.code).emit("team_gallery_close");
+  room.lastTeamRoundEnd = null;
   for (const t of roomTeams(room)) {
     const lane = room.teams[t];
     lane.drawerId = pickTeamDrawer(room, t);
@@ -556,7 +561,7 @@ function startTeamDrawing(room, word) {
   room.word = word;
   room.roundGains = {};
   room.solveCount = 0;
-  room.challenge = room.nextChallenge ?? { type: "none" }; // สุ่มไว้ตั้งแต่ขึ้นตา (rollChallenge) เดียวกันทั้งสองทีม
+  room.challenge = room.nextChallenge ?? { type: STANDARD_CHALLENGE }; // สุ่มไว้ตั้งแต่ขึ้นตา (rollChallenge) เดียวกันทั้งสองทีม
   const introMs = introMsFor(room.challenge);
   room.intro = introMs > 0; // ตั้งก่อน emit เพราะ teamRoundInfo อ่านค่านี้
   room.timeLeft = room.settings.drawTime;
@@ -566,6 +571,8 @@ function startTeamDrawing(room, word) {
     resetLane(lane, word, room.challenge);
     lane.skipped = skipped;
     lane.done = skipped;
+    const drawer = room.players.find((p) => p.id === lane.drawerId);
+    lane.roundDrawer = drawer ? { playerId: drawer.id, name: drawer.name, avatar: drawer.avatar } : null;
   }
   for (const lane of laneList(room)) {
     io.to(lane.code).emit("round_start", teamRoundInfo(room, lane));
@@ -727,19 +734,13 @@ function revealHint(room, by) {
 //
 // หัวห้องเปิด/ปิดกติกาได้ "ทีละใบ" ในห้องรอ (settings.challenges = ลิสต์ชนิดที่เปิด)
 //   "none" = Standard Drawing (วาดอิสระ) · "colour_fix" · "dont_lift_pen" · "shapes_only"
-// แต่ละตาสุ่มจากใบที่เปิดอยู่เท่านั้น (ดู rollChallenge) · ต้องเปิดอย่างน้อย 1 ใบเสมอ
+// ทุกตาสุ่มหนึ่งแบบจากรายการที่เปิด รวม Standard หากหัวห้องเปิดไว้
 //
 // ทุกกติกาตัดสินที่ server เท่านั้น client แค่ปิดปุ่มให้ใช้ง่าย ไม่ใช่ตัวกันโกง
 // และเหมือนการวาดทุกอย่าง: ไม่ผ่านกติกา = ทิ้งเงียบ ๆ ไม่ตอบ error กลับไป
 // (ถ้าตอบ error กลับ เท่ากับบอกคนที่กำลังลองโกงว่าเราดักตรงไหนอยู่)
-// จังหวะของ Mini Challenge (รอบ 3C):
-//   - ตาแรกของเกมไม่มีเสมอ ให้ทุกคนเล่นแบบปกติก่อน
-//   - ตาถัดไปสุ่ม โอกาส 1 ใน 3 และ "ไม่ติดกันสองตา" (ตาที่แล้วมีกติกา ตานี้ปกติเสมอ)
-//   - สุ่มตอนขึ้นตา (ก่อนเลือกคำ) เพื่อบอกคนวาดในกล่องเลือกคำ ไม่ใช่ตอนเริ่มวาด
-//   - ตาที่มีกติกา: ขึ้นป้ายใหญ่ CHALLENGE_INTRO_MS ก่อน ช่วงนั้นห้ามวาดและยังไม่เริ่มนับเวลา (เวลาวาดเท่าเดิม)
-// env 3 ตัวนี้ไว้ให้เทสเท่านั้น (ไม่ตั้ง = กติกาจริง): ODDS ปรับโอกาส · NO_PACING=1 ปิดกฎตาแรก/ไม่ติดกัน · INTRO_MS=0 ข้ามป้าย
-const CHALLENGE_CHANCE = process.env.CHALLENGE_ODDS !== undefined ? Number(process.env.CHALLENGE_ODDS) : 1 / 3;
-const CHALLENGE_NO_PACING = process.env.CHALLENGE_NO_PACING === "1";
+// สุ่มก่อนเลือกคำเพื่อบอกคนวาด; ตาที่มีกติกาขึ้นป้าย CHALLENGE_INTRO_MS ก่อนเริ่มเวลา
+// INTRO_MS=0 ใช้ในเทสเพื่อข้ามป้าย
 const CHALLENGE_INTRO_MS = process.env.CHALLENGE_INTRO_MS !== undefined ? Number(process.env.CHALLENGE_INTRO_MS) : 2000;
 
 // 8 สีหลักของพาเลต — ต้องตรงกับ PAINT_COLORS ใน client/src/canvas/palette.js
@@ -756,17 +757,7 @@ const BOARD_COLOR = "#ffffff";
 const COLOUR_FIX_COLORS = CHALLENGE_COLORS.filter((c) => c !== BOARD_COLOR);
 
 // ชนิดกติกาทั้งหมดที่เลือกเปิด/ปิดได้ · "none" = Standard Drawing (วาดอิสระ)
-const CHALLENGE_TYPES = ["none", "colour_fix", "dont_lift_pen", "shapes_only"];
-const SPECIAL_CHALLENGES = ["colour_fix", "dont_lift_pen", "shapes_only"]; // ทุกใบยกเว้น Standard
-// ค่าเริ่มต้นตอนสร้างห้อง: เปิดครบทั้ง 4 ใบ (Standard + colour_fix + dont_lift_pen + shapes_only) หัวห้องปิดทีละใบได้ในห้องรอ
-const DEFAULT_CHALLENGES = ["none", "colour_fix", "dont_lift_pen", "shapes_only"];
-
-// กรองลิสต์ให้เหลือชนิดที่รู้จัก ไม่ซ้ำ และต้องมีอย่างน้อย 1 ใบ (ไม่งั้นคืน null = ไม่รับค่านี้)
-function sanitizeChallenges(list) {
-  if (!Array.isArray(list)) return null;
-  const set = CHALLENGE_TYPES.filter((t) => list.includes(t)); // คงลำดับมาตรฐาน ตัดซ้ำ/ค่าแปลกปลอม
-  return set.length > 0 ? set : null;
-}
+const { standard: STANDARD_CHALLENGE, types: DEFAULT_CHALLENGES, sanitizeChallenges, selectChallengeType } = require("./challenge-selection");
 
 // สร้างก้อน Challenge จากชนิด — colour_fix แนบสีสุ่ม (ตัดสีขาวออก) · ที่เหลือมีแค่ type
 function makeChallenge(type) {
@@ -776,40 +767,18 @@ function makeChallenge(type) {
   return { type };
 }
 
-const pickFrom = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
 // สุ่ม Mini Challenge ของตาที่กำลังจะเริ่ม → room.nextChallenge (ใช้ทั้งบอกคนวาดตอนเลือกคำ และตอนเริ่มวาดจริง)
-// สุ่ม "จากใบที่หัวห้องเปิดไว้เท่านั้น" (settings.challenges) · challengeHistory = ชนิดของทุกตา (ล้างตอน start_game) ไว้ดูตาที่แล้ว
-// กติกา (ใช้กับทั้งโหมดแข่งเดี่ยวและทีม):
-//   1) เปิด Standard + กติกาพิเศษ → จังหวะเดิม: ตาแรกเป็นตาธรรมดา · ตาถัดไปโอกาส ~1/3 จากแบบพิเศษที่เปิด · ไม่ติดกันสองตา
-//   2) ปิด Standard → ทุกตามี Mini Challenge ตั้งแต่ตาแรก สุ่มจากแบบที่เปิด ติดกันได้ · เปิดหลายแบบพยายามไม่ซ้ำแบบเดิมสองตาติดกัน
-//   3) เปิดแค่ Standard → ไม่มี Mini Challenge เลย
-//   (4 ห้ามปิดหมด: sanitizeChallenges ให้เหลืออย่างน้อย 1 แบบเสมอ — เปิดไม่ถึง 1 แบบ = ไม่รับค่านั้น)
+// สุ่มจากแบบที่หัวห้องเปิดไว้เท่านั้น ใช้กับ Classic, Team และ Multiplayer vs AI
 function rollChallenge(room) {
-  const history = room.challengeHistory ?? (room.challengeHistory = []);
   const enabled = room.settings.challenges ?? DEFAULT_CHALLENGES;
-  const specials = SPECIAL_CHALLENGES.filter((t) => enabled.includes(t));
-  const standardOn = enabled.includes("none");
-
-  let type = "none";
-  if (specials.length > 0 && !standardOn) {
-    // ปิด Standard: ทุกตามีกติกาพิเศษ · มีให้เลือกหลายแบบ → เลี่ยงแบบเดียวกับตาที่แล้ว
-    const last = history[history.length - 1];
-    const pool = specials.length > 1 ? specials.filter((t) => t !== last) : specials;
-    type = pickFrom(pool);
-  } else if (specials.length > 0) {
-    // เปิด Standard ด้วย: จังหวะเดิม (ตาแรกไม่มี · ~1/3 · ไม่ติดกัน)
-    const allowed = CHALLENGE_NO_PACING || (history.length > 0 && history[history.length - 1] === "none");
-    if (allowed && Math.random() < CHALLENGE_CHANCE) type = pickFrom(specials);
-  }
+  const type = selectChallengeType(enabled);
   const ch = makeChallenge(type);
-  history.push(ch.type);
   room.nextChallenge = ch;
   return ch;
 }
 
 // ช่วงป้ายใหญ่ของตาที่มีกติกา (ms) · ตาปกติ = 0
-const introMsFor = (challenge) => (challenge && challenge.type !== "none" ? CHALLENGE_INTRO_MS : 0);
+const introMsFor = (challenge) => (challenge && challenge.type !== STANDARD_CHALLENGE ? CHALLENGE_INTRO_MS : 0);
 
 // เริ่มนับเวลาวาดจริง: ตาปกติเริ่มทันที · ตามี intro รอป้ายหายก่อน แล้วบอกทุกคนด้วย intro_end (คนวาดเริ่มวาดได้ตอนนี้)
 // ช่วง intro: room.intro = true → drawRoom() ทิ้งการวาดทุกชนิด และการทายถูกนับเป็นแชทธรรมดา
@@ -840,7 +809,7 @@ const isEraser = (tool) => tool === "eraser";
 // หลังยกปากกาแล้วจึงต้องถูกทิ้งเหมือนเส้นปากกาทุกประการ
 function challengeAllowsStroke(room, color, tool) {
   const ch = room.challenge;
-  if (!ch || ch.type === "none") return true;
+  if (!ch || ch.type === STANDARD_CHALLENGE) return true;
   if (ch.type === "shapes_only") return false; // โหมดรูปทรง: ห้ามวาดเส้นมือเปล่า (รวมยางลบ) รับแค่ draw_shape
   if (ch.type === "colour_fix") return isEraser(tool) || sameColor(color, ch.color);
   if (ch.type === "dont_lift_pen") return !room.penUsed; // ยกปากกาไปแล้ว = วาดต่อไม่ได้
@@ -852,7 +821,7 @@ function challengeAllowsStroke(room, color, tool) {
 // "เส้นเดียวต่อเนื่อง" ตั้งแต่ต้นอยู่แล้ว และ client ก็ซ่อนปุ่มถังสีให้ตั้งแต่แรก
 function challengeAllowsFill(room, color) {
   const ch = room.challenge;
-  if (!ch || ch.type === "none") return true;
+  if (!ch || ch.type === STANDARD_CHALLENGE) return true;
   if (ch.type === "colour_fix") return sameColor(color, ch.color);
   if (ch.type === "dont_lift_pen") return false;
   // shapes_only ตกมาถึงตรงนี้ → อนุญาตถังสี (ไว้ระบายสีในรูปทรง — ที่ห้ามคือเส้นมือเปล่าเท่านั้น)
@@ -939,6 +908,10 @@ const isSize = (v) => typeof v === "number" && Number.isFinite(v) && v >= SIZE_M
 // รวมการเช็คสิทธิ์และช่วงเวลาไว้ที่เดียว ทุก handler ของการวาดเรียกฟังก์ชันนี้
 function drawRoom(socket) {
   const room = rooms.get(socket.data.roomCode);
+  if (room?.status === "playing" && room.settings.mode === "mpai") {
+    const board = mpAi.actionRoom(room, socket.data.pid);
+    return board && !board.canvasFrozen ? board : null;
+  }
   if (!room || room.phase !== "drawing" || room.intro) return null; // ช่วงป้ายใหญ่ห้ามวาด
   // โหมดทีม: คืน "เลน" ของทีมที่คนนี้เป็นคนวาด — ทุก handler จึงเขียน/ส่งต่อเฉพาะในทีมนั้น (lane.code = 48213:A)
   if (isTeamMode(room)) {
@@ -1025,6 +998,7 @@ function storeAction(room, type, payload) {
     room.currentStroke.events.push({ type, points: payload.points });
     room.canvasEvents++;
     room.canvasPoints += cost;
+    if (room.mpAiPrivate) room.revision++;
     return true;
   }
 
@@ -1033,6 +1007,7 @@ function storeAction(room, type, payload) {
     room.currentStroke.events.push({ type });
     room.canvasEvents++;
     room.currentStroke = null;
+    if (room.mpAiPrivate) room.revision++;
     return true;
   }
 
@@ -1047,7 +1022,20 @@ function storeAction(room, type, payload) {
   room.canvasPoints += countPoints(op);
   room.redoOps = []; // วาดใหม่หลังย้อน = กองทำซ้ำหายทั้งกอง เหมือนโปรแกรมวาดรูปทั่วไป
   if (type === "stroke_start") room.currentStroke = op;
+  if (room.mpAiPrivate) room.revision++;
   return true;
+}
+
+function closeStroke(room) {
+  if (!room.strokeOpen) return false;
+  room.strokeOpen = false;
+  room.lastPoint = null;
+  storeAction(room, "stroke_end", {});
+  if (room.challenge?.type === "dont_lift_pen" && !room.penUsed) {
+    room.penUsed = true;
+    return true;
+  }
+  return false;
 }
 
 // ย้อนหนึ่งการกระทำ — คืน true ถ้าย้อนจริง
@@ -1058,6 +1046,7 @@ function undoCanvas(room) {
   room.canvasEvents -= op.events.length;
   room.canvasPoints -= countPoints(op);
   room.redoOps.push(op);
+  if (room.mpAiPrivate) room.revision++;
   return true;
 }
 
@@ -1067,6 +1056,7 @@ function redoCanvas(room) {
   room.canvasOps.push(op);
   room.canvasEvents += op.events.length;
   room.canvasPoints += countPoints(op);
+  if (room.mpAiPrivate) room.revision++;
   return true;
 }
 
@@ -1078,7 +1068,7 @@ function redoCanvas(room) {
 function canvasPayload(room) {
   const items = [];
   for (const op of room.canvasOps) items.push(...op.events);
-  return { items, canUndo: room.canvasOps.length > 0, canRedo: room.redoOps.length > 0 };
+  return { items, canUndo: room.canvasOps.length > 0, canRedo: room.redoOps.length > 0, penLocked: !!room.penUsed };
 }
 
 // ล้างประวัติทั้งก้อน — เรียกตอนขึ้นตาใหม่ (events.md หัวข้อ 4)
@@ -1091,6 +1081,7 @@ function resetCanvas(room) {
   room.canvasEvents = 0;
   room.canvasPoints = 0;
   room.canvasFrozen = false;
+  if (room.mpAiPrivate) room.revision = 0;
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -1265,7 +1256,7 @@ function startDrawing(room, word) {
   room.hintOpen = false;
   // ตาใหม่ = สุ่ม Mini Challenge ใหม่ และปลดล็อกปากกากลับเป็นปกติ
   // (ต้องตั้งก่อน emit round_start เสมอ เพราะค่านี้ติดไปกับ round_start ของตานี้เลย)
-  room.challenge = room.nextChallenge ?? { type: "none" }; // สุ่มไว้ตั้งแต่ขึ้นตา (rollChallenge) คนวาดรู้แล้วตอนเลือกคำ
+  room.challenge = room.nextChallenge ?? { type: STANDARD_CHALLENGE }; // สุ่มไว้ตั้งแต่ขึ้นตา (rollChallenge) คนวาดรู้แล้วตอนเลือกคำ
   const introMs = introMsFor(room.challenge);
   room.intro = introMs > 0; // ตั้งก่อน emit เพราะ roundInfo อ่านค่านี้
   room.penUsed = false;
@@ -1300,10 +1291,11 @@ function roundInfo(room) {
     // คนที่เข้าห้องกลางตาหลังเปิดแล้วจะได้ชุดช่องจริงไปเลย ไม่ใช่ null
     hint: room.hintOpen && room.word ? makeHint(room.word) : null,
     hintAt: hintAt(room), // เปิดเองเมื่อเวลาเหลือเท่านี้ — client ใช้โชว์ "คำใบ้จะขึ้นเมื่อเหลือ X วิ"
-    time: room.timeLeft,
+    time: room.settings.drawTime,
+    timeLeft: room.timeLeft,
     // Mini Challenge ของตานี้ (ข้อ 5) — ติดไปกับ round_start ด้วย
     // คนที่เข้าห้องกลางตาจึงเห็นป้ายเหมือนคนที่อยู่ในห้องตั้งแต่แรก โดยไม่ต้องมีโค้ดพิเศษ
-    challenge: room.challenge ?? { type: "none" },
+    challenge: room.challenge ?? { type: STANDARD_CHALLENGE },
     // true = ตอนนี้อยู่ช่วงป้ายใหญ่ (ยังห้ามวาด เวลายังไม่เดิน) จนกว่าจะได้ intro_end
     intro: Boolean(room.intro),
     // ส่งแค่ "id" ของคนที่ทายถูกแล้ว ไม่มีคำตอบหรืออะไรที่บอกคำปนมาด้วย
@@ -1312,7 +1304,8 @@ function roundInfo(room) {
   };
 }
 
-function endRound(room) {
+async function endRound(room) {
+  if (room.phase !== "drawing") return;
   stopTimer(room);
   room.phase = "between";
   // ตัดจบเส้นที่ค้างอยู่ (คนวาดอาจปล่อยมือไม่ทันตอนหมดเวลา)
@@ -1330,6 +1323,9 @@ function endRound(room) {
     ended.teamGained = Object.fromEntries(roomTeams(room).map((t) => [t, 0]));
     for (const p of room.players) if (p.team in ended.teamGained) ended.teamGained[p.team] += room.roundGains[p.id] || 0;
     ended.firstTeam = roomTeams(room).find((t) => room.teams[t].rank === 1) ?? null;
+    ended.gallery = await teamGallery(room, roomTeams(room));
+    if (room.status !== "playing" || room.phase !== "between") return;
+    room.lastTeamRoundEnd = ended;
   }
   io.to(room.code).emit("round_end", ended);
   room.word = null;
@@ -1340,20 +1336,27 @@ function endRound(room) {
 function endGame(room) {
   stopTimer(room);
   clearTimeout(room.chooseTimeout);
+  mpAi.stop(room); // Multiplayer vs AI: หยุดตัวจับเวลาของช่วงที่ค้างอยู่ (ไม่มี room.mp = ไม่ทำอะไร)
   room.status = "ended";
   room.phase = null;
-  const ranking = [...room.players]
-    .sort((a, b) => b.score - a.score)
-    .map((p) => ({ playerId: p.id, name: p.name, score: p.score }));
+  // Multiplayer vs AI: อันดับรวมคนที่ออกไปแล้วด้วย (คะแนนไม่หาย) และแยกคะแนนวาด/ทาย
+  const participants = !room.mp && !isTeamMode(room) && room.classicEntrants
+    ? [...room.classicEntrants.values()]
+    : room.players;
+  const ranking = room.mp
+    ? mpAi.ranking(room)
+    : [...participants]
+        .sort((a, b) => b.score - a.score)
+        .map((p) => isTeamMode(room)
+          ? { playerId: p.id, name: p.name, score: p.score }
+          : { playerId: p.id, name: p.name, score: p.score, avatar: p.avatar, isHost: p.id === room.hostId, left: !room.players.includes(p) });
   const ended = { ranking };
   if (isTeamMode(room)) {
-    const scores = teamScores(room);
-    const teams = roomTeams(room);
-    ended.teamRanking = teams.map((team) => ({ team, score: scores[team] })).sort((a, b) => b.score - a.score);
+    // คะแนนทีม = ค่าเฉลี่ยต่อสมาชิก (teamScores) · แต่ละทีมมีชื่อและสมาชิกตอนเริ่มแมตช์ (team-final-results.js)
     // ชนะ = ทีมเดียวที่คะแนนสูงสุด · มากกว่าหนึ่งทีมเสมอกันบนสุด (รวม 3-4 ทีม) = ไม่มีผู้ชนะ
-    const topScore = Math.max(...teams.map((t) => scores[t]));
-    const topTeams = teams.filter((t) => scores[t] === topScore);
-    ended.winner = topTeams.length === 1 ? topTeams[0] : null;
+    const teams = roomTeams(room);
+    const names = Object.fromEntries(teams.map((t) => [t, teamNameOf(room, t)]));
+    Object.assign(ended, teamFinalResults(room, teams, teamScores(room), names));
   }
   room.lastEnded = ended; // คนที่รีเฟรชหลังจบเกมจะได้ผลนี้อีกครั้งตอน rejoin
   // ไม่มีใครกด "กลับห้องรอ" → server พาทุกคนกลับเองเมื่อครบเวลา (server เป็นคนสั่งเปลี่ยนสถานะเสมอ)
@@ -1395,6 +1398,8 @@ function returnToLobby(room) {
   room.status = "lobby";
   room.phase = null;
   room.lastEnded = null;
+  room.classicEntrants = null;
+  room.teamParticipants = null;
   room.returnAt = null;
   room.word = null;
   room.drawerId = null;
@@ -1402,8 +1407,9 @@ function returnToLobby(room) {
   room.roundGains = {};
   room.guessedIds = new Set();
   room.teams = null; // เลนของทีม สร้างใหม่ตอน start_game
+  mpAi.stop(room);
+  room.mp = null; // สถานะ Multiplayer vs AI ของเกมก่อน
   clearAllSwaps(room); // คำขอสลับตัวที่ค้างจากเกมก่อนไม่มีความหมายแล้ว
-  room.challengeHistory = [];
   resetCanvas(room);
   for (const p of room.players) {
     p.score = 0;
@@ -1442,12 +1448,13 @@ function applySettings(room, data) {
   // ชุดกติกาที่เปิด (ใบไหนบ้าง) · รองรับค่าเดิม challenge: boolean ไว้ด้วย (true = ชุดเริ่มต้น · false = เปิดแค่ Standard)
   const sc = sanitizeChallenges(data?.challenges);
   if (sc) room.settings.challenges = sc;
-  else if (data?.challenge === false) room.settings.challenges = ["none"];
+  else if (data?.challenge === false) room.settings.challenges = [STANDARD_CHALLENGE];
   else if (data?.challenge === true) room.settings.challenges = [...DEFAULT_CHALLENGES];
-  if ((data?.mode === "classic" || data?.mode === "team") && room.settings.mode !== data.mode) {
+  if ((data?.mode === "classic" || data?.mode === "team" || data?.mode === "mpai") && room.settings.mode !== data.mode) {
     room.settings.mode = data.mode;
     applyMode(room);
   }
+  return true;
 }
 
 // ---------- ออกจากห้อง · หลุด · กลับเข้าห้องเดิม (rejoin) ----------
@@ -1488,6 +1495,7 @@ function handleDisconnect(socket) {
 
   player.connected = false;
   io.to(code).emit("room_update", roomState(room));
+  if (room.status === "playing" && isMpAi(room)) mpAi.onPlayerOffline(room, pid); // คนที่หลุดไม่ถูกรอ (หลังรอสั้นๆ เผื่อรีเฟรช)
   room.dropTimers ??= new Map();
   cancelDrop(room, pid);
   room.dropTimers.set(
@@ -1508,6 +1516,10 @@ function sendGameState(socket, room, player) {
   }
   if (room.status !== "playing") return;
   socket.emit("game_started", { mode: room.settings.mode, totalRounds: room.settings.rounds });
+  if (isMpAi(room)) {
+    mpAi.addPlayer(room, player);
+    return socket.emit("mpai_state", mpAi.snapshot(room, player.id));
+  }
   const lane = isTeamMode(room) ? room.teams?.[player.team] : null;
   const board = isTeamMode(room) ? lane : room; // โหมดทีม: เห็นเฉพาะภาพของทีมตัวเอง
   const drawerId = isTeamMode(room) ? lane?.drawerId : room.drawerId;
@@ -1517,10 +1529,12 @@ function sendGameState(socket, room, player) {
     // คนวาดที่กลับมา ต้องได้คำของตัวเองอีกครั้ง (ส่งถึงเขาคนเดียว) และรู้ถ้าปากกาถูกล็อกไปแล้ว
     if (drawerId === player.id && room.word) socket.emit("your_word", { word: room.word });
     if (board.penUsed) socket.emit("pen_locked", {});
+  } else if (isTeamMode(room) && room.phase === "between" && room.lastTeamRoundEnd) {
+    socket.emit("round_end", room.lastTeamRoundEnd);
   } else if (room.phase === "choosing" && drawerId === player.id) {
     // คนวาดรีเฟรชตอนกำลังเลือกคำ: ส่งตัวเลือกชุดเดิมพร้อมเวลาที่เหลือ
     const left = Math.max(1, Math.ceil((room.chooseEndsAt - Date.now()) / 1000));
-    socket.emit("choose_word", { options: room.wordOptions, time: left, challenge: room.nextChallenge ?? { type: "none" } });
+    socket.emit("choose_word", { options: room.wordOptions, time: left, challenge: room.nextChallenge ?? { type: STANDARD_CHALLENGE } });
   }
 }
 
@@ -1544,6 +1558,7 @@ function removePlayer(room, pid) {
     clearTimeout(room.returnTimer);
     stopTimer(room);
     clearTimeout(room.chooseTimeout);
+    mpAi.stop(room);
     rooms.delete(code);
     return;
   }
@@ -1553,7 +1568,10 @@ function removePlayer(room, pid) {
     room.players[0].isHost = true;
   }
 
-  if (room.status === "playing" && isTeamMode(room)) {
+  if (room.status === "playing" && isMpAi(room)) {
+    // Multiplayer vs AI แข่งรายคน: คนออกไม่ทำให้เกมจบ (เหลือคนเดียวก็เล่นต่อได้) คะแนน/ภาพเดิมเก็บไว้
+    mpAi.onPlayerLeft(room, pid);
+  } else if (room.status === "playing" && isTeamMode(room)) {
     // ทีมใดเหลือน้อยกว่า 2 คน เล่นต่อไม่ได้ (ไม่มีใครทาย) → จบเกม
     if (roomTeams(room).some((t) => teamCount(room, t) < TEAM_MIN_PLAYERS)) return endGame(room);
     const lane = laneOfDrawer(room, pid);
@@ -1605,6 +1623,20 @@ const DRAW_SIZE = 4;
 const GUESS_MIN_GAP_MS = 300;  // พิมพ์ทายถี่กว่านี้ทิ้งเงียบ ๆ
 const MAX_GUESS_CHARS = 40;
 const IMAGE_RE = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+
+// โหมด Multiplayer vs AI อยู่ในไฟล์แยก (mp-ai.js) — ใช้ฟังก์ชันเดิมของ Solo/ห้อง (สุ่มคำ ภาพ AI วาด คำใบ้ คะแนน จบเกม) ผ่านพารามิเตอร์
+const mpAi = require("./mp-ai")({
+  io, rooms, ai, aiDrawings, wordBank: WORD_BANK, makeHint, normalize, roomState, endGame,
+  snapshotGapMs: SNAPSHOT_MIN_GAP_MS, drawBudgetRatio: DRAW_BUDGET_RATIO, drawColor: DRAW_COLOR, drawSize: DRAW_SIZE,
+  rollChallenge, introMsFor, canvasPayload,
+  closePrivateStroke: closeStroke,
+  createPrivateBoard: (pid, challenge) => {
+    const board = { code: pid, challenge, mpAiPrivate: true, penUsed: false };
+    resetCanvas(board);
+    return board;
+  },
+});
+const isMpAi = (room) => room.settings.mode === "mpai";
 
 // เวลาเท่ากันทุกด่าน · ชุดคำ: ระดับที่ผู้เล่นเลือกเป็นแค่ "ระดับเริ่มต้น" แล้วยากขึ้นตามด่าน (ไม่เลือก = เริ่มที่ easy)
 function soloConfig(solo) {
@@ -1662,8 +1694,8 @@ function soloSnapshot(solo) {
   if (solo.drawing) {
     const cfg = soloConfig(solo);
     const timeLeft = Math.max(0, Math.ceil(solo.time - (Date.now() - solo.startedAt) / 1000));
-    return { ...base, phase: "draw", timeLeft, guesses: solo.wrong,
-      round: { level: solo.level, word: solo.word, time: solo.time, lives: solo.lives, aiMode: ai.aiMode(), drawNext: solo.drawNext, difficulty: cfg.difficulty } };
+    return { ...base, phase: "draw", timeLeft, guesses: solo.realGuesses,
+      round: { level: solo.level, word: solo.word, time: solo.time, lives: solo.lives, aiMode: ai.aiMode(), drawNext: solo.drawNext, difficulty: cfg.difficulty, roundId: solo.roundId } };
   }
   if (solo.guessing) {
     const timeLeft = Math.max(0, Math.ceil(solo.guessTime - (Date.now() - solo.guessStartedAt) / 1000));
@@ -1691,13 +1723,14 @@ function startSoloRound(socket, solo) {
   solo.lastSnapshotAt = 0;
   solo.busy = false;
   solo.wrong = [];
+  solo.realGuesses = [];
   solo.drawing = true;
   solo.drawNext = aiDrawings.available(ai.soloWords(WORD_BANK), cfg.difficulty); // ด่านนี้จะมีช่องสองต่อท้ายไหม
   solo.roundId++;
   clearTimeout(solo.roundTimer);
   solo.roundTimer = setTimeout(() => endSoloRound(socket, solo, false), time * 1000);
   // ส่งคำจริงให้ผู้เล่นได้เพราะเขาเป็นคนวาด · aiMode บอกว่าตอนนี้ AI จริงหรือจำลอง
-  socket.emit("ai_round_start", { level: solo.level, word, time, lives: solo.lives, aiMode: ai.aiMode(), drawNext: solo.drawNext, difficulty: cfg.difficulty });
+  socket.emit("ai_round_start", { level: solo.level, word, time, lives: solo.lives, aiMode: ai.aiMode(), drawNext: solo.drawNext, difficulty: cfg.difficulty, roundId: solo.roundId });
 }
 
 function endSoloRound(socket, solo, correct) {
@@ -1836,7 +1869,7 @@ async function handleSoloSnapshot(socket, data) {
   solo.busy = true; // ทีละภาพ ไม่ให้เรียก AI ซ้อนกัน
   const roundId = solo.roundId;
   try {
-    const { guess, correct } = await ai.guessImage({
+    const { guess, correct, source } = await ai.guessImage({
       image,
       word: solo.word,
       allWords: Object.values(ai.soloWords(WORD_BANK)).flat().map((w) => w.word),
@@ -1847,7 +1880,8 @@ async function handleSoloSnapshot(socket, data) {
     // รอ AI อยู่ระหว่างนั้นด่านอาจจบหรือผู้เล่นออกไปแล้ว ผลที่มาช้าต้องทิ้ง
     if (solo.over || !solo.drawing || solo.roundId !== roundId) return;
     if (!correct) solo.wrong.push(guess);
-    socket.emit("ai_guess", { guess, correct });
+    if (source === "model" || source === "claude") solo.realGuesses.push({ guess, correct, source, roundId });
+    socket.emit("ai_guess", { guess, correct, source, roundId });
     if (correct) endSoloRound(socket, solo, true);
   } catch (err) {
     // log แค่ข้อความ ไม่ log key หรือคำขอ
@@ -1914,6 +1948,7 @@ io.on("connection", (socket) => {
     if (typeof callback !== "function") return;
     const name = cleanName(data?.name);
     if (!name) return callback({ ok: false, error: "INVALID_NAME" });
+    if (data?.challenges !== undefined && !sanitizeChallenges(data.challenges)) return callback({ ok: false, error: "INVALID_CHALLENGES" });
     if (hasBadWord(name)) return callback({ ok: false, error: "INAPPROPRIATE_NAME" });
 
     leaveRoom(socket);
@@ -1933,7 +1968,7 @@ io.on("connection", (socket) => {
 
     socket.join(code);
     socket.data.roomCode = code;
-    applySettings(room, data); // ค่าที่เลือกตั้งแต่หน้าแรก (โหมดทีม → หัวห้องเข้าทีม A และเข้า room ย่อยแล้ว)
+    applySettings(room, data); // ห้องใหม่มีหัวห้องคนเดียว จึงไม่มีสมาชิกเดิมที่ขัดกับค่าเริ่มต้น
 
     callback({ ok: true, code, playerId: socket.data.pid });
     io.to(code).emit("room_update", roomState(room));
@@ -1952,13 +1987,14 @@ io.on("connection", (socket) => {
     if (!room) return callback({ ok: false, error: "ROOM_NOT_FOUND" });
     // เป็นสมาชิกห้องนี้อยู่แล้ว (เช่นรีเฟรชแล้วกดเข้าห้องเดิมภายในเวลารอ) = กลับเข้าที่เดิม ไม่สร้างผู้เล่นซ้ำ
     if (room.players.some((p) => p.id === socket.data.pid)) return callback(rejoinRoom(socket, room));
-    if (room.players.length >= room.settings.maxPlayers) return callback({ ok: false, error: "ROOM_FULL" });
+    if (room.players.length >= roomCapacity(room)) return callback({ ok: false, error: "ROOM_FULL" });
     if (room.players.some((p) => p.name === name)) return callback({ ok: false, error: "NAME_TAKEN" });
 
     leaveRoom(socket);
     dropSoloSession(socket.data.pid);
     const joiner = { id: socket.data.pid, name, avatar: cleanAvatar(data.avatar), score: 0, isHost: false, team: null, connected: true, ready: false };
     if (isTeamMode(room)) joiner.team = autoTeam(room); // โหมดทีม: เข้าทีมที่คนน้อยกว่าอัตโนมัติ (รวมคนเข้ากลางเกม)
+    if (isTeamMode(room) && !joiner.team) return callback({ ok: false, error: "ROOM_FULL" });
     room.players.push(joiner);
     room.scoreAccountIds.set(socket.data.pid, socket.data.accountId);
     socket.join(code);
@@ -1967,6 +2003,11 @@ io.on("connection", (socket) => {
     callback({ ok: true, playerId: socket.data.pid });
     io.to(code).emit("room_update", roomState(room));
     if (room.status === "playing") {
+      if (room.settings.mode === "classic") {
+        // คนเดิมกลับเข้าหลังหมดเวลารอ: คะแนนเดิมยังเป็นของตัวตนเดิม
+        joiner.score = room.classicEntrants?.get(joiner.id)?.score ?? joiner.score;
+        room.classicEntrants?.set(joiner.id, joiner);
+      }
       if (!isTeamMode(room)) room.turnOrder.push(socket.data.pid); // ต่อคิววาดท้ายรอบนี้
       sendGameState(socket, room, joiner);
     }
@@ -1984,6 +2025,29 @@ io.on("connection", (socket) => {
     callback(rejoinRoom(socket, room));
   });
 
+  socket.on("update_profile", (data, callback) => {
+    if (typeof callback !== "function") return;
+    const checked = validateProfile(data, cleanName, cleanAvatar);
+    if (!checked.ok) return callback(checked);
+    const { name, avatar } = checked;
+    if (hasBadWord(name)) return callback({ ok: false, error: "INAPPROPRIATE_NAME" }); // ตัวกรองเดียวกับ create_room/join_room/ai_start
+    const room = rooms.get(socket.data.roomCode);
+    if (room) {
+      if (!room.players.some((p) => p.id === socket.data.pid)) return callback({ ok: false, error: "NOT_IN_ROOM" });
+      if (room.players.some((p) => p.id !== socket.data.pid && p.name === name)) return callback({ ok: false, error: "NAME_TAKEN" });
+      applyRoomProfile(room, socket.data.pid, name, avatar);
+      callback({ ok: true, name, avatar });
+      io.to(room.code).emit("profile_updated", { playerId: socket.data.pid, name, avatar });
+      io.to(room.code).emit("room_update", roomState(room));
+      return;
+    }
+    const solo = soloSessions.get(socket.data.pid);
+    if (!solo || solo.over) return callback({ ok: false, error: "NOT_IN_GAME" });
+    solo.name = name;
+    callback({ ok: true, name, avatar });
+    io.to(socket.data.pid).emit("profile_updated", { playerId: socket.data.pid, name, avatar });
+  });
+
 
     socket.on("update_settings", (data) => {
     const room = rooms.get(socket.data.roomCode);
@@ -1991,12 +2055,13 @@ io.on("connection", (socket) => {
     if (room.hostId !== socket.data.pid) {
       return socket.emit("game_error", { code: "NOT_HOST", message: "เฉพาะหัวห้องเท่านั้น" });
     }
-    applySettings(room, data);
+    if (data?.challenges !== undefined && !sanitizeChallenges(data.challenges)) return socket.emit("game_error", { code: "INVALID_CHALLENGES", message: "ต้องเปิดรูปแบบการวาดอย่างน้อย 1 แบบ" });
+    applySettings(room, data); // ค่าที่ขัดกัน (เช่น maxPlayers < 2 × จำนวนทีม) ถูกเมินเงียบๆ คงค่าเดิม
     io.to(room.code).emit("room_update", roomState(room));
   });
 
-  // เปิด/ปิด Mini Challenge ทีละใบ (ในห้องรอ) — หัวห้องเท่านั้น · ต้องเปิดอย่างน้อย 1 ใบ
-  // ข้อมูลเพี้ยน/ว่าง (sanitize แล้วเหลือ 0 ใบ) = ทิ้งเงียบ ๆ (คงค่าเดิมไว้)
+  // เปิด/ปิด Mini Challenge ทีละใบ (ในห้องรอ) — หัวห้องเท่านั้น · ต้องมี Standard หรือแบบพิเศษอย่างน้อยหนึ่งแบบ
+  // ข้อมูลเพี้ยน/ว่าง = แจ้งหัวห้องและคงค่าเดิมไว้
   socket.on("set_challenges", (data) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room || room.status === "playing") return;
@@ -2004,7 +2069,7 @@ io.on("connection", (socket) => {
       return socket.emit("game_error", { code: "NOT_HOST", message: "เฉพาะหัวห้องเท่านั้น" });
     }
     const sc = sanitizeChallenges(data?.challenges);
-    if (!sc) return;
+    if (!sc) return socket.emit("game_error", { code: "INVALID_CHALLENGES", message: "ต้องเปิดรูปแบบการวาดอย่างน้อย 1 แบบ" });
     room.settings.challenges = sc;
     io.to(room.code).emit("room_update", roomState(room));
   });
@@ -2176,10 +2241,12 @@ io.on("connection", (socket) => {
     clearTimeout(room.returnTimer); // เล่นอีกรอบเอง → ยกเลิกตัวนับกลับห้องรอ
     room.status = "playing";
     room.players.forEach((p) => (p.score = 0));
+    // เก็บอ้างอิงผู้เข้าร่วมตามลำดับเข้าห้อง คะแนนจะอัปเดตบน object เดิมแม้ออกจากห้อง
+    room.classicEntrants = room.settings.mode === "classic" ? new Map(room.players.map((p) => [p.id, p])) : null;
+    room.teamParticipants = isTeamMode(room) ? room.players.map((p) => ({ playerId: p.id, name: p.name, avatar: p.avatar, team: p.team })) : null;
     room.round = 1;
     room.turnOrder = room.players.map((p) => p.id);
     room.turnIndex = 0;
-    room.challengeHistory = []; // เกมใหม่ (รวมเล่นอีกรอบ) = ตาแรกไม่มี Mini Challenge อีกครั้ง
     if (isTeamMode(room)) {
       // หนึ่งรอบ = ทีมที่ใหญ่กว่าวาดครบทุกคนหนึ่งรอบ (ทีมเล็กหมุนวนซ้ำ) · จำนวนตาทั้งเกมล็อกตอนเริ่ม
       const teams = roomTeams(room);
@@ -2190,8 +2257,10 @@ io.on("connection", (socket) => {
       room.drawerId = null; // โหมดทีมไม่ใช้ช่องนี้ (คนวาดอยู่ที่เลน)
     }
 
+    room.mp = null;
     io.to(room.code).emit("game_started", { mode: room.settings.mode, totalRounds: room.settings.rounds });
     io.to(room.code).emit("room_update", roomState(room));
+    if (isMpAi(room)) return mpAi.startGame(room);
     nextTurn(room);
   });
 
@@ -2215,6 +2284,8 @@ io.on("connection", (socket) => {
     // จำกัดความถี่: ยิงทายรัว ๆ เกินเพดาน = ทิ้งเงียบ ๆ (เหมือน input ที่ไม่ผ่านกติกาอื่น ไม่บอกคนโกงว่าโดนดัก)
     if (!rateOk(socket, "guess", GUESS_MAX, GUESS_WINDOW_MS)) return;
     if (room.status === "playing" && isTeamMode(room)) return handleTeamGuess(socket, room, player, text);
+    // Multiplayer vs AI ช่วง AI วาด: แชทร่วมของห้องเป็นช่องทาย (กติกาแชทเดียวกับโหมดปกติ อยู่ใน mp-ai.js handleGuess)
+    if (room.status === "playing" && isMpAi(room) && room.mp?.phase === "watch") return mpAi.handleGuess(socket, room, player, text);
     const msg = { playerId: socket.data.pid, name: player.name, text };
 
     // ไม่ได้อยู่ช่วงวาด คุยเล่นได้ปกติ
@@ -2270,6 +2341,7 @@ io.on("connection", (socket) => {
   socket.on("stroke_start", (data) => {
     const room = drawRoom(socket);
     if (!room || !data || typeof data !== "object") return;
+    if (room.mpAiPrivate && room.strokeOpen) return;
 
     const { x, y, color, size, tool } = data;
     if (!isUnit(x) || !isUnit(y)) return;
@@ -2304,18 +2376,14 @@ io.on("connection", (socket) => {
   socket.on("stroke_end", () => {
     const room = drawRoom(socket);
     if (!room || !room.strokeOpen) return;
-
-    room.strokeOpen = false;
-    room.lastPoint = null;
-    storeAction(room, "stroke_end", {});
+    const penLocked = closeStroke(room);
     socket.to(room.code).emit("stroke_end", {});
 
     // dont_lift_pen: เส้นแรกจบแล้ว = "ยกปากกา" — วาดต่อไม่ได้อีกทั้งตา
     // ประกาศให้ทั้งห้องรู้ (events.md pen_locked) เพื่อให้ทุกจอขึ้นข้อความพร้อมกัน ไม่ใช่ให้ client เดา
     // penUsed เป็นของ "ตานี้" จึงถูกล้างตอน startDrawing เท่านั้น
-    if (room.challenge?.type === "dont_lift_pen" && !room.penUsed) {
-      room.penUsed = true;
-      io.to(room.code).emit("pen_locked", {});
+    if (penLocked) {
+    io.to(room.code).emit(room.mpAiPrivate ? "mpai_pen_locked" : "pen_locked", {});
     }
     // คนวาดปล่อยมือ = จังหวะ "หยุด" → นัดตรวจตัวหนังสือ (async ไม่ขวางการวาด) · room ตรงนี้อาจเป็นเลนของทีม
     scheduleTextCheck(rooms.get(socket.data.roomCode), room);
@@ -2324,6 +2392,7 @@ io.on("connection", (socket) => {
   socket.on("fill", (data) => {
     const room = drawRoom(socket);
     if (!room || !data || typeof data !== "object") return;
+    if (room.mpAiPrivate && room.strokeOpen) return;
 
     const { x, y, color } = data;
     if (!isUnit(x) || !isUnit(y) || !isColor(color)) return;
@@ -2353,11 +2422,24 @@ io.on("connection", (socket) => {
     scheduleTextCheck(rooms.get(socket.data.roomCode), room); // รูปทรงก็ต่อกันเป็นตัวอักษรได้ (เช่นเส้นตรงหลายเส้น)
   });
 
-  // clear_canvas ไม่ได้ล้าง "ประวัติ" ทิ้ง แต่ถูกเก็บเป็นอีกหนึ่งการกระทำ
-  // จึงกดย้อนกลับเพื่อเอากลับมาได้ (เหมือนโปรแกรมวาดรูปทั่วไป)
+  // Don't Lift Pen: Clear เริ่มภาพและสิทธิ์วาดเส้นเดียวใหม่ทั้งชุด; โหมดอื่นคงประวัติสำหรับ Undo
   socket.on("clear_canvas", () => {
     const room = drawRoom(socket);
     if (!room) return;
+    if (room.strokeOpen && (room.mpAiPrivate || room.challenge?.type === "dont_lift_pen")) return;
+
+    if (room.challenge?.type === "dont_lift_pen") {
+      const revision = room.revision;
+      resetCanvas(room);
+      room.penUsed = false;
+      if (room.mpAiPrivate) {
+        room.revision = revision + 1;
+        const parent = rooms.get(socket.data.roomCode);
+        mpAi.clearPlayerDrawing(parent, socket.data.pid);
+      }
+      io.to(room.code).emit(room.mpAiPrivate ? "mpai_canvas_history" : "canvas_history", canvasPayload(room));
+      return;
+    }
 
     storeAction(room, "clear_canvas", {});
     socket.to(room.code).emit("clear_canvas", {});
@@ -2370,19 +2452,19 @@ io.on("connection", (socket) => {
   // dont_lift_pen ปฏิเสธทั้งคู่ **ที่ server** ไม่ใช่แค่ซ่อนปุ่ม
   // เพราะหัวใจของกติกาคือ "ห้ามยกปากกา" แต่การย้อนเส้นที่ลากผิดทิ้งแล้วลากใหม่ = ยกปากกาโดยไม่ถูกจับ
   // ปิดไว้ทั้งตา (ไม่ใช่เฉพาะหลังยก) เรียบง่ายและไม่มีช่องให้พลาด
-  // ส่วน clear_canvas ยังอนุญาต เพราะการล้างจอไม่ได้ให้อะไรกลับมาเลย — ยังวาดต่อไม่ได้อยู่ดี
+  // Clear ของ Don't Lift Pen เริ่มประวัติใหม่โดยตรง ไม่ผ่าน Undo/Redo
   const historyLocked = (room) => room.challenge?.type === "dont_lift_pen";
 
   socket.on("undo", () => {
     const room = drawRoom(socket);
     if (!room || historyLocked(room) || !undoCanvas(room)) return;
-    io.to(room.code).emit("canvas_history", canvasPayload(room));
+    io.to(room.code).emit(room.mpAiPrivate ? "mpai_canvas_history" : "canvas_history", canvasPayload(room));
   });
 
   socket.on("redo", () => {
     const room = drawRoom(socket);
     if (!room || historyLocked(room) || !redoCanvas(room)) return;
-    io.to(room.code).emit("canvas_history", canvasPayload(room));
+    io.to(room.code).emit(room.mpAiPrivate ? "mpai_canvas_history" : "canvas_history", canvasPayload(room));
   });
 
   // ── คำใบ้ (คนวาดขอเปิดก่อนเวลา) ──
@@ -2434,6 +2516,14 @@ io.on("connection", (socket) => {
 
   socket.on("ai_draw_guess", (data) => {
     handleSoloGuess(socket, data);
+  });
+
+  // ── Multiplayer vs AI ──
+  // ช่วง 1: ขอให้ server สร้างภาพจาก action ส่วนตัวที่ตรวจแล้ว (ไม่รับภาพจาก client)
+  socket.on("mpai_snapshot", (data) => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room || room.status !== "playing" || !isMpAi(room)) return;
+    return mpAi.handleSnapshot(socket, room, data);
   });
 
   socket.on("leave_room", () => {

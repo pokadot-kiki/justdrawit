@@ -909,6 +909,18 @@ input {
   pointer-events: none;
 }
 
+/* Don't Lift Pen: หลังยกปากกา เครื่องมืออื่นยังล็อก แต่ Clear เริ่มเส้นใหม่ได้ */
+.toolbar--locked.toolbar--clear-only {
+  opacity: 1;
+  pointer-events: auto;
+}
+.toolbar--clear-only .toolbar__group--history,
+.toolbar--clear-only .toolbar__group--colors,
+.toolbar--clear-only .toolbar__group--size,
+.toolbar--clear-only .tool:disabled {
+  opacity: 0.45;
+}
+
 /* กลุ่มที่กติกาล็อกไว้ทั้งกลุ่ม (colour_fix ล็อกสี) — จางลง แต่ยังใช้ตัว disabled จริงคุมการกด
    ไม่ใช้ pointer-events: none แบบ .toolbar--locked เพราะที่นี่เฉพาะ "บางกลุ่ม" ยังกดได้ (ปากกา ยางลบ ขนาด) */
 .toolbar__group--off {
@@ -1312,16 +1324,16 @@ input {
   list-style: none;
   margin: 12px 0 0;
   padding: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: flex-end;
-  justify-content: center;
   gap: 8px;
 }
 
 .podium__item {
-  flex: 1;
   display: grid;
   justify-items: center;
+  min-width: 0;
   gap: 4px;
   padding: 10px 6px;
   border: var(--border);
@@ -1330,12 +1342,27 @@ input {
 
 /* ตั้งใจให้ที่ 1 สูงที่สุด เหมือนแท่นรางวัลจริง */
 .podium__item--1 {
-  padding-top: 26px;
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 200px;
   background: #fff3c4;
+  border-color: #c69212;
 }
 
 .podium__item--2 {
-  padding-top: 14px;
+  grid-column: 1;
+  grid-row: 1;
+  min-height: 175px;
+  background: #edf0f4;
+  border-color: #929ba8;
+}
+
+.podium__item--3 {
+  grid-column: 3;
+  grid-row: 1;
+  min-height: 150px;
+  background: #f5dfcb;
+  border-color: #ab7652;
 }
 
 .podium__medal {
@@ -1343,15 +1370,127 @@ input {
 }
 
 .podium__name {
+  max-width: 100%;
   font-family: var(--font-head);
   font-weight: 500;
   font-size: 15px;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
+
+.podium__avatar { width: 32px; height: 32px; }
 
 .podium__score {
   font-family: var(--font-pixel);
   font-size: 16px;
+}
+
+/* เล่นสองคน: ไม่มีที่ 3 → สองคอลัมน์จัดกลาง (ที่ 2 ซ้าย · ที่ 1 ขวาของคู่ แต่ยังสูงกว่า) ไม่เหลือช่องว่างข้างขวา */
+.podium--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 66%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.podium--one {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 220px;
+  margin-inline: auto;
+}
+
+.podium--one .podium__item--1 { grid-column: 1; }
+
+@media (max-width: 620px) {
+  .podium:not(.podium--two):not(.podium--one) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .podium:not(.podium--two):not(.podium--one) .podium__item--1 { grid-column: 1 / -1; grid-row: 1; }
+  .podium:not(.podium--two):not(.podium--one) .podium__item--2 { grid-column: 1; grid-row: 2; }
+  .podium:not(.podium--two):not(.podium--one) .podium__item--3 { grid-column: 2; grid-row: 2; }
+}
+
+/* Multiplayer vs AI: คะแนนวาด/ทายในการ์ดและแถวของคนนั้นเอง */
+.podium__split {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* อันดับจบเกมรายคนใช้ลำดับเดียวกับแท่นรางวัล; ทั้งกล่อง modal เลื่อนได้เมื่อรายชื่อยาว */
+.match-ranking {
+  margin-top: 18px;
+  text-align: left;
+}
+
+.match-ranking__title {
+  margin: 0 0 8px;
+  font-family: var(--font-head);
+  font-size: 18px;
+}
+
+.match-ranking__list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.match-ranking__row {
+  display: grid;
+  grid-template-columns: 2.5ch 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: var(--border);
+  background: var(--white);
+}
+
+.match-ranking__row--me {
+  border-color: var(--blue);
+}
+
+.match-ranking__place {
+  font-family: var(--font-pixel);
+  text-align: right;
+}
+
+.match-ranking__avatar {
+  width: 32px;
+  height: 32px;
+}
+
+.match-ranking__identity {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.match-ranking__name {
+  font-family: var(--font-head);
+  overflow-wrap: anywhere;
+}
+
+.match-ranking__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.match-ranking__badges .tag,
+.match-ranking__left {
+  font-size: 12px;
+}
+
+.match-ranking__left {
+  color: var(--muted);
+}
+
+.match-ranking__score {
+  font-family: var(--font-pixel);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- จอแท็บเล็ตแนวนอน (ไอแพด 1024–1366): ย่อคอลัมน์ข้างทั้งสอง เพื่อคืนที่ให้กระดาน ----
@@ -1824,6 +1963,30 @@ select[class] {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+.solo-ai__history {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.solo-ai__history-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  background: var(--tab-idle);
+  overflow-wrap: anywhere;
+}
+
+.solo-ai__history-item--ok {
+  background: var(--green-soft);
+  color: var(--green);
+  font-weight: 600;
 }
 
 .ai-box__guess {
@@ -2371,6 +2534,9 @@ select[class] {
   --team-c-soft: #def7e5;
   --team-d: #a16207;
   --team-d-soft: #fef9c3;
+  /* ไม่มีทีม E แล้ว (ทีมมีได้ 2-4) — สองสีนี้ยังใช้เป็นสีแท่นอันดับ 3 ของหน้าจบเกมทีม */
+  --team-e: #b05b14;
+  --team-e-soft: #fff0d7;
 }
 
 /* ห้องรอ: สองคอลัมน์ข้างกัน (มือถือเรียงลง) */
@@ -2564,6 +2730,15 @@ select[class] {
   flex-wrap: wrap;
 }
 
+.topbar:has(.team-vs) {
+  flex-wrap: wrap;
+}
+
+.topbar .team-vs {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .team-vs__item {
   display: inline-flex;
   align-items: center;
@@ -2626,6 +2801,117 @@ select[class] {
 .team-vs__chip--mine {
   border-width: 4px;
   box-shadow: var(--shadow-xs);
+}
+
+/* เฉลยโหมดทีม: ช่องกลางเปลี่ยนจากกระดานเป็นภาพจริงของทุกทีมหลังจบตา */
+.team-gallery {
+  --team-gallery-min-card: 220px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: 4 / 3;
+  padding: 12px;
+  overflow: auto;
+  border: var(--border-thick);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow);
+  background: var(--white);
+}
+
+.team-gallery__card {
+  --team-gallery-accent: var(--ink);
+  flex: 0 0 var(--team-gallery-card-width, 100%);
+  min-width: 0;
+  margin: 0;
+  padding: 10px;
+  border: 3px solid var(--team-gallery-accent);
+  border-radius: var(--r-sm);
+  background: var(--cream);
+  color: var(--ink);
+  box-shadow: var(--shadow-xs);
+}
+
+.team-gallery__card--A { --team-gallery-accent: var(--team-a); }
+.team-gallery__card--B { --team-gallery-accent: var(--team-b); }
+.team-gallery__card--C { --team-gallery-accent: var(--team-c); }
+.team-gallery__card--D { --team-gallery-accent: var(--team-d); }
+.team-gallery__card--mine { box-shadow: 0 0 0 3px var(--blue), var(--shadow-xs); }
+
+.team-gallery__caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 8px;
+  margin-bottom: 8px;
+}
+
+.team-gallery__team {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--team-gallery-accent);
+}
+
+.team-gallery__mine {
+  font-size: 11px;
+  color: var(--blue);
+  font-weight: 700;
+}
+
+.team-gallery__drawer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.team-gallery__drawer > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-gallery__art {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: var(--border);
+  border-radius: var(--r-sm);
+  background: var(--white);
+  color: var(--muted);
+}
+
+.team-gallery__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+@media (min-width: 1001px) {
+  .game--team-gallery .team-gallery {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 1000px) {
+  .game--team-gallery .team-gallery { order: 1; }
+}
+
+@media (min-width: 700px) and (max-width: 1000px) {
+  .game--team-gallery .team-gallery {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
 }
 
 /* แถบคะแนนจัดกลุ่มตามทีม */
@@ -2755,6 +3041,227 @@ select[class] {
   font-size: 24px;
 }
 
+/* จบเกมทีม: ตารางคะแนนใช้ผลจาก server; กล่องเดิมเลื่อนทั้งใบเพื่อเข้าถึงปุ่มล่าง */
+.modal__panel--team-over {
+  max-width: 860px;
+  background: var(--stage, var(--purple));
+  color: var(--white);
+}
+
+.modal__panel--team-over .modal__note {
+  color: var(--white);
+}
+
+.team-over__headline {
+  font-size: 30px;
+  animation: team-win-enter 550ms ease-out both;
+}
+
+@keyframes team-win-enter {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.team-over__winner {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  margin: 0 auto 18px;
+  padding: 12px;
+  border: var(--border-thick);
+  background: var(--cream);
+  color: var(--ink);
+  box-shadow: var(--shadow-xs);
+}
+
+.team-over__winner-name {
+  font-family: var(--font-head);
+  font-size: 24px;
+  overflow-wrap: anywhere;
+}
+
+.team-over__winner-members {
+  overflow-wrap: anywhere;
+}
+
+.team-over__winner-score {
+  font-family: var(--font-pixel);
+  font-size: 20px;
+}
+
+.team-podium {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.team-podium--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 580px;
+  margin-inline: auto;
+}
+
+.team-podium__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 8px;
+  border: var(--border-thick);
+  background: var(--white);
+  color: var(--ink);
+  box-shadow: var(--shadow-xs);
+}
+
+.team-podium__item--1 {
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 330px;
+  border-color: var(--yellow);
+  box-shadow: inset 0 0 0 3px var(--yellow), var(--shadow-xs);
+}
+
+.team-podium__item--2 {
+  grid-column: 1;
+  grid-row: 1;
+  min-height: 295px;
+  border-color: var(--muted);
+  background: var(--tab-idle);
+}
+
+.team-podium__item--3 {
+  grid-column: 3;
+  grid-row: 1;
+  min-height: 260px;
+  border-color: var(--team-e);
+  background: var(--team-e-soft);
+}
+
+.team-podium__name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  max-width: 100%;
+  font-family: var(--font-head);
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+
+.team-podium__members {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+
+.team-podium__member {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  text-align: left;
+}
+
+.team-podium__member > span:last-child {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.team-podium__score {
+  margin-top: auto;
+  font-family: var(--font-pixel);
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+
+.team-standings {
+  margin-top: 18px;
+  text-align: left;
+}
+
+.team-standings__title {
+  margin: 0 0 8px;
+  font-family: var(--font-head);
+  font-size: 20px;
+}
+
+.team-standings__list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.team-standings__row {
+  display: grid;
+  grid-template-columns: 3ch minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px;
+  border: var(--border);
+  background: var(--white);
+  color: var(--ink);
+}
+
+.team-standings__rank,
+.team-standings__score {
+  font-family: var(--font-pixel);
+  white-space: nowrap;
+}
+
+.team-standings__identity {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.team-standings__identity .team-vs__chip {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.team-standings__members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  min-width: 0;
+}
+
+.team-standings__member {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 620px) {
+  .modal__panel--team-over { padding: 14px; }
+  .team-over__headline { font-size: 24px; }
+  .team-podium { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .team-podium__item--1 { grid-column: 1 / -1; grid-row: 1; min-height: 270px; }
+  .team-podium__item--2 { grid-column: 1; grid-row: 2; min-height: 250px; }
+  .team-podium__item--3 { grid-column: 2; grid-row: 2; min-height: 230px; }
+  .team-podium--two .team-podium__item--2 { grid-column: 1 / -1; width: min(100%, 260px); justify-self: center; }
+  .team-podium__name { font-size: 17px; }
+  .team-podium__score { font-size: 16px; }
+  .team-standings__row { gap: 6px; padding: 7px; }
+}
+
 /* ไอแพดแนวนอน/จอแคบ: คะแนนทีมในแถบบนลงบรรทัดเดียวกับคำใบ้ได้ แถวคะแนนทีมเรียงข้างกัน */
 /* ไอแพดแนวนอน/โน้ตบุ๊กเล็ก: แถบบนแน่น ย่อความกว้างชื่อทีมในชิปแถบบนลง (สียังบอกทีมครบ ชื่อเต็มดูได้จาก title ตอนชี้เมาส์)
    ไม่งั้นแถบบนขึ้นสองบรรทัด สูงขึ้น 15px แล้วดันกล่องใต้กระดานตกจอที่ 1024×768 */
@@ -2818,6 +3325,11 @@ select[class] {
   border: 3px solid var(--blue);
   background: #eaf1fd;
   font-weight: 600;
+}
+
+.podium-stage ~ .gains .gains__row--me {
+  background: var(--white);
+  font-weight: normal;
 }
 
 .podium__item--me {
@@ -3173,92 +3685,6 @@ select[class] {
   overflow-wrap: anywhere;
 }
 
-.mode-cards {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 18px;
-}
-
-.mode-card {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  padding: 14px;
-  border: var(--border-thick);
-  background: var(--cream);
-  box-shadow: var(--shadow-sm);
-  color: var(--ink);
-  font-family: var(--font-body);
-  text-align: left;
-  cursor: pointer;
-  opacity: 0.8;
-}
-
-.mode-card--active {
-  opacity: 1;
-  background: var(--white);
-  border-color: var(--blue);
-  box-shadow: 6px 6px 0 var(--blue);
-}
-
-.mode-card__art {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 190px;
-  border: var(--border);
-  background: var(--tab-idle);
-}
-
-.mode-card__art--classic {
-  background: var(--yellow);
-}
-
-.mode-card__frame {
-  display: grid;
-  place-items: center;
-  padding: 8px;
-  border: var(--border);
-  background: var(--white);
-}
-
-.mode-card__side {
-  display: grid;
-  grid-template-columns: repeat(2, auto);
-  gap: 4px;
-  padding: 8px;
-  border: var(--border);
-}
-
-.mode-card__side--A { background: var(--team-a); }
-.mode-card__side--B { background: var(--team-b); }
-
-.mode-card__vs {
-  font-family: var(--font-pixel);
-  font-size: 20px;
-  color: var(--white);
-  text-shadow: 2px 2px 0 var(--ink);
-}
-
-.mode-card__art--team {
-  background: var(--purple);
-  gap: 6px;
-}
-
-.mode-card__title {
-  font-family: var(--font-head);
-  font-weight: 600;
-  font-size: 20px;
-}
-
-.mode-card__desc {
-  font-size: 14px;
-  line-height: 1.4;
-  color: var(--muted);
-}
-
 /* กดไม่ให้ขอบฟ้าค้างหลังคลิกเมาส์ — โชว์กรอบโฟกัสเฉพาะตอนกดคีย์บอร์ด (:focus-visible) เท่านั้น */
 .mode-card:focus,
 .seg:focus {
@@ -3305,10 +3731,6 @@ select[class] {
     min-height: 52px;
   }
 
-  .mode-card__art {
-    min-height: 150px;
-  }
-
   .screen--setup {
     gap: 12px;
   }
@@ -3327,12 +3749,6 @@ select[class] {
 
 @media (max-width: 760px) {
   .lobby {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 560px) {
-  .mode-cards {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -4623,21 +5039,6 @@ select[class] {
   z-index: 1;
 }
 
-/* ---- SET UP: การ์ดโหมดที่ 3 "แข่งกับ AI" เต็มความกว้างใต้สองการ์ดบน (classic + team) ---- */
-.mode-card--ai {
-  grid-column: 1 / -1;
-}
-
-.mode-card__art--ai {
-  min-height: 110px;
-}
-
-@media (max-width: 760px) {
-  .mode-card--ai {
-    grid-column: auto;
-  }
-}
-
 /* ==========================================================================
    ปุ่ม Ready + สถานะ READY/WAITING + ปุ่มเตะออก (ห้องรอ)
    ========================================================================== */
@@ -4864,16 +5265,6 @@ select[class] {
    → ย่อรูปหน้าปกการ์ดโหมดและช่องไฟ (ปุ่ม/ตัวหนังสือไม่เล็กลง ปุ่มสูง ≥ 44px เหมือนเดิม)
    ========================================================================== */
 @media (min-width: 1001px) and (max-height: 820px) {
-  .mode-card__art {
-    min-height: 0;
-    height: 92px;
-  }
-
-  .mode-card__art--ai {
-    min-height: 0;
-    height: 70px;
-  }
-
   .screen--setup {
     padding-top: 14px;
   }
@@ -5200,14 +5591,6 @@ select[class] {
     font-size: 24px;
   }
 
-  .mode-card__art {
-    height: 70px;
-  }
-
-  .mode-card__art--ai {
-    height: 56px;
-  }
-
   .setup__opts {
     gap: 6px;
   }
@@ -5337,8 +5720,69 @@ select[class] {
 
 .game__players-list {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
+}
+
+/* ห้องเล่นจริง: ให้ป้ายสถานะขึ้นบรรทัดได้และให้คะแนนอยู่ครบเสมอ */
+.game:not(.game--solo) .score-row {
+  min-width: 0;
+  height: auto;
+  min-height: 68px;
+}
+
+.game:not(.game--solo) .score-row__tags {
+  flex-wrap: wrap;
+  height: auto;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.game:not(.game--solo) .score-row__score {
+  white-space: nowrap;
+}
+
+@media (min-width: 1001px) and (max-width: 1400px) {
+  .game:not(.game--solo) {
+    --players-w: clamp(210px, 20vw, 250px);
+  }
+}
+
+@media (max-width: 1400px) {
+  /* คอลัมน์แคบ: คะแนนอยู่ใต้ชื่อ ไม่แย่งความกว้างของชื่อ/ป้ายกับอวตาร */
+  .game:not(.game--solo) .score-row {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .game:not(.game--solo) .score-row .avatar-chip--lg {
+    width: 40px;
+    height: 40px;
+  }
+
+  .game:not(.game--solo) .score-row__avatar {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .game:not(.game--solo) .score-row__main {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .game:not(.game--solo) .score-row__name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .game:not(.game--solo) .score-row__score {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+  }
 }
 
 .room-info {
@@ -5485,3 +5929,173 @@ select[class] {
   font-weight: 600;
   font-size: 17px;
 }
+
+/* ผลจบเกม: ขยายพื้นที่อ่านผล ลดความสูงของหัวและแท่น โดยยังเลื่อนใน modal เดิม */
+.modal__panel--game-over {
+  max-width: 720px;
+  max-height: calc(100dvh - 32px);
+  padding: clamp(14px, 2.5vw, 24px);
+  overflow-x: hidden;
+}
+
+.modal__panel--solo-over {
+  max-height: calc(100dvh - 32px);
+  overflow-x: hidden;
+}
+
+.modal__panel--game-over .mascot--modal,
+.modal__panel--solo-over .mascot--modal {
+  width: clamp(68px, 10vw, 92px);
+  max-width: 100%;
+  margin: 0 auto 4px;
+}
+
+.modal__panel--game-over .modal__title,
+.modal__panel--solo-over .modal__title {
+  margin-bottom: 8px;
+  font-size: clamp(21px, 3vw, 28px);
+  line-height: 1.3;
+}
+
+.modal__panel--game-over .podium {
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.modal__panel--game-over .podium__item {
+  align-content: center;
+  gap: 5px;
+  padding: 10px 8px;
+  box-shadow: var(--shadow-xs);
+}
+
+.modal__panel--game-over .podium__item--1 { min-height: 174px; border-width: 4px; }
+.modal__panel--game-over .podium__item--2 { min-height: 150px; }
+.modal__panel--game-over .podium__item--3 { min-height: 136px; }
+.modal__panel--game-over .podium__medal { line-height: 1; }
+.modal__panel--game-over .podium__medal svg { max-width: 30px; max-height: 30px; }
+.modal__panel--game-over .podium__item--1 .podium__medal svg { max-width: 34px; max-height: 34px; }
+.modal__panel--game-over .podium__name { font-size: clamp(14px, 2vw, 18px); line-height: 1.3; }
+.modal__panel--game-over .podium__score { font-size: 18px; }
+.modal__panel--game-over .podium__split { line-height: 1.35; }
+.modal__panel--game-over .match-ranking { margin-top: 16px; }
+.modal__panel--game-over .match-ranking__row { gap: 8px; }
+
+.modal__panel--game-over.modal__panel--team-over { max-width: 860px; }
+.modal__panel--team-over .team-over__winner { margin-bottom: 12px; padding: 10px; }
+.modal__panel--team-over .team-over__winner-name { font-size: clamp(20px, 3vw, 26px); line-height: 1.3; }
+.modal__panel--team-over .team-over__winner-members { line-height: 1.4; }
+.modal__panel--team-over .team-podium__item { gap: 5px; padding: 10px 8px; }
+.modal__panel--team-over .team-podium__item--1 { min-height: 250px; }
+.modal__panel--team-over .team-podium__item--2 { min-height: 228px; }
+.modal__panel--team-over .team-podium__item--3 { min-height: 210px; }
+.modal__panel--team-over .team-podium__name { line-height: 1.3; }
+.modal__panel--team-over .team-podium__member { overflow-wrap: anywhere; }
+.modal__panel--team-over .team-standings { margin-top: 14px; }
+
+.game-over__coins {
+  margin: 14px 0;
+  padding: 10px 12px;
+  border: 2px solid #c69212;
+  border-radius: var(--r-sm);
+  background: #fff3c4;
+  color: var(--ink);
+}
+
+.game-over__coins-title { margin: 0; font-family: var(--font-head); font-size: 17px; line-height: 1.35; }
+.game-over__coins-note { margin: 4px 0 0; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
+.game-over__coins-note--guest { color: #9f3024; }
+
+.modal__panel--game-over .modal__actions,
+.modal__panel--solo-over .modal__actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.modal__panel--game-over .modal__actions .btn,
+.modal__panel--solo-over .modal__actions .btn {
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: 8px 10px;
+  font-size: 15px;
+  line-height: 1.3;
+  white-space: normal;
+}
+
+@media (max-width: 620px) {
+  .modal__panel--game-over,
+  .modal__panel--solo-over { max-height: calc(100dvh - 40px); padding: 12px; }
+  .modal__panel--game-over .podium:not(.podium--two):not(.podium--one) .podium__item--1 { min-height: 150px; }
+  .modal__panel--game-over .podium:not(.podium--two):not(.podium--one) .podium__item--2,
+  .modal__panel--game-over .podium:not(.podium--two):not(.podium--one) .podium__item--3 { min-height: 126px; }
+  .modal__panel--team-over .team-podium__item--1 { min-height: 205px; }
+  .modal__panel--team-over .team-podium__item--2,
+  .modal__panel--team-over .team-podium__item--3 { min-height: 185px; }
+  .modal__panel--game-over .match-ranking__row { grid-template-columns: 2.5ch 32px minmax(0, 1fr) auto; gap: 5px; padding: 6px; }
+  .modal__panel--game-over .match-ranking__score { font-size: 14px; }
+}
+
+/* โปรไฟล์ที่แก้ได้: ใช้ชิปเดิมและขนาดสัมผัสของเกม */
+.profile-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: min(24vw, 200px);
+  min-height: 44px;
+  padding: 3px 8px 3px 3px;
+  border: var(--border);
+  border-radius: var(--r-pill);
+  background: var(--white);
+  color: var(--ink);
+  box-shadow: var(--shadow-xs);
+  font: 600 14px var(--font-head);
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.profile-trigger:hover,
+.avatar-picker__stage--edit:hover,
+.name-row__edit:hover,
+.setup__who--edit:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+.profile-trigger:focus-visible,
+.avatar-picker__stage--edit:focus-visible,
+.name-row__edit:focus-visible,
+.setup__who--edit:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.profile-trigger__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-trigger .avatar-chip { flex: none; }
+.topbar .profile-trigger { max-width: min(16vw, 160px); }
+.topbar:has(.team-vs) .profile-trigger { max-width: min(12vw, 130px); }
+.lb-top .profile-trigger { max-width: min(45vw, 220px); }
+.avatar-picker__stage--edit { cursor: pointer; }
+.name-row__edit { display: flex; align-items: center; cursor: pointer; text-align: left; }
+.name-row__edit span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup__who--edit { width: 100%; border-right: 0; border-bottom: 0; border-left: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
+
+.modal__panel--profile { max-width: 540px; max-height: calc(100dvh - 40px); overflow-x: hidden; }
+.profile-preview { display: grid; justify-items: center; gap: 4px; min-width: 0; font-family: var(--font-head); font-weight: 700; overflow-wrap: anywhere; }
+.profile-avatars { min-width: 0; margin: 14px 0; padding: 10px; border: var(--border); text-align: left; }
+.profile-avatars legend { padding: 0 5px; font-family: var(--font-head); font-weight: 700; }
+.profile-avatars__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.profile-avatars__item { display: grid; justify-items: center; gap: 3px; min-width: 0; padding: 8px 3px; border: var(--border); border-radius: var(--r-sm); background: var(--white); color: var(--ink); font: 600 13px var(--font-head); cursor: pointer; }
+.profile-avatars__item--selected { border-color: var(--blue); background: var(--tab-idle); box-shadow: inset 0 0 0 2px var(--blue); }
+.profile-avatars__item:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.profile-name-input { width: 100%; }
+.profile-error { margin: 8px 0 0; color: var(--red); font-weight: 700; overflow-wrap: anywhere; }
+
+@media (max-width: 620px) {
+  .modal__panel--profile { padding: 12px; }
+  .profile-avatars__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .top-icons { flex-wrap: wrap; justify-content: flex-end; }
+  .top-icons .profile-trigger { max-width: min(48vw, 180px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-trigger { transition: none; }
+}
+
+html[data-motion="reduce"] .profile-trigger { transition: none; }

@@ -9,7 +9,7 @@ import OpenRooms from "../components/OpenRooms";
 import { Icon } from "../components/Icons";
 import AvatarShopModal from "../components/AvatarShopModal";
 import { getCoins, getUserAuth, SHOP_ENABLED } from "../prefs";
-import { randomName, NAME_MAX_LEN } from "../playerName";
+import { randomName } from "../playerName";
 import { useEnterRoom } from "../hooks/useEnterRoom";
 
 // หน้าแรก (หน้าเดียว ไม่รก)
@@ -20,6 +20,7 @@ export default function Lobby({
   connected,
   profile,
   onProfile,
+  onEditProfile,
   inviteCode,
   onEntered,
   onError,
@@ -54,7 +55,7 @@ export default function Lobby({
           <Critter name="star" className="crit crit--side-left" />
           <Ribbon tone="red">PLAY</Ribbon>
 
-          <AvatarPicker value={profile.avatar} onChange={(avatar) => onProfile({ ...profile, avatar })} />
+          <AvatarPicker value={profile.avatar} onChange={(avatar) => onProfile({ ...profile, avatar })} onEdit={onEditProfile} />
 
           {/* ร้านค้าอวตาร + ตัวนับเหรียญ: ปิดไว้ก่อน (ดูเหตุผลที่ SHOP_ENABLED ใน prefs.js) ไม่ได้ลบโค้ด */}
           {SHOP_ENABLED && (
@@ -75,16 +76,9 @@ export default function Lobby({
           </label>
           {/* ช่องชื่อมีชื่อสุ่มใส่ไว้ให้แล้ว (ไม่ต้องพิมพ์ก็เล่นได้) · ปุ่มลูกเต๋า = สุ่มชื่อใหม่ · ปล่อยช่องว่างไว้ = สุ่มให้เองตอนออกจากช่อง */}
           <div className="name-row">
-            <input
-              id="player-name"
-              className="input"
-              value={name}
-              onChange={(e) => onProfile({ ...profile, name: e.target.value })}
-              onBlur={() => !name.trim() && onProfile({ ...profile, name: randomName() })}
-              maxLength={NAME_MAX_LEN}
-              placeholder="ชื่อเล่นของคุณ"
-              autoComplete="off"
-            />
+            <button id="player-name" type="button" className="input name-row__edit" onClick={onEditProfile} aria-label={`แก้ไขชื่อผู้เล่น ${name}`}>
+              <span>{name}</span>
+            </button>
             <button
               type="button"
               className="icon-btn name-row__dice"

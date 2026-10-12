@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { Icon } from "./Icons";
+import { isNearChatBottom } from "./chatScroll";
 import GuessInput from "./GuessInput";
 
 /**
@@ -28,18 +29,25 @@ const KINDS = {
 
 export default function Chat({ messages = [], meId, disabled = false, onSend, focusKey = 0 }) {
   const listRef = useRef(null);
+  const stickToBottomRef = useRef(true);
 
-  // ข้อความใหม่มา ให้เลื่อนลงล่างสุดเสมอ
-  useEffect(() => {
+  // รักษาตำแหน่งผู้อ่านเมื่อเลื่อนขึ้นดูข้อความเก่า; รอบใหม่เริ่มที่ข้อความล่าสุด
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (list && stickToBottomRef.current) list.scrollTop = list.scrollHeight;
+  }, [messages]);
+
+  useLayoutEffect(() => {
+    stickToBottomRef.current = true;
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
-  }, [messages]);
+  }, [focusKey]);
 
   return (
     <section className="panel panel--chat" aria-label="แชท">
       <h2 className="panel__title">แชท</h2>
 
-      <div className="chat__list" ref={listRef}>
+      <div className="chat__list" ref={listRef} onScroll={(event) => { stickToBottomRef.current = isNearChatBottom(event.currentTarget); }}>
         {messages.length === 0 && <p className="chat__empty">พิมพ์ทายคำที่นี่</p>}
         {messages.map((m, i) => {
           if (m.system) {

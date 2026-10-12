@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { socket } from "../socket";
 import Avatar from "../components/Avatar";
+import ProfileTrigger from "../components/ProfileTrigger";
 import Logo from "../components/Logo";
 import LobbyChat from "../components/LobbyChat";
 import { AudioButtons } from "../components/AudioDock";
@@ -12,18 +13,18 @@ import { Icon } from "../components/Icons";
 import { copyText, inviteUrl } from "../invite";
 import ChallengeCards from "../components/ChallengeCards";
 import { errorText } from "../messages";
-import { ROOM_DIFFICULTY_CHOICES, MAX_PLAYER_CHOICES, DEFAULT_MAX_PLAYERS, VISIBILITY_CHOICES, DEFAULT_CHALLENGES } from "../roomOptions";
+import { ROOM_DIFFICULTY_CHOICES, MAX_PLAYER_CHOICES, DEFAULT_MAX_PLAYERS, VISIBILITY_CHOICES, DEFAULT_CHALLENGES, TEAM_COUNT_CHOICES, TEAM_IDS, TEAM_MIN_PLAYERS } from "../roomOptions";
 
 // ค่าที่ server ยอมรับ ตาม events.md (ค่าอื่น server จะเมิน)
 const ROUND_CHOICES = [1, 2, 3, 4, 5];
 const TIME_CHOICES = [30, 45, 60, 90];
-const TEAM_CODES = ["A", "B", "C", "D"]; // รหัสทีมข้างใน คงที่เสมอ — ชื่อที่โชว์มาจาก room.settings.teamNames
-const TEAM_COUNT_CHOICES = [2, 3, 4];
-const TEAM_MIN = 2; // โหมดทีมต้องมีทีมละอย่างน้อย 2 คน (server เช็คซ้ำ)
+// กฎทีมอ่านจาก shared/teamRules.json (ไฟล์เดียวกับที่ server ใช้) ผ่าน roomOptions
+const TEAM_CODES = TEAM_IDS; // รหัสทีมข้างใน คงที่เสมอ — ชื่อที่โชว์มาจาก room.settings.teamNames
+const TEAM_MIN = TEAM_MIN_PLAYERS; // โหมดทีมต้องมีทีมละอย่างน้อย 2 คน (server เช็คซ้ำ)
 const TEAM_NAME_MAX = 16;
 const TEAM_BALANCE_MAX_DIFF = 1; // ทีมใหญ่สุดกับเล็กสุดห่างกันได้ไม่เกินเท่านี้คน (server เช็คซ้ำเสมอ)
 
-export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, onToast }) {
+export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, onEditProfile, onToast }) {
   const [linkCopied, setLinkCopied] = useState(false);
   // กล่องกติกาโชว์เองครั้งแรกที่เข้าห้อง (จำไว้ในเบราว์เซอร์) ครั้งต่อไปกดดูเองได้จากปุ่ม ℹ️ ในหน้าเกม
   const [showRules, setShowRules] = useState(() => !rulesSeen());
@@ -127,6 +128,7 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
   const modeChoices = [
     ["classic", "แข่งเดี่ยว"],
     ["team", "แข่งทีม"],
+    ["mpai", "แข่งกับ AI"],
   ];
 
   // แก้ตั้งค่าได้เฉพาะหัวห้อง — server เช็คซ้ำอีกชั้นเสมอ
@@ -189,11 +191,11 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
     );
   }
 
-  // กล่องย่อยของการ์ดตั้งค่า (มีเลขกำกับ) — คนที่ไม่ใช่หัวห้องกดไม่ได้
-  // locked = ใช้ไม่ได้ในสถานการณ์นี้ (เช่น "จำนวนทีม" ตอนอยู่โหมดแข่งเดี่ยว) กดไม่ได้แม้เป็นหัวห้อง + จางลง + มีบรรทัดอธิบาย
-  function Choice({ no, title, className = "", label, choices, value, onChange, locked = false, note }) {
+  // กล่องย่อยของการ์ดตั้งค่า (มีเลขกำกับ) — คนที่ไม่ใช่หัวห้องกดไม่ได้ · wide = กว้างเต็มแถว
+  // locked = ใช้ไม่ได้ในสถานการณ์นี้ (เช่น "จำนวนทีม" ตอนไม่ได้อยู่โหมดแข่งทีม) กดไม่ได้แม้เป็นหัวห้อง
+  function Choice({ no, title, wide = false, className = "", label, choices, value, onChange, locked = false, note }) {
     return (
-      <div className={`lb-set ${locked ? "lb-set--locked" : ""} ${className}`}>
+      <div className={`lb-set${wide ? " lb-set--wide" : ""}${locked ? " lb-set--locked" : ""}${className ? ` ${className}` : ""}`}>
         <span className="lb-set__label">
           <b>{no}</b> {title}
         </span>
@@ -217,6 +219,21 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
   }
 
   const s = room.settings;
+  // กล่องตั้งค่าตามลำดับที่แสดง — เลขกำกับนับจากลำดับจริง (1, 2, 3, …) ไม่มีเลขแทรกอย่าง "1.5" ตอนโหมดทีมเพิ่มกล่องจำนวนทีม
+  // โหมดกว้างเต็มแถว (มี 3 ตัวเลือก) · กล่องที่เหลือเรียงสองคอลัมน์ ถ้าเป็นเลขคี่ กล่องสุดท้ายกว้างเต็มแถว ไม่เหลือช่องว่าง
+  const restBoxes = [
+    { key: "teamCount", title: "จำนวนทีม", label: "จำนวนทีม", choices: TEAM_COUNT_CHOICES.map((n) => [n, `${n} ทีม`]), value: s.teamCount ?? TEAM_COUNT_CHOICES[0], onChange: (teamCount) => changeSetting({ teamCount }), locked: !teamMode, note: !teamMode ? "ใช้เฉพาะโหมดแข่งทีม" : null },
+    { key: "drawTime", title: "เวลาต่อตา (วิ)", label: "เวลาวาดต่อตา", choices: TIME_CHOICES.map((n) => [n, n]), value: s.drawTime, onChange: (drawTime) => changeSetting({ drawTime }) },
+    { key: "rounds", title: "จำนวนรอบ", label: "จำนวนรอบ", choices: ROUND_CHOICES.map((n) => [n, n]), value: s.rounds, onChange: (rounds) => changeSetting({ rounds }) },
+    { key: "difficulty", title: "ความยากของคำ", label: "ระดับความยากของคำ", choices: ROOM_DIFFICULTY_CHOICES, value: s.difficulty, onChange: (difficulty) => changeSetting({ difficulty }) },
+    { key: "maxPlayers", title: "จำนวนผู้เล่นสูงสุด", label: "จำนวนผู้เล่นสูงสุด", choices: MAX_PLAYER_CHOICES.map((n) => [n, n]), value: s.maxPlayers ?? DEFAULT_MAX_PLAYERS, onChange: (maxPlayers) => changeSetting({ maxPlayers }) },
+    { key: "visibility", title: "ประเภทห้อง", label: "ประเภทห้อง", choices: VISIBILITY_CHOICES, value: s.visibility, onChange: (visibility) => changeSetting({ visibility }) },
+  ].filter(Boolean);
+  if (restBoxes.length % 2 === 1) restBoxes[restBoxes.length - 1].wide = true;
+  const settingBoxes = [
+    { key: "mode", title: "โหมด", label: "โหมดเกม", choices: modeChoices, value: s.mode, onChange: (mode) => changeSetting({ mode }), wide: true },
+    ...restBoxes,
+  ];
   const note = isHost
     ? !enoughPlayers
       ? teamMode
@@ -241,10 +258,7 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
         <span className="lb-top__code">ห้อง {room.code}</span>
         <span className="lb-top__spacer" />
         <AudioButtons />
-        <span className="lb-top__me">
-          <Avatar index={me?.avatar ?? 0} />
-          <span className="lb-top__name">{me?.name}</span>
-        </span>
+        <ProfileTrigger name={me?.name ?? ""} avatar={me?.avatar ?? 0} onClick={onEditProfile} className="lb-top__me" />
         <button type="button" className="btn btn--danger lb-top__leave" onClick={onLeave}>
           <Icon name="door" size={18} /> ออกจากห้อง
         </button>
@@ -277,22 +291,9 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
               {/* 2 คอลัมน์ 7 กล่อง: โหมด|จำนวนทีม · เวลาต่อตา|จำนวนรอบ · ความยากของคำ|จำนวนผู้เล่นสูงสุด · ประเภทห้อง (เต็มแถว)
                   "จำนวนทีม" แยกเป็นกล่องของตัวเองเสมอ (ไม่ซ้อนในกล่องโหมดอีกต่อไป) โผล่ตลอดแต่ล็อกไว้ตอนแข่งเดี่ยว กันหน้ากระโดดตอนสลับโหมด */}
               <div className="lb-settings__grid">
-                <Choice no="1" title="โหมด" label="โหมดเกม" choices={modeChoices} value={s.mode} onChange={(mode) => changeSetting({ mode })} />
-                <Choice
-                  no="2"
-                  title="จำนวนทีม"
-                  label="จำนวนทีม"
-                  choices={TEAM_COUNT_CHOICES.map((n) => [n, `${n} ทีม`])}
-                  value={s.teamCount ?? 2}
-                  onChange={(teamCount) => changeSetting({ teamCount })}
-                  locked={!teamMode}
-                  note={!teamMode ? "ใช้เฉพาะโหมดแข่งทีม" : null}
-                />
-                <Choice no="3" title="เวลาต่อตา (วิ)" label="เวลาวาดต่อตา" choices={TIME_CHOICES.map((n) => [n, n])} value={s.drawTime} onChange={(drawTime) => changeSetting({ drawTime })} />
-                <Choice no="4" title="จำนวนรอบ" label="จำนวนรอบ" choices={ROUND_CHOICES.map((n) => [n, n])} value={s.rounds} onChange={(rounds) => changeSetting({ rounds })} />
-                <Choice no="5" title="ความยากของคำ" label="ระดับความยากของคำ" choices={ROOM_DIFFICULTY_CHOICES} value={s.difficulty} onChange={(difficulty) => changeSetting({ difficulty })} />
-                <Choice no="6" title="จำนวนผู้เล่นสูงสุด" label="จำนวนผู้เล่นสูงสุด" choices={MAX_PLAYER_CHOICES.map((n) => [n, n])} value={s.maxPlayers ?? DEFAULT_MAX_PLAYERS} onChange={(maxPlayers) => changeSetting({ maxPlayers })} />
-                <Choice no="7" title="ประเภทห้อง" label="ประเภทห้อง" choices={VISIBILITY_CHOICES} value={s.visibility} onChange={(visibility) => changeSetting({ visibility })} className="lb-set--full" />
+                {settingBoxes.map((box, i) => (
+                  <Choice key={box.key} no={i + 1} {...box} />
+                ))}
               </div>
             </section>
             <ChallengeCards enabled={s.challenges ?? DEFAULT_CHALLENGES} isHost={isHost} />

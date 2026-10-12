@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node tests/smoke.js",
+    "test": "node tests/smoke.js && node tests/mpai.js",
     "seed": "node scripts/seed-scores.js",
     "get-model": "node scripts/get-model.js",
     "get-drawings": "node scripts/get-drawings.js"

@@ -20,7 +20,7 @@ const API_TIMEOUT_MS = 15000;
 const AI_WORDS_FILE = process.env.AI_WORDS_FILE || path.join(__dirname, "data", "ai-words.json");
 let soloBank = null;     // { easy: [{word, category, en}], medium: [...], hard: [...] } หรือ null ถ้าไฟล์ใช้ไม่ได้
 const thToEn = new Map(); // คำไทย → ชื่ออังกฤษ
-let modelOk = false;     // โมเดลพร้อมใช้ (โหลดติด + มีคลังคำ) · ถ้าพังกลางทางจะถูกปิด
+let modelOk = false;     // โมเดลพร้อมใช้ (โหลดติด + มีคลังคำ); คำขอที่ล้มเหลวไม่ปิดโมเดลให้ทุกห้อง
 
 function loadSoloBank() {
   try {
@@ -161,9 +161,9 @@ async function modelGuess({ image, wrong }) {
   const banned = new Set(wrong.map((w) => thToEn.get(w)).filter(Boolean));
   const allowed = new Set([...thToEn.values()].filter((en) => !banned.has(en)));
   const top = await aiModel.classify(image, { allowed, top: 1 });
-  if (!top || top.length === 0) return "ไม่รู้";
+  if (!top || top.length === 0) return { guess: "ไม่รู้", prob: 0 };
   const th = [...thToEn.entries()].find(([, en]) => en === top[0].label)?.[0];
-  return th || "ไม่รู้";
+  return { guess: th || "ไม่รู้", prob: top[0].prob };
 }
 
 // เทียบคำแบบเดียวกับโหมดห้อง: ตัดช่องว่าง ไม่สนตัวพิมพ์เล็กใหญ่ (เปลี่ยนที่ index.js ถ้าเกณฑ์ห้องเปลี่ยน)
@@ -172,25 +172,58 @@ function sameWord(a, b) {
   return n(a) === n(b);
 }
 
-// ทายหนึ่งครั้ง → { guess, correct } · โหมด claude ล้มเหลวจะ throw (index.js จับแล้วส่ง AI_UNAVAILABLE)
-async function guessImage({ image, word, allWords, elapsed, time, wrong }) {
+// ทายหนึ่งครั้ง → { guess, correct, confidence } · โหมด claude ล้มเหลวจะ throw (index.js จับแล้วส่ง AI_UNAVAILABLE)
+// confidence (0–1) = ความมั่นใจต่อคำที่ทาย เมื่อทายถูก (ทายผิด = 0) — Multiplayer vs AI ใช้คิดคะแนนภาพ · Solo ไม่ใช้ช่องนี้
+//   model = ความน่าจะเป็นจริงของโมเดล · claude = CLAUDE_CONFIDENCE คงที่ (Claude ไม่บอกความมั่นใจ) · mock = สุ่ม (AI_MOCK_CONFIDENCE ไว้ให้เทสคุม)
+async function guessImage({ image, word, allWords, elapsed, time, wrong, requireReal = false }) {
   let guess = null;
-  if (aiMode() === "model") {
+  let prob = 0;
+  let source = null;
+  const mode = aiMode();
+  if (mode === "model") {
     try {
-      guess = await modelGuess({ image, wrong });
+      ({ guess, prob } = await modelGuess({ image, wrong }));
+      source = "model";
     } catch (err) {
-      // โมเดลพัง → ปิดมัน แล้วใช้ Claude/จำลองต่อทันที (ด่านนี้และด่านถัดไป) ผู้เล่นไม่เห็นข้อผิดพลาด
-      console.warn("โมเดล AI พัง ถอยไปใช้สมองถัดไป:", err.message);
-      modelOk = false;
+      // ความผิดพลาดครั้งนี้อาจเป็นชั่วคราว: fallback เฉพาะคำขอนี้ ไม่ปิดโมเดลของทุกห้อง
+      console.warn("โมเดล AI ตอบคำขอนี้ไม่สำเร็จ ถอยไปใช้สมองถัดไป:", err.message);
     }
   }
   if (guess === null) {
-    guess =
-      aiMode() === "claude"
-        ? await claudeGuess({ image, wrong })
-        : mockGuess({ word, allWords, elapsed, time, wrong });
+    if (mode === "claude" || (mode === "model" && process.env.ANTHROPIC_API_KEY)) {
+      guess = await claudeGuess({ image, wrong });
+      prob = CLAUDE_CONFIDENCE;
+      source = "claude";
+    } else if (requireReal) {
+      throw new Error("ไม่มี AI สำหรับทายภาพจริง");
+    } else {
+      guess = mockGuess({ word, allWords, elapsed, time, wrong });
+      prob = envNumber("AI_MOCK_CONFIDENCE") ?? 0.5 + Math.random() * 0.5;
+      source = "mock";
+    }
   }
-  return { guess, correct: sameWord(guess, word) };
+  const correct = sameWord(guess, word);
+  return { guess, correct, confidence: correct ? Math.max(0, Math.min(1, prob)) : 0, source };
 }
 
-module.exports = { init, soloWords, levelConfig, pickWord, scoreFor, aiMode, guessImage, mockChance, parseImage, sameWord };
+// ---------- Multiplayer vs AI ----------
+// ความมั่นใจของโหมด Claude (Claude ไม่บอกความมั่นใจ) — ใช้ใน guessImage ด้านบน
+const CLAUDE_CONFIDENCE = 0.75;
+function envNumber(name) {
+  const v = process.env[name];
+  const n = Number(v);
+  return v !== undefined && v !== "" && Number.isFinite(n) ? n : null;
+}
+
+// คะแนนภาพ (ช่วง 1 ของ Multiplayer vs AI): AI จำได้ = 100 + สูงสุด 400 ตามความมั่นใจ · จำไม่ได้ = 0
+function drawScore({ recognized, confidence }) {
+  if (!recognized) return 0;
+  return 100 + Math.round(400 * Math.max(0, Math.min(1, Number(confidence) || 0)));
+}
+
+// คำทั้งหมดในระดับที่ต้องการ (mixed = ทุกระดับ) ไว้ให้โหมดจำลองสุ่มคำผิด
+function wordsOf(wordBank) {
+  return ["easy", "medium", "hard"].flatMap((l) => (wordBank[l] || []).map((w) => w.word));
+}
+
+module.exports = { init, soloWords, levelConfig, pickWord, scoreFor, aiMode, guessImage, mockChance, parseImage, sameWord, drawScore, wordsOf };
