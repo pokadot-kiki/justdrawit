@@ -171,6 +171,20 @@ export function useGame(teamNames = {}) {
         messages: [...g.messages, { system: true, kind: "pen", text: "คนวาดยกปากกาแล้ว วาดต่อไม่ได้อีก" }],
       }));
 
+    // กันโกง: server ตรวจพบว่าคนวาดเขียนคำตอบเป็นตัวหนังสือ (events.md rule_violation)
+    // ภาพถูกล้างมาแล้วทาง canvas_history · ตรงนี้แค่บอกเหตุผล — ไม่มีคำตอบอยู่ใน event เลย
+    // รู้ว่าเราเป็นคนวาดจาก g.word (มีแค่คนวาดที่ได้ your_word)
+    const onRuleViolation = (data) =>
+      setGame((g) => {
+        const penalty = Number(data?.penalty) || 0;
+        const text = g.word
+          ? penalty > 0
+            ? `ห้ามเขียนตัวหนังสือบนกระดาน! ภาพถูกล้างและหัก ${penalty} คะแนน`
+            : "ห้ามเขียนตัวหนังสือบนกระดาน! ภาพถูกล้าง ครั้งหน้าจะหักคะแนน"
+          : "คนวาดทำผิดกติกา ภาพถูกล้าง";
+        return { ...g, messages: [...g.messages, { system: true, kind: "violation", text }] };
+      });
+
     // คำใบ้เปิดแล้ว — server ส่งครั้งเดียวต่อตา ไม่ว่าใครเปิด (คนวาดกดขอ หรือเวลาเหลือหนึ่งในสาม)
     // ข้อความระบบแยกตามคนเปิด เพื่อให้กล่อง "ในห้อง" เล่าเรื่องได้ครบ
     const onHintReveal = (data) =>
@@ -324,6 +338,7 @@ export function useGame(teamNames = {}) {
     socket.on("your_word", onYourWord);
     socket.on("hint_reveal", onHintReveal);
     socket.on("pen_locked", onPenLocked);
+    socket.on("rule_violation", onRuleViolation);
     socket.on("team_skipped", onTeamSkipped);
     socket.on("timer", onTimer);
     socket.on("round_end", onRoundEnd);
@@ -344,6 +359,7 @@ export function useGame(teamNames = {}) {
       socket.off("your_word", onYourWord);
       socket.off("hint_reveal", onHintReveal);
       socket.off("pen_locked", onPenLocked);
+      socket.off("rule_violation", onRuleViolation);
       socket.off("team_skipped", onTeamSkipped);
       socket.off("timer", onTimer);
       socket.off("round_end", onRoundEnd);
