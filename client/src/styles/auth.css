@@ -1,0 +1,211 @@
+.auth-screen {
+  min-height: 100dvh;
+  padding: 32px 16px;
+}
+
+.auth-card {
+  width: min(100%, 520px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 34px;
+  text-align: center;
+}
+
+.auth-card h1,
+.auth-card p {
+  margin: 0;
+}
+
+.auth-card h1 {
+  font-family: var(--font-head);
+  font-size: 25px;
+}
+
+.auth-card p {
+  line-height: 1.6;
+}
+
+.auth-guest {
+  width: 100%;
+}
+
+.auth-google {
+  width: 100%;
+  min-height: 54px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.auth-google[aria-disabled="true"] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.auth-google:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.auth-form {
+  width: 100%;
+  display: grid;
+  gap: 9px;
+  text-align: left;
+}
+
+.auth-form .input {
+  width: 100%;
+  min-height: 46px;
+}
+
+.auth-divider {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid currentColor;
+}
+
+.auth-note {
+  width: 100%;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.auth-mode-toggle {
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.auth-mode-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.auth-message {
+  width: 100%;
+  padding: 10px 14px;
+  border: 2px solid var(--red);
+  border-radius: var(--r-ctl);
+  background: var(--cream);
+  color: var(--red);
+}
+
+.auth-leaderboard {
+  color: var(--blue);
+  font-weight: 700;
+}
+
+/* ปุ่ม "เข้าสู่ระบบ" (ยังไม่ได้ล็อกอิน) — อยู่ใน .top-dock ข้างปุ่มเพลง/เสียง (ดู theme.css) */
+.auth-btn {
+  min-height: 40px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--r-pill);
+  background: var(--cream);
+  color: var(--ink);
+  box-shadow: var(--shadow-xs);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* ล็อกอินแล้ว: ชิปอวตาร+ชื่อ กดเปิดเมนูโปรไฟล์ */
+.auth-chip-wrap {
+  position: relative;
+}
+
+.auth-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(220px, calc(100vw - 150px));
+  min-height: 40px;
+  padding: 3px 12px 3px 4px;
+  border: var(--border);
+  border-radius: var(--r-pill);
+  background: var(--cream);
+  box-shadow: var(--shadow-xs);
+  cursor: pointer;
+}
+
+.auth-chip__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.auth-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 41;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: var(--border);
+  border-radius: var(--r-card);
+  background: var(--white);
+  box-shadow: var(--shadow);
+}
+
+.auth-menu__email {
+  margin: 0 0 4px;
+  padding: 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.auth-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: var(--tab-idle);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+@media (max-width: 520px) {
+  .auth-card {
+    padding: 28px 18px;
+  }
+
+  .auth-chip {
+    max-width: calc(100vw - 150px);
+  }
+}

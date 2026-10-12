@@ -5,7 +5,7 @@ const { rules } = require("../team-membership");
 
 function fixture(count, scores) {
   const teams = rules.ids.slice(0, count);
-  const teamParticipants = teams.flatMap((team) => Array.from({ length: rules.capacity }, (_, i) => ({
+  const teamParticipants = teams.flatMap((team) => Array.from({ length: rules.minPlayers }, (_, i) => ({
     playerId: `${team}-${i}`, team, name: `${team} member ${i}`, avatar: i,
   })));
   const room = { teamParticipants, players: teamParticipants.map((p) => ({ id: p.playerId })) };
@@ -13,7 +13,7 @@ function fixture(count, scores) {
   return { room, teams, names, scores: Object.fromEntries(teams.map((team, i) => [team, scores?.[i] ?? 0])) };
 }
 
-for (const count of [2, 3, 4, 5]) {
+for (const count of [2, 3, 4]) {
   test(`${count} teams: every authoritative team and starter appears once`, () => {
     const f = fixture(count, Array.from({ length: count }, (_, i) => (count - i) * 10));
     const result = teamFinalResults(f.room, f.teams, f.scores, f.names);
@@ -22,8 +22,8 @@ for (const count of [2, 3, 4, 5]) {
     result.teamRanking.forEach((t, i) => {
       assert.equal(t.name, f.names[t.team]);
       assert.equal(t.score, f.scores[t.team]);
-      assert.equal(t.members.length, rules.capacity);
-      assert.deepEqual(t.members.map((p) => p.playerId), f.room.teamParticipants.slice(i * rules.capacity, (i + 1) * rules.capacity).map((p) => p.playerId));
+      assert.equal(t.members.length, rules.minPlayers);
+      assert.deepEqual(t.members.map((p) => p.playerId), f.room.teamParticipants.slice(i * rules.minPlayers, (i + 1) * rules.minPlayers).map((p) => p.playerId));
     });
   });
 }

@@ -8,13 +8,13 @@ import JoinModal from "../components/JoinModal";
 import OpenRooms from "../components/OpenRooms";
 import { Icon } from "../components/Icons";
 import AvatarShopModal from "../components/AvatarShopModal";
-import { getCoins, getUserAuth } from "../prefs";
+import { getCoins, getUserAuth, SHOP_ENABLED } from "../prefs";
 import { randomName } from "../playerName";
 import { useEnterRoom } from "../hooks/useEnterRoom";
 
 // หน้าแรก (หน้าเดียว ไม่รก)
 // ซ้าย: ริบบิ้น PLAY · อวตารใหญ่ + ลูกศร · ชื่อ · ปุ่มใหญ่ 3 ปุ่ม (สร้างห้อง / เข้าห้อง / Solo)
-// ขวา: Top 10 (เดือนนี้/ตลอดกาล)
+// ขวา: Top 10 (เลือกได้ตั้งแต่มกราคมถึงเดือนปัจจุบันของปีนี้)
 // ชื่อกับอวตารอยู่ที่ App (profile) เพื่อให้ติดไปหน้า SET UP ได้ ฝั่งนี้แค่ช่วยให้ใช้ง่าย server ตรวจซ้ำเสมอ
 export default function Lobby({
   connected,
@@ -43,6 +43,7 @@ export default function Lobby({
   return (
     <div className="screen screen--home">
       <GrassStrip />
+      {/* ปุ่มเข้าสู่ระบบ/ชิปบัญชี (ไม่บังคับ) อยู่มุมขวาบนข้างปุ่มเพลง/เสียงแล้ว — ดู App.jsx (.top-dock) */}
       <div className="logo-wrap">
         <Logo />
         <Sparkles spots={[[-8, 10, 3, 0], [104, 0, 4, 0.7], [-2, 78, 2, 1.4], [98, 82, 3, 0.35], [50, -22, 2, 1.1]]} />
@@ -56,16 +57,19 @@ export default function Lobby({
 
           <AvatarPicker value={profile.avatar} onChange={(avatar) => onProfile({ ...profile, avatar })} onEdit={onEditProfile} />
 
-          <div style={{ textAlign: "center", margin: "-6px 0 10px 0" }}>
-            <button
-              type="button"
-              className="btn"
-              style={{ fontSize: "12px", padding: "4px 12px", background: "#fef08a", color: "#854d0e", border: "1px solid #eab308", fontWeight: "bold" }}
-              onClick={() => setShowShop(true)}
-            >
-              🛍️ ร้านค้าอวตาร ({auth ? `${coins} 💰` : "Guest"})
-            </button>
-          </div>
+          {/* ร้านค้าอวตาร + ตัวนับเหรียญ: ปิดไว้ก่อน (ดูเหตุผลที่ SHOP_ENABLED ใน prefs.js) ไม่ได้ลบโค้ด */}
+          {SHOP_ENABLED && (
+            <div style={{ textAlign: "center", margin: "-6px 0 10px 0" }}>
+              <button
+                type="button"
+                className="btn"
+                style={{ fontSize: "12px", padding: "4px 12px", background: "#fef08a", color: "#854d0e", border: "1px solid #eab308", fontWeight: "bold" }}
+                onClick={() => setShowShop(true)}
+              >
+                ร้านค้าอวตาร ({auth ? `${coins} เหรียญ` : "Guest"})
+              </button>
+            </div>
+          )}
 
           <label className="field__label" htmlFor="player-name">
             CHOOSE YOUR NAME
@@ -117,7 +121,7 @@ export default function Lobby({
       </div>
 
       {joining && <JoinModal initialCode={inviteCode ?? ""} busy={busy} onSubmit={join} onClose={() => setJoining(false)} />}
-      {showShop && (
+      {SHOP_ENABLED && showShop && (
         <AvatarShopModal
           onClose={() => setShowShop(false)}
           onSelectAvatar={(idx) => onProfile({ ...profile, avatar: idx })}

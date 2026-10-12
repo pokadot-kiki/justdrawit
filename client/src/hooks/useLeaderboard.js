@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 // ดึงอันดับจาก GET /api/leaderboard — ใช้ร่วมกันทั้งกล่องในหน้าแรกและหน้า Leaderboard
-// month = "YYYY-MM" หรือ "" (ตลอดกาล = ไม่ส่ง month)
+// month = "YYYY-MM" ของปีปัจจุบันเท่านั้น (server แสดงได้แค่ปีนี้ · ไม่มี "ตลอดกาล" แล้ว)
 // ขอใหม่ทุกครั้งที่ month เปลี่ยน หรือคอมโพเนนต์ถูกสร้างใหม่ (เช่นกลับมาหน้าแรก) จึงเห็นคะแนนล่าสุดเสมอ
 // board = "solo" (แข่งกับ AI) | "multi" (เล่นกับเพื่อน) — สองกระดานแยกกันที่ server
 export function useLeaderboard(month, board = "solo") {

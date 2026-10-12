@@ -8,12 +8,16 @@ const crypto = require("crypto");
 const path = require("path");
 const { Server } = require("socket.io");
 const { cleanName } = require("./clean");
+const { hasBadWord } = require("./profanity");
+const authSession = require("./auth-session");
+const firebaseAuth = require("./firebase-auth");
 const leaderboard = require("./leaderboard");
 const ai = require("./ai");
 const aiDrawings = require("./ai-drawings");
 const teamGallery = require("./team-gallery");
 const { validateProfile, applyRoomProfile } = require("./profile");
 const teamFinalResults = require("./team-final-results");
+const textCheck = require("./text-check");
 
 const app = express();
 const server = http.createServer(app);
@@ -66,19 +70,57 @@ const io = new Server(server, {
   allowRequest: (req, cb) => cb(null, originOk(req)),
 });
 
+const FIREBASE_API_KEY = String(process.env.FIREBASE_API_KEY || "").trim();
+const AUTH_SESSION_SECRET = String(process.env.AUTH_SESSION_SECRET || "");
+const TEST_AUTH_BYPASS = process.env.NODE_ENV === "test" && process.env.JDI_TEST_AUTH_BYPASS === "1";
+
+const AUTH_CONFIGURED = Boolean(FIREBASE_API_KEY && Buffer.byteLength(AUTH_SESSION_SECRET) >= 32);
+const AUTH_MISSING = [
+  !FIREBASE_API_KEY && "FIREBASE_API_KEY",
+  Buffer.byteLength(AUTH_SESSION_SECRET) < 32 && "AUTH_SESSION_SECRET (อย่างน้อย 32 bytes)",
+].filter(Boolean);
+
+function requestUsesHttps(req) {
+  return req.secure || String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() === "https";
+}
+
+function sessionCookieOptions(req, maxAge) {
+  return `Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${requestUsesHttps(req) ? "; Secure" : ""}`;
+}
+
+function requestUser(req) {
+  if (TEST_AUTH_BYPASS) return { sub: "test-firebase-user", email: "test@example.com", name: "ผู้ทดสอบ" };
+  const token = authSession.parseCookies(req.headers.cookie)[authSession.SESSION_COOKIE];
+  return authSession.readSession(token, AUTH_SESSION_SECRET);
+}
+
 // ── ตัวตนผู้เล่นแบบถาวร (playerId) ──
 // socket.id เปลี่ยนทุกครั้งที่รีเฟรชหน้า จึงใช้เป็น "ตัวตน" ไม่ได้ ถ้าใช้ รีเฟรชทีเดียวก็กลายเป็นคนใหม่
-// client เก็บ "กุญแจลับ" (playerKey) ไว้ในเบราว์เซอร์ แล้วส่งมาตอนต่อ socket ทุกครั้ง (handshake.auth)
-// server แปลงกุญแจเป็น playerId ด้วย SHA-256 → กุญแจเดิม = playerId เดิมเสมอ
+// client เก็บ "กุญแจลับ" (playerKey) ไว้ในแท็บ แล้วส่งมาตอนต่อ socket ทุกครั้ง (handshake.auth)
+// **ล็อกอินเป็นทางเลือก ไม่บังคับ** — ไม่มี session (ไม่ได้ล็อกอิน หรือยังไม่ได้ตั้งค่า Firebase เลยก็ได้) ยังต่อ socket และเล่นได้ปกติทุกโหมด
+// มี session ที่ถูกต้อง → ผูกกุญแจกับ Firebase UID ก่อนแปลงเป็น playerId ด้วย SHA-256 (เหมือนเดิม)
+// ไม่มี session → ทำงานเหมือนก่อนมีระบบล็อกอินเป๊ะ: playerId มาจากกุญแจอย่างเดียว ไม่มี accountId (เก็บคะแนนด้วยชื่อแทน)
 // ทำไมไม่ใช้กุญแจเป็น playerId ตรงๆ: playerId ถูกส่งให้ทุกคนในห้อง (อยู่ใน room_update)
 // ถ้ามันคือกุญแจด้วย ใครก็เอา id ของเพื่อนไป rejoin สวมรอยได้ · แปลงทางเดียวแล้วย้อนกลับไปหากุญแจไม่ได้
 // ไม่ส่งกุญแจมา (test.html / สคริปต์เทส) = ใช้ socket.id เหมือนเดิม และไม่มีสิทธิ์ rejoin
 const PLAYER_KEY_RE = /^[A-Za-z0-9_-]{16,64}$/;
 io.use((socket, next) => {
+  const cookie = authSession.parseCookies(socket.handshake.headers.cookie)[authSession.SESSION_COOKIE];
   const key = socket.handshake.auth?.playerKey;
-  socket.data.persistent = typeof key === "string" && PLAYER_KEY_RE.test(key);
-  socket.data.pid = socket.data.persistent
-    ? crypto.createHash("sha256").update(key).digest("hex").slice(0, 20)
+  const persistent = typeof key === "string" && PLAYER_KEY_RE.test(key);
+  const user = TEST_AUTH_BYPASS
+    ? {
+        sub: `test-${persistent ? crypto.createHash("sha256").update(key).digest("hex") : socket.id}`,
+        email: "test@example.com",
+        name: "ผู้ทดสอบ",
+      }
+    : authSession.readSession(cookie, AUTH_SESSION_SECRET);
+  // user === null = เล่นแบบ Guest (ไม่ได้ล็อกอิน หรือไม่ได้ตั้งค่า Firebase บน server เลย) — ไม่ปฏิเสธการเชื่อมต่อ
+  socket.data.user = user;
+  socket.data.accountId = user ? crypto.createHash("sha256").update(`jdi:score-account:v1:${user.sub}`).digest("hex") : null;
+  socket.data.persistent = persistent;
+  socket.data.pid = persistent
+    ? crypto.createHash("sha256").update(user ? `${user.sub}:${key}` : key).digest("hex").slice(0, 20)
     : socket.id;
   next();
 });
@@ -93,13 +135,52 @@ if (process.env.FORCE_HTTPS === "1") {
   });
 }
 
+app.use(express.json({ limit: "12kb" }));
+
 // เช็คสุขภาพ: ตอบเร็วที่สุด ไม่แตะข้อมูลใดๆ (Render ใช้ดูว่า server พร้อมรับคนหรือยัง)
 app.get("/healthz", (req, res) => res.type("text").send("ok"));
+
+app.get("/api/auth/me", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  if (TEST_AUTH_BYPASS) {
+    return res.json({ enabled: true, user: { name: "ผู้ทดสอบ", email: "test@example.com" } });
+  }
+  const user = requestUser(req);
+  res.json({
+    enabled: AUTH_CONFIGURED,
+    user: user ? { name: user.name, email: user.email } : null,
+  });
+});
+
+app.post("/api/auth/session", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  if (!AUTH_CONFIGURED) return res.status(503).json({ error: "AUTH_NOT_CONFIGURED" });
+  if (typeof req.body?.idToken !== "string") return res.status(400).json({ error: "INVALID_TOKEN" });
+  try {
+    const user = await firebaseAuth.verifyIdToken(req.body.idToken, FIREBASE_API_KEY);
+    const session = authSession.signSession(user, AUTH_SESSION_SECRET);
+    res.append("Set-Cookie", `jdi_session=${session}; ${sessionCookieOptions(req, Math.floor(authSession.SESSION_TTL_MS / 1000))}`);
+    res.json({ user: { name: user.name, email: user.email } });
+  } catch (error) {
+    if (error.code === "EMAIL_NOT_VERIFIED") return res.status(403).json({ error: error.code });
+    if (error.code === "INVALID_TOKEN") return res.status(401).json({ error: error.code });
+    console.warn("Firebase Auth: ตรวจ token ไม่สำเร็จ", error?.code || "Error");
+    return res.status(503).json({ error: "AUTH_PROVIDER_UNAVAILABLE" });
+  }
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.append("Set-Cookie", `jdi_session=; ${sessionCookieOptions(req, 0)}`);
+  res.status(204).end();
+});
 
 app.use(express.static(__dirname + "/public"));
 
 // ---------- Leaderboard (HTTP ธรรมดา ไม่ใช่ Socket.IO เพราะขอดูครั้งเดียว ไม่ต้องสด) ----------
-// ไม่ใส่ month = ตลอดกาล · ใส่แล้วต้องเป็น YYYY-MM ไม่งั้นตอบ 400
+// แสดงได้แค่ "ปีปัจจุบัน" เท่านั้น (ข้อมูลปีก่อนถูกลบออกจากที่เก็บไปแล้วตอนสตาร์ท — ดู purgeOldYears ใน leaderboard.js)
+// ไม่ใส่ month, หรือใส่ month ปีอื่น (รูปแบบถูกแต่คนละปี) = เงียบๆ ใช้เดือนปัจจุบันแทน (resolveMonth)
+// ใส่ month แต่รูปแบบผิด (ไม่ใช่ YYYY-MM 01-12) ยังตอบ 400 เหมือนเดิม
 // (ถ้าส่ง month มาสองครั้ง จะได้เป็น array ซึ่งก็ไม่ผ่าน isValidMonth → 400 เหมือนกัน)
 app.get("/api/leaderboard", (req, res) => {
   const month = req.query.month;
@@ -110,7 +191,7 @@ app.get("/api/leaderboard", (req, res) => {
   const board = req.query.board ?? "solo";
   if (!leaderboard.isValidBoard(board)) return res.status(400).json({ error: "INVALID_BOARD" });
   try {
-    res.json(leaderboard.getLeaderboard(month ?? null, board));
+    res.json(leaderboard.getLeaderboard(leaderboard.resolveMonth(month), board));
   } catch (err) {
     console.warn("ดึง leaderboard ไม่สำเร็จ:", err.message);
     res.status(500).json({ error: "SERVER_ERROR" });
@@ -170,9 +251,11 @@ function lanAddresses() {
 
 // ---------- ที่เก็บข้อมูลห้อง ----------
 const rooms = new Map(); // key = รหัสห้อง, value = ข้อมูลห้อง
-const MAX_PLAYERS = 8; // เพดานโหมดที่ไม่ใช่ทีม · โหมดทีมใช้ teamCount × TEAM_RULES.capacity
+const MAX_PLAYERS = 8; // เพดานของทุกโหมด (หัวห้องตั้งได้ 4/6/8 ผ่าน settings.maxPlayers)
 const MAX_PLAYER_CHOICES = [4, 6, 8]; // ตัวเลือกความจุโหมดที่ไม่ใช่ทีม
-const { rules: TEAM_RULES, teamChoices: TEAM_COUNT_CHOICES, getTeams, teamCount, roomCapacity, autoTeam, teamsComplete, settingsMembershipValid } = require("./team-membership");
+const { rules: TEAM_RULES, teamChoices: TEAM_COUNT_CHOICES, getTeams: roomTeams, teamCount } = require("./team-membership");
+// ความจุห้อง = ค่าที่หัวห้องตั้ง (ทุกโหมด) — โหมดทีมไม่มีเพดานต่อทีม ใช้กฎ "ห่างกันไม่เกิน 1 คน" แทน
+const roomCapacity = (room) => room.settings.maxPlayers || MAX_PLAYERS;
 
 // ---------- ฟังก์ชันช่วย ----------
 function makeRoomCode() {
@@ -189,6 +272,16 @@ function cleanAvatar(value) {
   return Number.isInteger(n) && n >= 0 && n <= 5 ? n : 0;
 }
 
+// ชื่อทีม: ต้องเป็นสตริง ตัดช่องว่างหัวท้าย ยาว 1-16 ตัวอักษร ไม่มีอักขระควบคุม · ผิดกติกาคืน null
+function cleanTeamName(name) {
+  if (typeof name !== "string") return null;
+  const trimmed = name.trim();
+  const len = [...trimmed].length; // นับอักขระจริง ไม่ใช่ UTF-16 code unit (เผื่อสระ/วรรณยุกต์ไทย)
+  if (len < 1 || len > 16) return null;
+  if (/[\x00-\x1F\x7F]/.test(trimmed)) return null; // ไม่มีอักขระควบคุม
+  return trimmed;
+}
+
 function roomState(room) {
   const state = {
     code: room.code,
@@ -198,10 +291,7 @@ function roomState(room) {
     settings: room.settings,
   };
   // โหมดทีมเท่านั้นที่มีช่องนี้ (classic ต้องหน้าตาเดิมเป๊ะ) · คะแนนทีม = ผลรวมของสมาชิก
-  if (room.settings.mode === "team") {
-    state.teamScores = teamScores(room);
-    state.teamNames = room.teamNames || { ...DEFAULT_TEAM_NAMES };
-  }
+  if (room.settings.mode === "team") state.teamScores = teamScores(room);
   return state;
 }
 
@@ -213,19 +303,136 @@ function roomState(room) {
 // (storeAction undoCanvas revealHint canvasPayload ...) จึงใช้กับเลนได้ตรง ๆ โดยไม่ต้องแก้
 // และทุกอย่างที่ส่งผ่าน lane.code จะถึงแค่สมาชิกทีมนั้น — นี่คือกำแพงกั้นระหว่างทีม
 // ══════════════════════════════════════════════════════════════════════
-const ALL_TEAMS = TEAM_RULES.ids;
-// TEAMS alias removed — use getTeams(room) for active teams or ALL_TEAMS for all possible
-const DEFAULT_TEAM_NAMES = Object.fromEntries(ALL_TEAMS.map((team) => [team, `ทีม ${team}`]));
+// รหัสทีมข้างใน "คงที่เสมอ" A B C D — ใช้แยกห้องย่อย (Socket.IO room) และคีย์ข้อมูลทุกที่
+// ชื่อทีมที่ผู้เล่นตั้งเป็นแค่ "ป้ายแสดงผล" (room.settings.teamNames) ห้ามเอาไปใช้แทนรหัสนี้เด็ดขาด
+const TEAM_CODES = TEAM_RULES.ids; // ["A","B","C","D"] จาก shared/teamRules.json (TEAM_COUNT_CHOICES = 2-4 มาจากไฟล์เดียวกัน)
+const TEAM_DEFAULT_NAMES = { A: "ทีมแดง", B: "ทีมฟ้า", C: "ทีมเขียว", D: "ทีมเหลือง" };
+const TEAM_MIN_PLAYERS = TEAM_RULES.minPlayers;      // ทุกทีมต้องมีอย่างน้อยเท่านี้ถึงเริ่มเกมได้
 const FIRST_TEAM_BONUS = 100;    // ทีมที่ทายถูกก่อน ได้โบนัสต่อสมาชิกที่ทายถูก
+const TEAMNAME_MAX = 6;          // เปลี่ยนชื่อทีมได้ไม่เกิน 6 ครั้ง
+const TEAMNAME_WINDOW_MS = 10000; // ต่อ 10 วินาที (กันกดรัว)
+const TEAM_BALANCE_MAX_DIFF = 1; // ทีมใหญ่สุดกับเล็กสุดห่างกันได้ไม่เกินเท่านี้คน
+const SWAP_EXPIRE_MS = Number(process.env.SWAP_EXPIRE_MS) || 20000; // คำขอสลับตัวหมดอายุใน 20 วิ (env แค่ให้เทสย่อเวลาได้)
+const SWAP_MAX = 5;              // ขอสลับตัวได้ไม่เกิน 5 ครั้ง/10 วิ (กันกดรัว)
+const SWAP_WINDOW_MS = 10000;
 
 const isTeamMode = (room) => room.settings.mode === "team";
 const teamRoom = (room, t) => `${room.code}:${t}`;
+const teamNameOf = (room, t) => room.settings.teamNames?.[t] || TEAM_DEFAULT_NAMES[t] || t;
 
+// ทีมที่คนน้อยที่สุด (เท่ากันเข้าทีมแรกตามลำดับ A→D) ใช้ตอนจัดคนใหม่อัตโนมัติและย้ายคนตอนลดจำนวนทีม
+function autoTeam(room) {
+  const teams = roomTeams(room);
+  let best = teams[0], bestN = teamCount(room, teams[0]);
+  for (const t of teams.slice(1)) {
+    const n = teamCount(room, t);
+    if (n < bestN) { bestN = n; best = t; }
+  }
+  return best;
+}
+
+// คะแนนทีม = ค่าเฉลี่ยต่อสมาชิก (ปัดจำนวนเต็ม) ไม่ใช่ผลรวม — กันทีมใหญ่ได้เปรียบทีมเล็กเฉยๆ จากจำนวนคนที่มากกว่า
+// คะแนนรายคน (player.score) ไม่เปลี่ยน ยังเป็นผลรวมสะสมตามปกติ เปลี่ยนแค่ตัวเลข "คะแนนทีม" ที่โชว์/ใช้ตัดสินผู้ชนะ
 function teamScores(room) {
+  const sums = {}, counts = {};
+  for (const t of roomTeams(room)) { sums[t] = 0; counts[t] = 0; }
+  for (const p of room.players) if (p.team in sums) { sums[p.team] += p.score; counts[p.team]++; }
   const out = {};
-  for (const t of getTeams(room)) out[t] = 0;
-  for (const p of room.players) if (p.team in out) out[p.team] += p.score;
+  for (const t of roomTeams(room)) out[t] = counts[t] > 0 ? Math.round(sums[t] / counts[t]) : 0;
   return out;
+}
+
+// จำนวนคนแต่ละทีม { A: n, B: n, ... } ตามทีมที่ใช้งานจริงของห้อง
+function teamCounts(room) {
+  const out = {};
+  for (const t of roomTeams(room)) out[t] = teamCount(room, t);
+  return out;
+}
+
+// ทีมใหญ่สุดกับเล็กสุดห่างกันไม่เกิน TEAM_BALANCE_MAX_DIFF คนไหม
+function isTeamBalanced(room) {
+  const vals = Object.values(teamCounts(room));
+  if (!vals.length) return true;
+  return Math.max(...vals) - Math.min(...vals) <= TEAM_BALANCE_MAX_DIFF;
+}
+
+// ย้ายทีมเอง (set_team) ได้ไหม: ต้องไปทีมที่ "คนน้อยกว่าทีมตัวเอง" เท่านั้น และย้ายแล้วทุกทีมยังห่างกันไม่เกิน 1 คน
+// env สำหรับเทสเท่านั้น: เปิดสวิตช์ไว้ว่า "ยอมรับ `force` ใน set_team ได้" — ต้องส่ง `{ team, force: true }` มาด้วยอีกชั้น
+// ไม่ใช่แค่ตั้ง env อย่างเดียว จึงใช้สองชั้นค่อนข้างปลอดภัย ของจริงไม่มีทางส่ง `force` มา (client ไม่มีปุ่มนี้)
+// มีไว้ให้เทสบางข้อ (เช่นข้อ 42) จัดทีมเองให้ตรงเป๊ะก่อนไปทดสอบเรื่องอื่น (ชื่อทีม/กำแพงกั้นทีม) โดยไม่ต้องพึ่งกฎห่างไม่เกิน 1 คน
+// ส่วนเทสที่ทดสอบกฎห่างไม่เกิน 1 คนตรงๆ (ข้อ 44) ไม่ส่ง `force` เลย จึงยังเจอกฎจริงเหมือนผู้เล่นทั่วไป
+const TEST_ALLOW_FORCE_TEAM = process.env.TEST_ALLOW_FORCE_TEAM === "1";
+function canSelfMove(room, player, toTeam) {
+  const counts = teamCounts(room);
+  const fromTeam = player.team;
+  if (fromTeam != null) {
+    if (!(toTeam in counts) || !(fromTeam in counts)) return false;
+    if (!(counts[toTeam] < counts[fromTeam])) return false; // ต้องเป็นทีมที่คนน้อยกว่าจริงๆ ไม่ใช่แค่เท่ากันหรือมากกว่า
+  }
+  const sim = { ...counts };
+  if (fromTeam != null && fromTeam in sim) sim[fromTeam]--;
+  sim[toTeam] = (sim[toTeam] ?? 0) + 1;
+  const vals = Object.values(sim);
+  return Math.max(...vals) - Math.min(...vals) <= TEAM_BALANCE_MAX_DIFF;
+}
+
+// ปุ่ม "จัดทีมให้สมดุล" ของหัวห้อง — ย้ายคนที่เข้าทีมใหญ่สุด "ล่าสุด" (ท้ายสุดใน room.players ของทีมนั้น) ไปทีมเล็กสุด ทีละคนจนห่างกันไม่เกิน 1
+function balanceTeams(room) {
+  const teams = roomTeams(room);
+  for (let guard = 0; guard < 50; guard++) {
+    const counts = teamCounts(room);
+    let maxTeam = teams[0], minTeam = teams[0];
+    for (const t of teams) {
+      if (counts[t] > counts[maxTeam]) maxTeam = t;
+      if (counts[t] < counts[minTeam]) minTeam = t;
+    }
+    if (counts[maxTeam] - counts[minTeam] <= TEAM_BALANCE_MAX_DIFF) break;
+    const members = room.players.filter((p) => p.team === maxTeam);
+    const mover = members[members.length - 1]; // คนที่เข้าทีมนี้ล่าสุด (ท้ายสุดในลิสต์ผู้เล่น)
+    if (!mover) break;
+    mover.team = minTeam;
+    syncTeamRoom(room, mover);
+  }
+}
+
+// ขอสลับตัว — เก็บเป็นลิสต์ { from, to, timer, createdAt } · หนึ่งคนมีได้แค่คำขอเดียวที่เกี่ยวข้อง (ทั้งเป็นคนขอและคนถูกขอ)
+function findSwap(room, pid) {
+  return (room.swapRequests ?? []).find((r) => r.from === pid || r.to === pid) ?? null;
+}
+
+function clearSwap(room, req) {
+  clearTimeout(req.timer);
+  room.swapRequests = (room.swapRequests ?? []).filter((r) => r !== req);
+}
+
+function clearAllSwaps(room) {
+  for (const r of room.swapRequests ?? []) clearTimeout(r.timer);
+  room.swapRequests = [];
+}
+
+// แจ้งผลคำขอสลับตัวให้ทั้งสองฝ่าย — accepted: true (ตกลง) · false (ปฏิเสธ/ทำไม่ได้) · null (หมดอายุ)
+function emitSwapResult(room, req, accepted) {
+  const fromP = room.players.find((p) => p.id === req.from);
+  const toP = room.players.find((p) => p.id === req.to);
+  const payload = { accepted, fromId: req.from, fromName: fromP?.name ?? "", targetId: req.to, targetName: toP?.name ?? "" };
+  io.to(req.from).emit("swap_result", payload);
+  io.to(req.to).emit("swap_result", payload);
+}
+
+// หัวห้องเปลี่ยนจำนวนทีม — ถ้าลดลง คนที่อยู่ในทีมที่หายไปต้องย้ายไปทีมที่คนน้อยสุดในชุดใหม่
+// (เรียกจาก applySettings เท่านั้น ซึ่งรับประกันแล้วว่าห้องไม่ได้เล่นอยู่ตอนนี้)
+function applyTeamCountChange(room, newCount) {
+  const oldTeams = roomTeams(room);
+  room.settings.teamCount = newCount;
+  const newTeams = roomTeams(room);
+  const removed = oldTeams.filter((t) => !newTeams.includes(t));
+  if (!removed.length) return; // เพิ่มจำนวนทีม หรือจำนวนเท่าเดิม ไม่มีใครต้องย้าย
+  for (const p of room.players) {
+    if (removed.includes(p.team)) {
+      p.team = autoTeam(room);
+      syncTeamRoom(room, p);
+    }
+  }
 }
 
 function newLane(room, team) {
@@ -246,12 +453,14 @@ function resetLane(lane, word, challenge) {
   lane.skipped = false;  // ไม่มีคนวาด → ข้ามตานี้ของทีมนี้
   lane.done = false;
   resetCanvas(lane);
+  resetTextCheck(lane);
 }
 
-// ให้ socket ของผู้เล่นอยู่ใน room ย่อยของทีมตัวเองเท่านั้น (team = null → ออกจากทั้งสอง)
+// ให้ socket ของผู้เล่นอยู่ใน room ย่อยของทีมตัวเองเท่านั้น (team = null → ออกจากทั้งหมด)
+// วนครบ TEAM_CODES ทั้ง 4 เสมอ (ไม่ใช่แค่ roomTeams ปัจจุบัน) กันไม่ให้ค้าง socket room เก่าตอนลดจำนวนทีม
 function syncTeamRoom(room, player) {
   // io.in(playerId) = ทุก socket ของผู้เล่นคนนี้ (ปกติมีตัวเดียว · ตอนหลุดอยู่ไม่มีเลยก็ไม่เป็นไร)
-  for (const t of ALL_TEAMS) {
+  for (const t of TEAM_CODES) {
     if (t === player.team) io.in(player.id).socketsJoin(teamRoom(room, t));
     else io.in(player.id).socketsLeave(teamRoom(room, t));
   }
@@ -259,17 +468,19 @@ function syncTeamRoom(room, player) {
 
 // ใช้ตอนหัวห้องสลับโหมด: team → จัดคนที่ยังไม่มีทีมให้สมดุล · classic → เคลียร์ทีมทุกคน
 function applyMode(room) {
+  const teams = roomTeams(room);
   for (const p of room.players) {
     if (isTeamMode(room)) {
-      if (!getTeams(room).includes(p.team)) p.team = autoTeam(room);
+      if (!teams.includes(p.team)) p.team = autoTeam(room);
     } else {
       p.team = null;
     }
     syncTeamRoom(room, p);
   }
+  if (!isTeamMode(room)) clearAllSwaps(room); // ออกจากโหมดทีม คำขอสลับตัวที่ค้างอยู่ไม่มีความหมายแล้ว
 }
 
-const laneList = (room) => (isTeamMode(room) && room.teams ? getTeams(room).map((t) => room.teams[t]).filter(Boolean) : []);
+const laneList = (room) => (isTeamMode(room) && room.teams ? roomTeams(room).map((t) => room.teams[t]) : []);
 const laneOfDrawer = (room, id) => laneList(room).find((l) => l.drawerId === id) || null;
 const laneGuessers = (room, lane) =>
   room.players.filter((p) => p.team === lane.team && p.id !== lane.drawerId && p.connected !== false); // คนที่หลุดอยู่ไม่ต้องรอ
@@ -308,7 +519,7 @@ function teamRoundInfo(room, lane) {
     totalRounds: room.settings.rounds,
     team: lane.team,
     drawerId: lane.drawerId,
-    drawerIds: Object.fromEntries(getTeams(room).map((t) => [t, room.teams[t].drawerId])),
+    drawerIds: Object.fromEntries(roomTeams(room).map((t) => [t, room.teams[t].drawerId])),
     nextDrawerId: next,
     hint: lane.hintOpen && lane.word ? makeHint(lane.word) : null,
     hintAt: hintAt(room),
@@ -317,7 +528,7 @@ function teamRoundInfo(room, lane) {
     challenge: room.challenge ?? { type: STANDARD_CHALLENGE },
     intro: Boolean(room.intro),
     guessedIds: [...lane.guessedIds],
-    solvedTeams: getTeams(room).filter((t) => room.teams[t].solved), // ชื่อทีมเท่านั้น ไม่มีชื่อคน/คำ
+    solvedTeams: roomTeams(room).filter((t) => room.teams[t].solved), // ชื่อทีมเท่านั้น ไม่มีชื่อคน/คำ
   };
 }
 
@@ -326,7 +537,7 @@ function nextTeamTurn(room) {
   if (room.teamTurn >= room.teamTotalTurns) return endGame(room);
   if (room.lastTeamRoundEnd) io.to(room.code).emit("team_gallery_close");
   room.lastTeamRoundEnd = null;
-  for (const t of getTeams(room)) {
+  for (const t of roomTeams(room)) {
     const lane = room.teams[t];
     lane.drawerId = pickTeamDrawer(room, t);
     lane.skipped = lane.drawerId === null;
@@ -354,7 +565,7 @@ function startTeamDrawing(room, word) {
   const introMs = introMsFor(room.challenge);
   room.intro = introMs > 0; // ตั้งก่อน emit เพราะ teamRoundInfo อ่านค่านี้
   room.timeLeft = room.settings.drawTime;
-  for (const t of getTeams(room)) {
+  for (const t of roomTeams(room)) {
     const lane = room.teams[t];
     const skipped = lane.skipped;
     resetLane(lane, word, room.challenge);
@@ -873,6 +1084,109 @@ function resetCanvas(room) {
   if (room.mpAiPrivate) room.revision = 0;
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// กันโกง: คนวาด "เขียนคำตอบเป็นตัวหนังสือ" บนกระดาน (เช่นคำคือ "หมา" แต่เขียนว่า หมา แทนวาดรูปหมา)
+//
+// server มีแต่พิกัดเส้น ไม่มีภาพ → text-check.js วาดเส้นเป็นภาพแล้วให้ OCR (Gemini) อ่าน
+// แล้ว **เกมเทียบเองที่นี่** ด้วย normalize ตัวเดียวกับการทาย (คำตอบไม่เคยถูกส่งออกไปนอก server)
+//
+// ไม่ให้หนัก/ไม่ให้จับผิดคน:
+//   - ตรวจเมื่อคนวาด "หยุด" (หลัง stroke_end/draw_shape รอ TEXT_CHECK_PAUSE_MS) ไม่ใช่ทุกจุด
+//   - กระดานเดียวกันห่างกันอย่างน้อย TEXT_CHECK_GAP_MS · ไม่เกิน TEXT_CHECK_MAX_PER_TURN ครั้งต่อตา · ทีละครั้ง
+//   - ภาพไม่เปลี่ยนจากครั้งก่อน = ไม่ตรวจซ้ำ · ตัวกรองรูปร่างเส้น (looksLikeText) ไม่ผ่าน = ไม่เรียก OCR
+//   - มั่นใจ ≥ TEXT_CHECK_INSTANT_CONF (0.9) = ลงโทษทันทีครั้งเดียว · 0.7–0.9 ต้องเจอ "สองครั้งติดกัน" ก่อน · ต่ำกว่า 0.7 = ไม่นับ
+//   - OCR พัง/ไม่มี key = ไม่มีอะไรเกิดขึ้น (fail open) · ทั้งหมดเป็น async ไม่ขวางการวาด
+//
+// โทษ: ครั้งแรกในตานั้น = ล้างกระดาน + เตือน · ครั้งต่อไป = ล้างกระดาน + หักคะแนนคนวาด (ตายังเล่นต่อ)
+// คนอื่นเห็นแค่ rule_violation (ไม่มีข้อความที่อ่านได้ ไม่มีคำ) · โหมดทีม: board = เลนของทีม ทุกอย่างอยู่ในทีมนั้น
+// ปรับได้ด้วย env: TEXT_CHECK_PAUSE_MS (ค่าเริ่มต้น 1 วิ) · TEXT_CHECK_GAP_MS (3 วิ) · TEXT_CHECK_MAX_PER_TURN (6) — เทสใช้ย่อเวลา
+// ══════════════════════════════════════════════════════════════════════
+const TEXT_CHECK_PAUSE_MS = Number(process.env.TEXT_CHECK_PAUSE_MS) || 1000; // รอคนวาดหยุดกี่ ms ก่อนตรวจ
+const TEXT_CHECK_GAP_MS = Number(process.env.TEXT_CHECK_GAP_MS) || 3000; // กระดานเดียวกันตรวจห่างกันอย่างน้อยเท่านี้
+const TEXT_CHECK_MAX_PER_TURN = Number(process.env.TEXT_CHECK_MAX_PER_TURN) || 6;
+const TEXT_CHECK_MIN_CONF = 0.7; // ต่ำกว่านี้ไม่นับเลย
+const TEXT_CHECK_INSTANT_CONF = 0.9; // ตั้งแต่นี้ขึ้นไป เจอครั้งเดียวลงโทษทันที (อ่านชัดมาก โอกาสผิดต่ำ)
+const TEXT_CHECK_PENALTY = 100;
+
+// board = ห้อง (classic) หรือเลน (ทีม) — เก็บสถานะการตรวจของ "ตานี้" ไว้ที่ตัวมัน
+function resetTextCheck(board) {
+  clearTimeout(board.textCheck?.timer);
+  board.textCheck = { timer: null, busy: false, calls: 0, lastAt: 0, lastSig: "", hits: 0, offences: 0 };
+}
+
+// นัดตรวจครั้งถัดไป (ถ้ายังไม่ได้นัดไว้) · ปิดอยู่/ครบโควตาตาแล้ว = ไม่ทำอะไร
+function scheduleTextCheck(room, board, delay = TEXT_CHECK_PAUSE_MS) {
+  const st = board.textCheck;
+  if (!st || st.timer || st.busy || st.calls >= TEXT_CHECK_MAX_PER_TURN) return;
+  if (!textCheck.isEnabled()) {
+    // ปิดเพราะ "พักหลังโดน 429" = ชั่วคราว → นัดตรวจตอนพักจบ (เดิมทิ้งไปเลย ภาพนั้นจึงไม่ถูกตรวจอีกถ้าคนวาดไม่วาดเพิ่ม)
+    // ปิดด้วยเหตุผลอื่น (ไม่มี key / TEXT_CHECK=off) = ไม่ตรวจเลย (fail open)
+    const left = textCheck.backoffLeft();
+    if (left === 0) return;
+    delay = Math.max(delay, left + 100);
+  }
+  const wait = Math.max(delay, st.lastAt + TEXT_CHECK_GAP_MS - Date.now());
+  st.timer = setTimeout(() => {
+    st.timer = null;
+    runTextCheck(room, board, st).catch((err) => console.warn("ตรวจตัวอักษรพัง (ข้ามไป):", err?.message || err));
+  }, wait);
+}
+
+async function runTextCheck(room, board, st) {
+  // ตาเปลี่ยน/จบไปแล้ว (st ไม่ใช่ตัวเดิม) หรือไม่ได้อยู่ช่วงวาด → เลิก
+  const stillThisTurn = () => board.textCheck === st && room.phase === "drawing" && !!board.word && rooms.get(room.code) === room;
+  if (!stillThisTurn()) return;
+  if (board.strokeOpen) return scheduleTextCheck(room, board); // ยังลากเส้นอยู่ รอให้หยุดก่อน
+  const sig = `${board.canvasOps.length}:${board.canvasEvents}`;
+  if (sig === st.lastSig && st.hits === 0) return; // ภาพเหมือนครั้งก่อนที่ตรวจแล้วไม่เจอ — ไม่ต้องเสียโควตา
+  st.lastSig = sig;
+  if (!textCheck.looksLikeText(board.canvasOps)) return void (st.hits = 0);
+
+  st.busy = true;
+  st.calls++;
+  st.lastAt = Date.now();
+  let result = null;
+  try {
+    result = await textCheck.readText(board.canvasOps);
+  } finally {
+    st.busy = false;
+  }
+  if (!stillThisTurn()) return; // ระหว่างรอ OCR ตาจบไปแล้ว
+
+  // OCR ไม่ได้ผล (503 ล้น/429/เน็ต/เกินเพดาน) ≠ "อ่านแล้วไม่เจอ" → ลองภาพเดิมใหม่ภายหลัง (ยังนับในเพดานต่อตา)
+  // เดิมจำ lastSig ไว้ ภาพเดิมจึงไม่ถูกตรวจซ้ำอีกเลย ถ้าคนวาดไม่วาดเพิ่ม (เจอตอนทดสอบกับ Gemini จริงที่ตอบ 503)
+  if (!result) {
+    st.lastSig = "";
+    return scheduleTextCheck(room, board, TEXT_CHECK_GAP_MS);
+  }
+  // เทียบแบบเดียวกับการทาย (normalize) และนับ "คำตอบเป็นส่วนหนึ่งของข้อความ" ด้วย (เช่นเขียน "หมาตัวนี้")
+  const word = normalize(board.word);
+  const hit = result.confidence >= TEXT_CHECK_MIN_CONF && word.length > 0 && normalize(result.text).includes(word);
+  if (!hit) return void (st.hits = 0);
+  st.hits++;
+  // มั่นใจมาก (≥ 0.9) ลงโทษเลย · มั่นใจปานกลาง (0.7–0.9) เจอครั้งแรก → นัดตรวจยืนยันอีกครั้งก่อน
+  if (result.confidence < TEXT_CHECK_INSTANT_CONF && st.hits < 2) return scheduleTextCheck(room, board, TEXT_CHECK_GAP_MS);
+  st.hits = 0;
+  punishTextCheat(room, board, st);
+}
+
+function punishTextCheat(room, board, st) {
+  st.offences++;
+  st.lastSig = "";
+  let penalty = 0;
+  const drawer = room.players.find((p) => p.id === board.drawerId);
+  if (st.offences >= 2 && drawer) {
+    penalty = Math.min(drawer.score, TEXT_CHECK_PENALTY); // หักไม่ให้ติดลบ
+    drawer.score -= penalty;
+  }
+  // ล้างทั้งภาพและประวัติ (ไม่ใช่ clear_canvas ธรรมดา) — ไม่งั้นคนวาดกดย้อนกลับเอาตัวหนังสือคืนมาได้
+  resetCanvas(board);
+  io.to(board.code).emit("canvas_history", canvasPayload(board)); // ทุกจอในห้อง/ทีมนั้น (รวมคนวาด) ได้กระดานว่าง
+  io.to(board.code).emit("rule_violation", { drawerId: board.drawerId, strike: st.offences, penalty });
+  if (penalty > 0) io.to(room.code).emit("room_update", roomState(room));
+  console.warn(`⚠️  ${board.code}: พบตัวหนังสือบนกระดาน ล้างภาพ (ครั้งที่ ${st.offences} หัก ${penalty})`); // ไม่ log คำ/ข้อความที่อ่านได้
+}
+
 // ---------- ตัวจับเวลา ----------
 function stopTimer(room) {
   clearInterval(room.timer);
@@ -880,6 +1194,12 @@ function stopTimer(room) {
   clearTimeout(room.introTimer); // ตาจบ/ห้องว่างระหว่างป้ายใหญ่ → เลิกรอ ไม่ให้ไปเริ่มเวลาตาที่จบแล้ว
   room.introTimer = null;
   room.intro = false;
+  // เลิกนัดตรวจตัวหนังสือที่ค้างอยู่ (ทั้งห้องและทุกเลนของทีม) — ตาจบ/ห้องว่างแล้วไม่ต้องตรวจ
+  for (const board of [room, ...laneList(room)]) {
+    if (!board.textCheck) continue;
+    clearTimeout(board.textCheck.timer);
+    board.textCheck.timer = null;
+  }
 }
 
 function startTimer(room, seconds, onEnd) {
@@ -941,6 +1261,7 @@ function startDrawing(room, word) {
   room.intro = introMs > 0; // ตั้งก่อน emit เพราะ roundInfo อ่านค่านี้
   room.penUsed = false;
   resetCanvas(room); // ขึ้นตาใหม่ = กระดานว่าง ประวัติตาที่แล้วทิ้งทั้งหมด
+  resetTextCheck(room); // ตาใหม่ = นับการเขียนตัวหนังสือใหม่ (โทษไม่ลามไปตาถัดไป)
 
   room.timeLeft = room.settings.drawTime;
   io.to(room.code).emit("round_start", roundInfo(room));
@@ -999,10 +1320,10 @@ async function endRound(room) {
   const ended = { word: room.word, results };
   if (isTeamMode(room)) {
     // เฉลยตอนจบตาได้แล้ว · firstTeam = ทีมที่ทายถูกก่อน (null = ไม่มีใครทายถูก)
-    ended.teamGained = Object.fromEntries(getTeams(room).map((t) => [t, 0]));
+    ended.teamGained = Object.fromEntries(roomTeams(room).map((t) => [t, 0]));
     for (const p of room.players) if (p.team in ended.teamGained) ended.teamGained[p.team] += room.roundGains[p.id] || 0;
-    ended.firstTeam = getTeams(room).find((t) => room.teams[t].rank === 1) ?? null;
-    ended.gallery = await teamGallery(room, getTeams(room));
+    ended.firstTeam = roomTeams(room).find((t) => room.teams[t].rank === 1) ?? null;
+    ended.gallery = await teamGallery(room, roomTeams(room));
     if (room.status !== "playing" || room.phase !== "between") return;
     room.lastTeamRoundEnd = ended;
   }
@@ -1031,7 +1352,11 @@ function endGame(room) {
           : { playerId: p.id, name: p.name, score: p.score, avatar: p.avatar, isHost: p.id === room.hostId, left: !room.players.includes(p) });
   const ended = { ranking };
   if (isTeamMode(room)) {
-    Object.assign(ended, teamFinalResults(room, getTeams(room), teamScores(room), { ...DEFAULT_TEAM_NAMES, ...room.teamNames }));
+    // คะแนนทีม = ค่าเฉลี่ยต่อสมาชิก (teamScores) · แต่ละทีมมีชื่อและสมาชิกตอนเริ่มแมตช์ (team-final-results.js)
+    // ชนะ = ทีมเดียวที่คะแนนสูงสุด · มากกว่าหนึ่งทีมเสมอกันบนสุด (รวม 3-4 ทีม) = ไม่มีผู้ชนะ
+    const teams = roomTeams(room);
+    const names = Object.fromEntries(teams.map((t) => [t, teamNameOf(room, t)]));
+    Object.assign(ended, teamFinalResults(room, teams, teamScores(room), names));
   }
   room.lastEnded = ended; // คนที่รีเฟรชหลังจบเกมจะได้ผลนี้อีกครั้งตอน rejoin
   // ไม่มีใครกด "กลับห้องรอ" → server พาทุกคนกลับเองเมื่อครบเวลา (server เป็นคนสั่งเปลี่ยนสถานะเสมอ)
@@ -1041,7 +1366,15 @@ function endGame(room) {
   // บันทึกคะแนนของทุกคนลงกระดาน "เล่นกับเพื่อน" — server บันทึกเอง client ส่งคะแนนมาไม่ได้
   // คนที่ได้ 0 ไม่บันทึก (ไม่ได้เล่นจริง) · saveScore ไม่ throw จึงไม่ทำให้จบเกมพัง
   for (const p of room.players) {
-    if (p.score > 0) leaderboard.saveScore({ name: p.name, score: p.score, levelReached: 0, board: "multi" });
+    if (p.score > 0) {
+      leaderboard.saveScore({
+        name: p.name,
+        score: p.score,
+        levelReached: 0,
+        board: "multi",
+        accountId: room.scoreAccountIds.get(p.id),
+      });
+    }
   }
   io.to(room.code).emit("game_end", endedPayload(room));
   io.to(room.code).emit("room_update", roomState(room));
@@ -1076,6 +1409,7 @@ function returnToLobby(room) {
   room.teams = null; // เลนของทีม สร้างใหม่ตอน start_game
   mpAi.stop(room);
   room.mp = null; // สถานะ Multiplayer vs AI ของเกมก่อน
+  clearAllSwaps(room); // คำขอสลับตัวที่ค้างจากเกมก่อนไม่มีความหมายแล้ว
   resetCanvas(room);
   for (const p of room.players) {
     p.score = 0;
@@ -1090,18 +1424,26 @@ function returnToLobby(room) {
 function applySettings(room, data) {
   const rounds = Number(data?.rounds);
   const drawTime = Number(data?.drawTime);
-  const teamCountVal = Number(data?.teamCount);
-  const nextTeamCount = TEAM_COUNT_CHOICES.includes(teamCountVal) ? teamCountVal : room.settings.teamCount || TEAM_RULES.minTeams;
-  const nextMaxPlayers = MAX_PLAYER_CHOICES.includes(Number(data?.maxPlayers)) ? Number(data.maxPlayers) : room.settings.maxPlayers;
-  const nextMode = ["classic", "team", "mpai"].includes(data?.mode) ? data.mode : room.settings.mode;
-  if (!settingsMembershipValid(room, nextMode, nextTeamCount, nextMaxPlayers)) return false;
   if ([1, 2, 3, 4, 5].includes(rounds)) room.settings.rounds = rounds;
   if ([30, 45, 60, 90].includes(drawTime)) room.settings.drawTime = drawTime;
-  if (TEAM_COUNT_CHOICES.includes(teamCountVal)) room.settings.teamCount = teamCountVal;
   if (data?.difficulty === "mixed" || LEVELS.includes(data?.difficulty)) room.settings.difficulty = data.difficulty; // ระดับของ "ชุดคำ" เท่านั้น ไม่เกี่ยวกับเวลา (Solo ใช้ LEVELS ล้วน ไม่มี mixed)
+  // จำนวนทีม (2-4) กับจำนวนผู้เล่นสูงสุด (4/6/8) ต้องสอดคล้องกันเสมอ: maxPlayers >= 2 × จำนวนทีม — เช็คทุกครั้งที่ตั้งค่า
+  // ใช้ "ค่าที่กำลังจะเป็น" ของอีกฝั่ง (ไม่ใช่แค่ค่าเดิม) เผื่อส่งสองช่องมาพร้อมกันในคำขอเดียว เช่น {maxPlayers:8, teamCount:4}
+  const requestedMaxPlayers = Number(data?.maxPlayers);
+  const candidateMaxPlayers = MAX_PLAYER_CHOICES.includes(requestedMaxPlayers) ? requestedMaxPlayers : room.settings.maxPlayers;
+  const requestedTeamCount = Number(data?.teamCount);
+  if (
+    TEAM_COUNT_CHOICES.includes(requestedTeamCount) &&
+    requestedTeamCount !== room.settings.teamCount &&
+    candidateMaxPlayers >= requestedTeamCount * TEAM_MIN_PLAYERS
+  ) {
+    applyTeamCountChange(room, requestedTeamCount);
+  }
   // จำนวนผู้เล่นสูงสุด: เฉพาะ 4/6/8 · ตั้งต่ำกว่าคนที่อยู่แล้วได้ — ไม่เตะใคร แค่ห้ามคนใหม่เข้า (เช็คตอน join_room)
-  const maxPlayers = Number(data?.maxPlayers);
-  if (MAX_PLAYER_CHOICES.includes(maxPlayers)) room.settings.maxPlayers = maxPlayers;
+  // ต้องไม่ต่ำกว่า 2 × จำนวนทีม (หลังอัปเดตด้านบนแล้ว) ไม่งั้นทิ้งเงียบๆ เหมือนค่าอื่นที่ไม่ถูก
+  if (MAX_PLAYER_CHOICES.includes(requestedMaxPlayers) && requestedMaxPlayers >= room.settings.teamCount * TEAM_MIN_PLAYERS) {
+    room.settings.maxPlayers = requestedMaxPlayers;
+  }
   if (data?.visibility === "public" || data?.visibility === "private") room.settings.visibility = data.visibility;
   // ชุดกติกาที่เปิด (ใบไหนบ้าง) · รองรับค่าเดิม challenge: boolean ไว้ด้วย (true = ชุดเริ่มต้น · false = เปิดแค่ Standard)
   const sc = sanitizeChallenges(data?.challenges);
@@ -1201,8 +1543,15 @@ function removePlayer(room, pid) {
   const code = room.code;
   if (!room.players.some((p) => p.id === pid)) return;
   cancelDrop(room, pid);
-  io.in(pid).socketsLeave([code, ...ALL_TEAMS.map((t) => `${code}:${t}`)]);
+  // ออกจากห้องระหว่างมีคำขอสลับตัวค้างอยู่ (ไม่ว่าเป็นฝ่ายขอหรือฝ่ายถูกขอ) → ยกเลิกคำขอ แจ้งอีกฝ่าย
+  const pendingSwap = findSwap(room, pid);
+  if (pendingSwap) {
+    clearSwap(room, pendingSwap);
+    emitSwapResult(room, pendingSwap, false);
+  }
+  io.in(pid).socketsLeave([code, ...TEAM_CODES.map((t) => `${code}:${t}`)]);
   room.players = room.players.filter((p) => p.id !== pid);
+  room.scoreAccountIds?.delete(pid);
 
   if (room.players.length === 0) {
     for (const t of room.dropTimers?.values() ?? []) clearTimeout(t);
@@ -1224,7 +1573,7 @@ function removePlayer(room, pid) {
     mpAi.onPlayerLeft(room, pid);
   } else if (room.status === "playing" && isTeamMode(room)) {
     // ทีมใดเหลือน้อยกว่า 2 คน เล่นต่อไม่ได้ (ไม่มีใครทาย) → จบเกม
-    if (getTeams(room).some((t) => teamCount(room, t) < TEAM_RULES.capacity)) return endGame(room);
+    if (roomTeams(room).some((t) => teamCount(room, t) < TEAM_MIN_PLAYERS)) return endGame(room);
     const lane = laneOfDrawer(room, pid);
     if (lane && room.phase === "choosing") {
       // คนวาดของทีมหลุดตอนเลือกคำ: ทีมนั้นถูกข้ามตานี้ ถ้าไม่เหลือคนวาดเลยก็ข้ามทั้งตา
@@ -1499,11 +1848,12 @@ function endSoloGame(socket, solo) {
   solo.over = true;
   forgetSolo(solo);
   socket.data.solo = null;
-  leaderboard.saveScore(result);
+  const scoreResult = { ...result, accountId: solo.accountId };
+  leaderboard.saveScore(scoreResult);
   socket.emit("ai_game_end", {
     totalScore: result.score,
     levelReached: result.levelReached,
-    rank: leaderboard.rankOf(result),
+    rank: leaderboard.rankOf(scoreResult),
   });
 }
 
@@ -1599,6 +1949,7 @@ io.on("connection", (socket) => {
     const name = cleanName(data?.name);
     if (!name) return callback({ ok: false, error: "INVALID_NAME" });
     if (data?.challenges !== undefined && !sanitizeChallenges(data.challenges)) return callback({ ok: false, error: "INVALID_CHALLENGES" });
+    if (hasBadWord(name)) return callback({ ok: false, error: "INAPPROPRIATE_NAME" });
 
     leaveRoom(socket);
     dropSoloSession(socket.data.pid);
@@ -1609,7 +1960,9 @@ io.on("connection", (socket) => {
       hostId: socket.data.pid,
       status: "lobby",
       players: [{ id: socket.data.pid, name, avatar: cleanAvatar(data.avatar), score: 0, isHost: true, team: null, connected: true, ready: false }],
-      settings: { mode: "classic", rounds: 3, drawTime: 60, difficulty: "mixed", maxPlayers: MAX_PLAYERS, visibility: "private", challenges: [...DEFAULT_CHALLENGES] },
+      scoreAccountIds: new Map([[socket.data.pid, socket.data.accountId]]),
+      settings: { mode: "classic", rounds: 3, drawTime: 60, difficulty: "mixed", maxPlayers: MAX_PLAYERS, visibility: "private", challenges: [...DEFAULT_CHALLENGES], teamCount: 2, teamNames: { ...TEAM_DEFAULT_NAMES } },
+      swapRequests: [], // คำขอสลับตัวที่ค้างอยู่ (โหมดทีม)
     };
     rooms.set(code, room);
 
@@ -1630,6 +1983,7 @@ io.on("connection", (socket) => {
     const room = rooms.get(code);
 
     if (!name) return callback({ ok: false, error: "INVALID_NAME" });
+    if (hasBadWord(name)) return callback({ ok: false, error: "INAPPROPRIATE_NAME" });
     if (!room) return callback({ ok: false, error: "ROOM_NOT_FOUND" });
     // เป็นสมาชิกห้องนี้อยู่แล้ว (เช่นรีเฟรชแล้วกดเข้าห้องเดิมภายในเวลารอ) = กลับเข้าที่เดิม ไม่สร้างผู้เล่นซ้ำ
     if (room.players.some((p) => p.id === socket.data.pid)) return callback(rejoinRoom(socket, room));
@@ -1642,6 +1996,7 @@ io.on("connection", (socket) => {
     if (isTeamMode(room)) joiner.team = autoTeam(room); // โหมดทีม: เข้าทีมที่คนน้อยกว่าอัตโนมัติ (รวมคนเข้ากลางเกม)
     if (isTeamMode(room) && !joiner.team) return callback({ ok: false, error: "ROOM_FULL" });
     room.players.push(joiner);
+    room.scoreAccountIds.set(socket.data.pid, socket.data.accountId);
     socket.join(code);
     socket.data.roomCode = code;
     syncTeamRoom(room, joiner);
@@ -1675,6 +2030,7 @@ io.on("connection", (socket) => {
     const checked = validateProfile(data, cleanName, cleanAvatar);
     if (!checked.ok) return callback(checked);
     const { name, avatar } = checked;
+    if (hasBadWord(name)) return callback({ ok: false, error: "INAPPROPRIATE_NAME" }); // ตัวกรองเดียวกับ create_room/join_room/ai_start
     const room = rooms.get(socket.data.roomCode);
     if (room) {
       if (!room.players.some((p) => p.id === socket.data.pid)) return callback({ ok: false, error: "NOT_IN_ROOM" });
@@ -1700,7 +2056,7 @@ io.on("connection", (socket) => {
       return socket.emit("game_error", { code: "NOT_HOST", message: "เฉพาะหัวห้องเท่านั้น" });
     }
     if (data?.challenges !== undefined && !sanitizeChallenges(data.challenges)) return socket.emit("game_error", { code: "INVALID_CHALLENGES", message: "ต้องเปิดรูปแบบการวาดอย่างน้อย 1 แบบ" });
-    if (!applySettings(room, data)) return socket.emit("game_error", { code: "TEAM_SETTINGS_INVALID", message: "ตั้งค่านี้ไม่ได้ เพราะจำนวนผู้เล่นหรือสมาชิกทีมเดิมจะไม่ถูกต้อง" });
+    applySettings(room, data); // ค่าที่ขัดกัน (เช่น maxPlayers < 2 × จำนวนทีม) ถูกเมินเงียบๆ คงค่าเดิม
     io.to(room.code).emit("room_update", roomState(room));
   });
 
@@ -1748,31 +2104,113 @@ io.on("connection", (socket) => {
   });
 
   // เลือกทีม (ตอนอยู่ในห้องรอ/จบเกม ไม่ใช่ตอนเล่น) — เฉพาะโหมดทีม
+  // ย้ายเองได้แค่ไปทีมที่ "คนน้อยกว่าทีมตัวเอง" เท่านั้น และห้ามทำให้ทีมต่างกันเกิน 1 คน (canSelfMove)
   socket.on("set_team", (data) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room || room.status === "playing" || !isTeamMode(room)) return;
-    if (!getTeams(room).includes(data?.team)) return;
+    const team = data?.team;
+    if (!roomTeams(room).includes(team)) return;
     const player = room.players.find((p) => p.id === socket.data.pid);
     if (!player) return;
-    if (player.team === data.team) return;
-    if (teamCount(room, data.team) >= TEAM_RULES.capacity) return socket.emit("game_error", { code: "TEAM_FULL", message: `ทีม ${data.team} เต็มแล้ว` });
-    player.team = data.team;
+    if (player.team === team) return;
+    const forced = TEST_ALLOW_FORCE_TEAM && data?.force === true;
+    if (!forced && !canSelfMove(room, player, team)) {
+      return socket.emit("game_error", { code: "TEAM_UNBALANCED", message: "ย้ายทีมนี้ไม่ได้ ต้องย้ายไปทีมที่คนน้อยกว่า และทำให้ทีมต่างกันไม่เกิน 1 คน" });
+    }
+    player.team = team;
     syncTeamRoom(room, player);
     io.to(room.code).emit("room_update", roomState(room));
   });
 
-  // เปลี่ยนชื่อทีม (สมาชิกในทีมสามารถเปลี่ยนชื่อทีมของตนเองได้)
+  // หัวห้องกดจัดทีมให้สมดุล (ตอนอยู่ในห้องรอ เฉพาะโหมดทีม)
+  socket.on("balance_teams", () => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room || room.status === "playing" || !isTeamMode(room)) return;
+    if (room.hostId !== socket.data.pid) {
+      return socket.emit("game_error", { code: "NOT_HOST", message: "เฉพาะหัวห้องเท่านั้น" });
+    }
+    balanceTeams(room);
+    io.to(room.code).emit("room_update", roomState(room));
+  });
+
+  // ขอสลับตัวกับคนทีมอื่น — ฝั่งที่ขอเป็นคนส่งเสมอ (socket.data.pid) ส่งแทนคนอื่นไม่ได้
+  socket.on("request_swap", (data, callback) => {
+    if (typeof callback !== "function") return;
+    const room = rooms.get(socket.data.roomCode);
+    if (!room || room.status === "playing" || !isTeamMode(room)) return callback({ ok: false, error: "NOT_IN_TEAM_MODE" });
+    if (!rateOk(socket, "swap", SWAP_MAX, SWAP_WINDOW_MS)) return callback({ ok: false, error: "TOO_MANY_ATTEMPTS" });
+    const me = room.players.find((p) => p.id === socket.data.pid);
+    if (!me || me.team == null) return callback({ ok: false, error: "NOT_IN_TEAM_MODE" });
+    const target = room.players.find((p) => p.id === String(data?.targetId ?? ""));
+    if (!target || target.id === me.id) return callback({ ok: false, error: "TARGET_NOT_FOUND" });
+    if (target.team == null || target.team === me.team) return callback({ ok: false, error: "SAME_TEAM" });
+    if (findSwap(room, me.id) || findSwap(room, target.id)) return callback({ ok: false, error: "ALREADY_PENDING" });
+    const req = { from: me.id, to: target.id, createdAt: Date.now() };
+    req.timer = setTimeout(() => {
+      if (!(room.swapRequests ?? []).includes(req)) return;
+      clearSwap(room, req);
+      emitSwapResult(room, req, null); // null = หมดอายุ
+    }, SWAP_EXPIRE_MS);
+    (room.swapRequests ??= []).push(req);
+    io.to(target.id).emit("swap_request", { fromId: me.id, fromName: me.name, expiresAt: Date.now() + SWAP_EXPIRE_MS });
+    callback({ ok: true });
+  });
+
+  // ตอบรับ/ปฏิเสธคำขอสลับตัว — เฉพาะคนที่ "ถูกขอ" เท่านั้นที่ตอบได้ (หาโดย socket.data.pid ไม่ใช่จากค่าที่ client ส่งมา)
+  socket.on("respond_swap", (data, callback) => {
+    if (typeof callback !== "function") return;
+    const room = rooms.get(socket.data.roomCode);
+    if (!room) return callback({ ok: false, error: "NOT_IN_ROOM" });
+    const req = findSwap(room, socket.data.pid);
+    if (!req || req.to !== socket.data.pid) return callback({ ok: false, error: "NO_PENDING_REQUEST" });
+    clearSwap(room, req);
+    const canSwapNow = Boolean(data?.accept) && room.status !== "playing" && isTeamMode(room);
+    if (canSwapNow) {
+      const fromP = room.players.find((p) => p.id === req.from);
+      const toP = room.players.find((p) => p.id === req.to);
+      if (fromP && toP && fromP.team != null && toP.team != null) {
+        const t1 = fromP.team, t2 = toP.team;
+        fromP.team = t2;
+        toP.team = t1;
+        syncTeamRoom(room, fromP);
+        syncTeamRoom(room, toP);
+        io.to(room.code).emit("room_update", roomState(room));
+      }
+    }
+    emitSwapResult(room, req, canSwapNow);
+    callback({ ok: true });
+  });
+
+  // ตั้งชื่อทีม (ป้ายแสดงผลเท่านั้น รหัสข้างในยังเป็น A/B/C/D) — ตอนอยู่ในห้องรอ เฉพาะโหมดทีม
+  // สมาชิกตั้งได้เฉพาะทีมตัวเอง · หัวห้องตั้งได้ทุกทีม
+  // เปลี่ยนชื่อทีม — เฉพาะ "สมาชิกของทีมนั้นเอง" เท่านั้น หัวห้องไม่มีสิทธิ์พิเศษเรื่องนี้เลย (ย้ำตามที่ผู้ใช้สั่ง)
   socket.on("set_team_name", (data) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room || room.status === "playing" || !isTeamMode(room)) return;
-    const player = room.players.find((p) => p.id === socket.data.pid);
+    const teams = roomTeams(room);
     const team = data?.team;
-    const newName = typeof data?.name === "string" ? data.name.trim().slice(0, 20) : "";
-    if (!player || player.team !== team || !newName) return;
-    if (!getTeams(room).includes(team)) return;
-    room.teamNames = room.teamNames || { ...DEFAULT_TEAM_NAMES };
-    room.teamNames[team] = newName;
+    if (!teams.includes(team)) return;
+    const player = room.players.find((p) => p.id === socket.data.pid);
+    if (!player) return;
+    if (player.team !== team) return; // เปลี่ยนได้แค่ทีมตัวเอง ไม่มีข้อยกเว้นให้ใคร
+    if (!rateOk(socket, "teamname", TEAMNAME_MAX, TEAMNAME_WINDOW_MS)) {
+      return socket.emit("game_error", { code: "TOO_MANY_ATTEMPTS", message: "เปลี่ยนชื่อทีมถี่เกินไป ลองใหม่สักครู่" });
+    }
+    const name = cleanTeamName(data?.name);
+    if (!name) {
+      return socket.emit("game_error", { code: "INVALID_TEAM_NAME", message: "ชื่อทีมต้องยาว 1-16 ตัวอักษร ไม่มีอักขระควบคุม" });
+    }
+    if (hasBadWord(name)) {
+      return socket.emit("game_error", { code: "INAPPROPRIATE_NAME", message: "ชื่อนี้ใช้ไม่ได้ ลองตั้งชื่ออื่นนะ" });
+    }
+    const dup = teams.some((t) => t !== team && teamNameOf(room, t) === name);
+    if (dup) {
+      return socket.emit("game_error", { code: "TEAM_NAME_TAKEN", message: "ชื่อนี้ถูกใช้โดยอีกทีมแล้ว" });
+    }
+    room.settings.teamNames[team] = name;
     io.to(room.code).emit("room_update", roomState(room));
+    // บอกในแชทห้องรอด้วยว่าใครเปลี่ยนเป็นอะไร (ส่งเป็นข้อความแชทปกติจากคนที่เปลี่ยน ไม่เพิ่ม event ใหม่)
+    io.to(room.code).emit("chat_message", { playerId: socket.data.pid, name: player.name, text: `เปลี่ยนชื่อทีมเป็น "${name}"` });
   });
 
   // หน้าสรุปผล: ใครกด "กลับห้องรอ" ก็พาทุกคนกลับพร้อมกัน (server เช็คว่าเกมจบแล้วจริงและคนกดอยู่ในห้อง)
@@ -1793,12 +2231,13 @@ io.on("connection", (socket) => {
       return socket.emit("game_error", { code: "NOT_ENOUGH_PLAYERS", message: "ต้องมีอย่างน้อย 2 คน" });
     }
 
-    if (isTeamMode(room) && !teamsComplete(room)) {
-      return socket.emit("game_error", { code: "TEAM_INCOMPLETE", message: "ทุกทีมต้องมีสมาชิกครบตามจำนวนที่กำหนด" });
+    if (isTeamMode(room) && roomTeams(room).some((t) => teamCount(room, t) < TEAM_MIN_PLAYERS)) {
+      return socket.emit("game_error", { code: "NOT_ENOUGH_PLAYERS", message: "แต่ละทีมต้องมีอย่างน้อย 2 คน" });
     }
-    if (isTeamMode(room) && room.players.some((p) => p.id !== room.hostId && !p.ready)) {
-      return socket.emit("game_error", { code: "NOT_READY", message: "รอผู้เล่นทุกคนกดพร้อม" });
+    if (isTeamMode(room) && !isTeamBalanced(room)) {
+      return socket.emit("game_error", { code: "TEAM_UNBALANCED", message: "ทีมยังไม่สมดุล (ต่างกันเกิน 1 คน) ลองกดจัดทีมให้สมดุลดูก่อน" });
     }
+    clearAllSwaps(room); // เริ่มเกมแล้ว คำขอสลับตัวที่ค้างอยู่ใช้ไม่ได้อีกต่อไป
     clearTimeout(room.returnTimer); // เล่นอีกรอบเอง → ยกเลิกตัวนับกลับห้องรอ
     room.status = "playing";
     room.players.forEach((p) => (p.score = 0));
@@ -1809,9 +2248,10 @@ io.on("connection", (socket) => {
     room.turnOrder = room.players.map((p) => p.id);
     room.turnIndex = 0;
     if (isTeamMode(room)) {
-      // หนึ่งรอบ = สมาชิกของแต่ละทีมวาดครบทุกคนหนึ่งรอบ · จำนวนตาทั้งเกมล็อกตอนเริ่ม
-      room.teams = Object.fromEntries(getTeams(room).map((t) => [t, newLane(room, t)]));
-      room.teamPerRound = TEAM_RULES.capacity;
+      // หนึ่งรอบ = ทีมที่ใหญ่กว่าวาดครบทุกคนหนึ่งรอบ (ทีมเล็กหมุนวนซ้ำ) · จำนวนตาทั้งเกมล็อกตอนเริ่ม
+      const teams = roomTeams(room);
+      room.teams = Object.fromEntries(teams.map((t) => [t, newLane(room, t)]));
+      room.teamPerRound = Math.max(...teams.map((t) => teamCount(room, t)));
       room.teamTotalTurns = room.teamPerRound * room.settings.rounds;
       room.teamTurn = 0;
       room.drawerId = null; // โหมดทีมไม่ใช้ช่องนี้ (คนวาดอยู่ที่เลน)
@@ -1945,6 +2385,8 @@ io.on("connection", (socket) => {
     if (penLocked) {
     io.to(room.code).emit(room.mpAiPrivate ? "mpai_pen_locked" : "pen_locked", {});
     }
+    // คนวาดปล่อยมือ = จังหวะ "หยุด" → นัดตรวจตัวหนังสือ (async ไม่ขวางการวาด) · room ตรงนี้อาจเป็นเลนของทีม
+    scheduleTextCheck(rooms.get(socket.data.roomCode), room);
   });
 
   socket.on("fill", (data) => {
@@ -1977,6 +2419,7 @@ io.on("connection", (socket) => {
     const payload = { shape, x1, y1, x2, y2, color, size };
     storeAction(room, "draw_shape", payload);
     socket.to(room.code).emit("draw_shape", payload);
+    scheduleTextCheck(rooms.get(socket.data.roomCode), room); // รูปทรงก็ต่อกันเป็นตัวอักษรได้ (เช่นเส้นตรงหลายเส้น)
   });
 
   // Don't Lift Pen: Clear เริ่มภาพและสิทธิ์วาดเส้นเดียวใหม่ทั้งชุด; โหมดอื่นคงประวัติสำหรับ Undo
@@ -2038,6 +2481,7 @@ io.on("connection", (socket) => {
   socket.on("ai_start", (data) => {
     const name = cleanName(data?.name);
     if (!name) return socket.emit("game_error", { code: "INVALID_NAME", message: "กรุณาใส่ชื่อ" });
+    if (hasBadWord(name)) return socket.emit("game_error", { code: "INAPPROPRIATE_NAME", message: "ชื่อนี้ใช้ไม่ได้ ลองตั้งชื่ออื่นนะ" });
     leaveRoom(socket); // ผู้เล่นหนึ่งคนอยู่ได้อย่างเดียว: ห้อง หรือ Solo
     stopSolo(socket);  // กดเริ่มซ้ำ = เริ่มเกมใหม่ เกมเก่าทิ้ง
     dropSoloSession(socket.data.pid); // เกมเก่าที่ค้างรอรีเฟรชจาก socket ตัวก่อนหน้า (ถ้ามี)
@@ -2045,7 +2489,7 @@ io.on("connection", (socket) => {
       name, difficulty: LEVELS.includes(data?.difficulty) ? data.difficulty : null, level: 1, lives: SOLO_LIVES, totalScore: 0, usedWords: new Set(), roundId: 0,
       over: false, drawing: false, busy: false, roundTimer: null, nextTimer: null,
       guessing: false, drawNext: false, passed: false, strokeTimers: [],
-      pid: socket.data.pid, replies: [], sentStrokes: [], hintSent: false,
+      pid: socket.data.pid, accountId: socket.data.accountId, replies: [], sentStrokes: [], hintSent: false,
     };
     solo.port = makeSoloPort(solo);
     socket.data.solo = solo;
@@ -2104,6 +2548,10 @@ Promise.all([ai.init(), leaderboard.init()]).then(() => {
   const listenArgs = process.env.HOST ? [PORT, process.env.HOST] : [PORT];
   server.listen(...listenArgs, () => {
     console.log(`server พร้อมแล้ว ที่ http://localhost:${PORT}`);
+    // ล็อกอินเป็นทางเลือก ไม่ตั้งค่าก็เล่นได้ปกติทุกโหมด (ปุ่ม "เข้าสู่ระบบ" ฝั่งหน้าเว็บจะซ่อนไปเอง) — แค่แจ้งเฉยๆ ไม่ใช่ข้อผิดพลาด
+    if (!AUTH_CONFIGURED && !TEST_AUTH_BYPASS) {
+      console.log(`เข้าสู่ระบบ (Firebase): ปิดอยู่ — ตั้งค่า ${AUTH_MISSING.join(", ")} เพื่อเปิด (ไม่ตั้งก็เล่นได้ปกติแบบ Guest)`);
+    }
     const ips = lanAddresses();
     if (ips.length) {
       console.log("ให้เพื่อนในวง Wi-Fi เดียวกันพิมพ์ที่อยู่นี้ในเบราว์เซอร์:");

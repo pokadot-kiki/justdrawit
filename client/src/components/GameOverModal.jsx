@@ -5,14 +5,16 @@ import Confetti from "./Confetti";
 import Avatar from "./Avatar";
 import YouTag from "./YouTag";
 import { Icon } from "./Icons";
-import { addCoins, getUserAuth } from "../prefs";
+import { addCoins, getUserAuth, SHOP_ENABLED } from "../prefs";
 
 const MEDALS = ["medal1", "medal2", "medal3"];
 
 // จบเกม — แท่นรางวัลอันดับ 1-3 และอันดับครบทุกคนของโหมดรายคน
 // ทุกคนมีปุ่มกลับห้องรอ (back_to_lobby → server พาทุกคนกลับพร้อมกัน หรือพาเองเมื่อครบเวลา) กับกลับหน้าแรก (leave_room) · หัวห้องมีปุ่มเล่นอีกรอบเลย (start_game)
-export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLobby, returnAt = null, onLeave, teamRanking = null, winner = null, myTeam = null, meId = null }) {
+export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLobby, returnAt = null, onLeave, teamRanking = null, winner = null, myTeam = null, meId = null, teamNames = {} }) {
+  // โหมดทีม: ประกาศทีมที่ชนะ (เสมอ = winner เป็น null) พลุเล่นเหมือนเดิมเพราะอยู่ในกล่องเดียวกัน
   const teamMode = Boolean(teamRanking);
+  const teamName = (t) => teamNames[t] || `ทีม ${t}`;
   const top3 = ranking.slice(0, 3);
   const teamTop3 = teamRanking?.slice(0, 3) ?? [];
   const winningTeam = teamRanking?.find((t) => t.team === winner);
@@ -36,14 +38,15 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
       </span>
     );
 
-  const auth = getUserAuth();
+  // ระบบเหรียญ: ปิดไว้ก่อน (ดูเหตุผลที่ SHOP_ENABLED ใน prefs.js) ไม่ได้ลบโค้ด — ตัวแปร/useEffect ด้านล่างจึงไม่ทำงานจริง
+  const auth = SHOP_ENABLED && getUserAuth();
   const baseCoins = 100;
   const myPlayer = ranking.find((p) => p.playerId === meId);
   const score = myPlayer?.score || 0;
   const totalEarned = auth ? baseCoins + Math.floor(score / 5) : 0;
 
   useEffect(() => {
-    if (auth && totalEarned > 0) {
+    if (SHOP_ENABLED && auth && totalEarned > 0) {
       addCoins(totalEarned);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -119,6 +122,7 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
               ))}
             </ol>
           </section>
+          <p className="modal__note">คะแนนทีม = ค่าเฉลี่ยต่อสมาชิก (ปัดจำนวนเต็ม)</p>
         </>
       ) : (
         <div className="podium-stage">
@@ -165,19 +169,21 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
         </section>
       )}
 
-      {/* ── Economy & Reward System Breakdown (ข้อ 6) ── */}
-      <div className="game-over__coins">
-        <h3 className="game-over__coins-title">💰 เหรียญรางวัล</h3>
-        {auth ? (
-          <p className="game-over__coins-note">
-            คุณได้รับ <b>+{totalEarned}</b> เหรียญ! (เหรียญพื้นฐาน 100 + คะแนนผลงาน)
-          </p>
-        ) : (
-          <p className="game-over__coins-note game-over__coins-note--guest">
-            ⚠️ คุณเล่นในโหมด Guest (0 เหรียญ) — กรุณาล็อกอินเข้าสู่ระบบเพื่อสะสมเหรียญ
-          </p>
-        )}
-      </div>
+      {/* ── Economy & Reward System Breakdown — ปิดไว้ก่อน (ดูเหตุผลที่ SHOP_ENABLED ใน prefs.js) ไม่ได้ลบโค้ด ── */}
+      {SHOP_ENABLED && (
+        <div className="game-over__coins">
+          <h3 className="game-over__coins-title">เหรียญรางวัล</h3>
+          {auth ? (
+            <p className="game-over__coins-note">
+              คุณได้รับ <b>+{totalEarned}</b> เหรียญ! (เหรียญพื้นฐาน 100 + คะแนนผลงาน)
+            </p>
+          ) : (
+            <p className="game-over__coins-note game-over__coins-note--guest">
+              คุณเล่นในโหมด Guest (0 เหรียญ) — กรุณาล็อกอินเข้าสู่ระบบเพื่อสะสมเหรียญ
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="modal__actions">
         <button className="btn btn--primary" type="button" onClick={onBackToLobby}>

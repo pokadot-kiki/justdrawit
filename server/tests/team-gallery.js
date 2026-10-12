@@ -7,7 +7,7 @@ const { rules } = require("../team-membership");
 test("server accepted artwork, drawer identity, and empty states for supported team counts", async () => {
   for (let count = rules.minTeams; count <= rules.ids.length; count++) {
     const teams = rules.ids.slice(0, count);
-    const room = { teams: {}, teamNames: Object.fromEntries(teams.map((t) => [t, `ชื่อ ${t}`])) };
+    const room = { teams: {}, settings: { teamNames: Object.fromEntries(teams.map((t) => [t, `ชื่อ ${t}`])) } };
     for (const team of teams) room.teams[team] = {
       roundDrawer: { playerId: `drawer-${team}`, name: `ผู้วาด ${team}`, avatar: 1 },
       canvasFrozen: false,

@@ -81,6 +81,11 @@ export function markRulesSeen() {
 }
 
 // ── Economy & Rewards Persistence (Requires Authentication) ──
+// ปิดไว้ก่อน (ซ่อนปุ่ม/UI ที่ใช้ระบบนี้ ไม่ได้ลบโค้ด) — เหรียญ/ของปลดล็อกเก็บใน localStorage ฝั่งผู้เล่นเอง
+// แก้ไขค่าในเบราว์เซอร์เองได้ตรงๆ (เช่นเปิด DevTools แล้วพิมพ์ localStorage.setItem) ขัดกับหลัก server-authoritative
+// ของโปรเจกต์นี้ (ทุกอย่างที่มีผลต่อคะแนน/ของในเกมต้องให้ server เป็นคนตัดสินเท่านั้น ดูกติกาใน CLAUDE.md)
+// แม้มี Google login สำหรับเข้าเล่นแล้ว แต่ยังไม่ได้ผูกบัญชี/เหรียญกับ server จึงห้ามเปิดร้านค้าจนกว่าจะย้ายข้อมูลไปฝั่ง server
+export const SHOP_ENABLED = false;
 const COINS_KEY = "jdi.userCoins";
 const UNLOCKED_AVATARS_KEY = "jdi.unlockedAvatars";
 const AUTH_KEY = "jdi.userAuth";

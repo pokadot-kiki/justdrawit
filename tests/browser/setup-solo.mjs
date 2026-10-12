@@ -120,8 +120,15 @@ try {
   await click(C, ".mode-card", "แข่งทีม"); await sleep(200);
   txt = await C.ev(`document.querySelector(".setup__opts").innerText`);
   ck("ทีม: มีจำนวนรอบ/เวลาวาด/ความยาก/ประเภทห้องครบ เหมือน classic", /จำนวนรอบ/.test(txt) && /เวลาวาด/.test(txt) && /ความยากของคำ/.test(txt) && /ประเภทห้อง/.test(txt) && /ผสม/.test(txt), txt.slice(0, 160));
+  // หน้า SET UP ไม่มีปุ่มเลือกจำนวนทีมที่ไหนเลยแล้ว (ทั้งฝั่งซ้ายและในการ์ด) — เลือกได้แต่ในห้องรอเท่านั้น
+  ck("ทีม: ฝั่งซ้ายไม่มี \"จำนวนทีม\"", !/จำนวนทีม/.test(txt), txt.slice(0, 160));
+  const hasTeamCountBox = await C.ev(`!!document.querySelector(".mode-card__teamcount")`);
+  ck("ทีม: การ์ด \"แข่งทีม\" ไม่มีกล่องเลือกจำนวนทีมซ้อนอยู่ข้างในอีกแล้ว (การ์ดธรรมดาเหมือนแข่งเดี่ยว)", !hasTeamCountBox, "");
+  const teamCardTxt = await C.ev(`[...document.querySelectorAll(".mode-card")].find(e=>e.textContent.includes("แข่งทีม"))?.textContent ?? ""`);
+  ck("ทีม: คำอธิบายในการ์ดบอกว่าเลือกจำนวนทีมได้ในห้องรอ", /เลือกจำนวนทีมได้ในห้องรอ/.test(teamCardTxt), teamCardTxt);
+  // ฝั่งซ้ายตอนนี้มีแค่ 4 หัวข้อเดียวกับ classic เป๊ะ (จำนวนทีมไม่ได้มาแทรกในนี้แล้ว) ความสูงจึงควรเท่ากับ classic เป๊ะ
   const hTeam = await panelH(C);
-  ck("ทีม: ความสูงการ์ดเท่ากับ classic", Math.abs(hTeam - hClassic) <= 10, `${hClassic} → ${hTeam}`);
+  ck("ทีม: ความสูงกล่องตั้งค่าฝั่งซ้ายเท่ากับ classic เป๊ะ", Math.abs(hTeam - hClassic) <= 2, `${hClassic} → ${hTeam}`);
 
   ck("ทีม: ไม่มีปุ่มจำนวนทีมในหน้า SET UP (ย้ายไปเลือกในห้องรอ)", !/จำนวนทีม/.test(txt), txt.slice(0, 200));
 

@@ -1,0 +1,21 @@
+{
+  "_comment": "คำหยาบ/คำไม่เหมาะสมที่ชัดเจน ใช้กรองชื่อเล่นและชื่อทีม — ไม่ส่งไฟล์นี้ไปหน้าเว็บ (ใช้ที่ server เท่านั้น) ไฟล์นี้ตั้งใจใส่เฉพาะคำที่ชัดเจนว่าหยาบ ไม่ใส่คำกำกวม/คำสั้นเกินไปที่เสี่ยงชนคำปกติ",
+  "blocked": {
+    "th": [
+      "เหี้ย", "ไอเหี้ย", "อีเหี้ย", "ควย", "ไอควย", "เย็ด", "ไอเย็ด", "สัส", "ไอสัส",
+      "แตด", "หี", "ไอหี", "กระหรี่", "ดอกทอง", "อีดอก", "แรด", "ตอแหล", "ชิบหาย",
+      "ไอสัตว์", "สันดาน", "เงี่ยน", "เยี่ยว", "ขี้แตก", "ส้นตีน", "ระยำ", "อีสัตว์"
+    ],
+    "en": [
+      "fuck", "shit", "bitch", "asshole", "dick", "pussy", "cunt",
+      "nigger", "nigga", "faggot", "fag", "slut", "whore", "cock",
+      "twat", "bastard", "retard", "cum", "porn", "rape", "motherfucker"
+    ]
+  },
+  "allow": [
+    "assign", "assignment", "class", "classic", "classroom", "glass", "grass",
+    "pass", "password", "bass", "brass", "mass", "massage", "associate",
+    "assist", "assistant", "assassin", "cassette", "compass", "embarrass",
+    "harass", "scunthorpe", "cockpit", "cocktail", "cockatoo", "shiitake"
+  ]
+}

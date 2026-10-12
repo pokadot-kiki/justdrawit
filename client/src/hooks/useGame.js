@@ -61,10 +61,17 @@ function emptyGame() {
  * App อยู่ตลอดตั้งแต่เปิดหน้าเว็บ จึงไม่มี event ไหนหลุด
  * (บทเรียนเดียวกับบั๊ก StrictMode ในข้อ 1: event ที่พลาดไปแล้วจะไม่ยิงซ้ำ)
  */
-export function useGame() {
+export function useGame(teamNames = {}) {
   const [game, setGame] = useState(emptyGame);
   const [chooseLeft, setChooseLeft] = useState(0);
   const playersRef = useRef(null); // รายชื่อผู้เล่นรอบก่อน ไว้เทียบว่าใครเข้าออก
+  // ชื่อทีม (จาก room.settings.teamNames ที่ App ส่งมา) ใช้ ref เพราะ effect ผูก socket ครั้งเดียวตอน mount
+  // แต่ชื่อทีมอาจเปลี่ยนทีหลัง (ห้องรอ) จึงต้องอ่านค่าล่าสุดเสมอตอนสร้างข้อความแชท ไม่ใช่ค่า ณ ตอน mount
+  const teamNamesRef = useRef(teamNames);
+  useEffect(() => {
+    teamNamesRef.current = teamNames;
+  }, [teamNames]);
+  const teamNameOf = (t) => teamNamesRef.current?.[t] || `ทีม ${t}`;
   // ปลายทางของ action ที่มาจากคนอื่น — หน้า Game เป็นคนตั้งให้ เพราะมันถือ ref ของกระดานอยู่
   // (กระดานอยู่ลึกกว่านี้ เจ้านี้จึงไม่ถือ ref เอง เหมือนที่หน้านี้ไม่ถือ socket ของหน้า Game)
   const canvasApiRef = useRef(null);
@@ -165,6 +172,20 @@ export function useGame() {
         messages: [...g.messages, { system: true, kind: "pen", text: "คนวาดยกปากกาแล้ว วาดต่อไม่ได้อีก" }],
       }));
 
+    // กันโกง: server ตรวจพบว่าคนวาดเขียนคำตอบเป็นตัวหนังสือ (events.md rule_violation)
+    // ภาพถูกล้างมาแล้วทาง canvas_history · ตรงนี้แค่บอกเหตุผล — ไม่มีคำตอบอยู่ใน event เลย
+    // รู้ว่าเราเป็นคนวาดจาก g.word (มีแค่คนวาดที่ได้ your_word)
+    const onRuleViolation = (data) =>
+      setGame((g) => {
+        const penalty = Number(data?.penalty) || 0;
+        const text = g.word
+          ? penalty > 0
+            ? `ห้ามเขียนตัวหนังสือบนกระดาน! ภาพถูกล้างและหัก ${penalty} คะแนน`
+            : "ห้ามเขียนตัวหนังสือบนกระดาน! ภาพถูกล้าง ครั้งหน้าจะหักคะแนน"
+          : "คนวาดทำผิดกติกา ภาพถูกล้าง";
+        return { ...g, messages: [...g.messages, { system: true, kind: "violation", text }] };
+      });
+
     // คำใบ้เปิดแล้ว — server ส่งครั้งเดียวต่อตา ไม่ว่าใครเปิด (คนวาดกดขอ หรือเวลาเหลือหนึ่งในสาม)
     // ข้อความระบบแยกตามคนเปิด เพื่อให้กล่อง "ในห้อง" เล่าเรื่องได้ครบ
     const onHintReveal = (data) =>
@@ -255,8 +276,8 @@ export function useGame() {
             note(
               "team",
               isFirst
-                ? `ทีม ${data.team} ทายถูกก่อน! ทุกคนที่ทายถูกในทีมได้โบนัส +100`
-                : `ทีม ${data.team} ทายถูกแล้ว (ทีมที่สองไม่ได้โบนัส)`
+                ? `${teamNameOf(data.team)} ทายถูกก่อน! ทุกคนที่ทายถูกในทีมได้โบนัส +100`
+                : `${teamNameOf(data.team)} ทายถูกแล้ว (ทีมที่สองไม่ได้โบนัส)`
             )
           );
         }
@@ -336,6 +357,7 @@ export function useGame() {
     socket.on("your_word", onYourWord);
     socket.on("hint_reveal", onHintReveal);
     socket.on("pen_locked", onPenLocked);
+    socket.on("rule_violation", onRuleViolation);
     socket.on("team_skipped", onTeamSkipped);
     socket.on("timer", onTimer);
     socket.on("round_end", onRoundEnd);
@@ -358,6 +380,7 @@ export function useGame() {
       socket.off("your_word", onYourWord);
       socket.off("hint_reveal", onHintReveal);
       socket.off("pen_locked", onPenLocked);
+      socket.off("rule_violation", onRuleViolation);
       socket.off("team_skipped", onTeamSkipped);
       socket.off("timer", onTimer);
       socket.off("round_end", onRoundEnd);

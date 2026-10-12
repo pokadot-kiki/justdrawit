@@ -34,6 +34,26 @@ npm run setup
 รันซ้ำได้ปลอดภัย (ของที่มีแล้วจะข้าม) — **ถ้าดาวน์โหลดโมเดลไม่ได้** (ไม่มีเน็ตหรือโดนบล็อก) ตัวติดตั้งจะเตือนแล้วทำต่อ
 เกมเปิดได้ปกติ โหมด Solo จะใช้ "โหมดจำลอง" (AI เดาสุ่ม) ภายหลังต่อเน็ตแล้วรัน `cd server && npm run get-model` เพื่อได้ AI ตัวจริง
 
+## ตั้งค่า Firebase Login (ไม่บังคับ — ไม่ตั้งก็เล่นได้ปกติทุกโหมดแบบ Guest)
+
+เข้าสู่ระบบด้วย Google หรืออีเมล/รหัสผ่านได้ (ไม่บังคับ) เพื่อให้คะแนน Leaderboard ผูกกับบัญชีแทนชื่อเล่น — บัญชีอีเมลต้องยืนยันก่อนใช้งานจริง
+ไม่ตั้งค่าอะไรเลย ปุ่ม "เข้าสู่ระบบ" ที่มุมขวาบนของหน้าแรกจะซ่อนไปเอง เกมเล่นได้ครบทุกโหมดเหมือนเดิม (server ไม่ล่มและไม่ปฏิเสธการเชื่อมต่อ)
+
+1. สร้างโปรเจกต์ใน Firebase Console แล้วเพิ่ม **Web app**
+2. ใน **Authentication → Sign-in method** เปิด **Email/Password** และ **Google**; ใน **Settings → Authorized domains** ตรวจว่ามี `localhost` และโดเมนเว็บที่จะ deploy
+3. คัดลอก Web config จาก Firebase ไปใส่ใน `client/.env.local`:
+   ```env
+   VITE_FIREBASE_API_KEY=...
+   VITE_FIREBASE_AUTH_DOMAIN=...firebaseapp.com
+   VITE_FIREBASE_PROJECT_ID=...
+   VITE_FIREBASE_APP_ID=...
+   ```
+4. คัดลอก [server/.env.example](./server/.env.example) เป็น `server/.env` แล้วตั้ง `FIREBASE_API_KEY` ให้เป็นค่าเดียวกับ `VITE_FIREBASE_API_KEY`
+5. สร้าง `AUTH_SESSION_SECRET` ยาวอย่างน้อย 32 bytes ด้วย `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` แล้วใส่ใน `server/.env`
+6. เริ่ม server ใหม่ด้วย `npm start` (ตอนพัฒนา Vite ให้เปิดด้วย `npm run dev` หลังตั้งค่าตัวแปรทั้งสองฝั่งแล้ว)
+
+Firebase Web API key เป็นค่าตั้งค่าเว็บ ไม่ใช่รหัสผ่าน แต่ `AUTH_SESSION_SECRET` ต้องเก็บไว้ฝั่ง server เท่านั้น ห้าม commit · server ตรวจ Firebase ID token และออกคุกกี้ `HttpOnly` สำหรับ session; Firebase client ใช้ in-memory persistence ไม่เก็บการล็อกอินถาวรใน browser · ตั้งค่า Render ดู [DEPLOY.md](./DEPLOY.md)
+
 ## เปิดเกม
 
 ```bash
@@ -127,6 +147,8 @@ server รันโมเดลจำแนกภาพวาดที่ฝึ�
 - **เพลงพื้นหลัง**: [Children's March Theme](https://opengameart.org/content/childrens-march-theme) โดย Cleyton Kauffman ([SoundCloud](https://soundcloud.com/cleytonkauffman)) จาก OpenGameArt.org สัญญาอนุญาต [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (ไม่บังคับให้เครดิต แต่ใส่ไว้เพื่อขอบคุณ) · ไฟล์อยู่ที่ `client/public/music/` เกมวนเล่นซ้ำเพลงนี้ ถ้าอยากเปลี่ยน/เพิ่มเพลง แค่ใส่ไฟล์ (.mp3 .ogg .wav .m4a) ในโฟลเดอร์เดียวกัน; ไม่มีไฟล์เพลงเลยปุ่มเพลงจะหายไปเอง
 - **ไอคอน ตัวการ์ตูน มาสคอต เสียงเอฟเฟกต์ ภาพประกอบ**: วาด/สร้างเองโดยทีม (พิกเซลอาร์ตจากโค้ด เสียงสร้างสดด้วย Web Audio)
 - **ไลบรารี**: React, React Router, Vite, Express, Socket.IO, onnxruntime-node, sharp, dotenv (สัญญาอนุญาตของแต่ละตัวตามต้นทาง)
+- **ตอบด้วยเสียง** (ปุ่มไมค์ในช่องทายคำ): ใช้ระบบรู้จำเสียง (Speech-to-Text) **ที่ติดมากับเบราว์เซอร์เอง** (Web Speech API) ไม่ได้เพิ่มไลบรารีหรือเรียกบริการภายนอกในโค้ดของโปรเจกต์ — แต่บน Chrome การแปลงเสียงเป็นข้อความ (`webkitSpeechRecognition`) เบราว์เซอร์จะ**ส่งเสียงที่พูดไปประมวลผลที่เซิร์ฟเวอร์ของ Google** เป็นกลไกภายในของเบราว์เซอร์เอง ไม่ใช่สิ่งที่โค้ดในโปรเจกต์นี้เลือกส่งเอง (เบราว์เซอร์จะขอสิทธิ์ใช้ไมโครโฟนก่อนเสมอ · เบราว์เซอร์ที่ไม่รองรับปุ่มจะจางลงพร้อมบอกเหตุผล)
+- **ช่วยเดาคำ** (ช่องทายคำทุกที่: แข่งเดี่ยว แข่งทีม และช่วง "AI วาด เราทาย" ของ Solo): คลังคำมาจาก [PyThaiNLP](https://github.com/PyThaiNLP/pythainlp) — `tnc_freq.txt` (คำ+ความถี่จาก Thai National Corpus ใช้เรียงคำที่ใช้บ่อย) และ `stopwords_th.txt` (คำฟังก์ชันภาษาไทย ใช้กรองคำที่ไม่มีประโยชน์ต่อการทายคำ) สัญญาอนุญาต [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (ไม่บังคับเครดิต ใส่ไว้เพื่อความโปร่งใส) ดูรายละเอียดแหล่งที่มาเต็มที่หัวไฟล์ `client/scripts/get-guess-words.mjs` — คำแนะนำคำนวณในเบราว์เซอร์ทั้งหมด ไม่ส่งอะไรไป server และ**ไม่เกี่ยวกับคลังคำของเกมเราเลย** (`words.json`/`ai-words.json`) กันไม่ให้กลายเป็นการใบ้คำตอบ
 
 
 ## เล่นบนไอแพด/มือถือแบบเต็มจอ

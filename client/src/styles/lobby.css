@@ -233,27 +233,53 @@
 }
 
 /* ── ตั้งค่าเกม ── */
+/* สูงแค่พอดีเนื้อหา (ไม่ยืดกินที่เหลือแบบเดิม) — ที่เหลือทั้งหมดให้กล่อง Mini Challenge (.lb-chal) กินแทน
+   กันไม่ให้มีที่ว่างโล่งใต้กล่อง "ประเภทห้อง" เหมือนก่อนหน้านี้ */
 .lb-settings {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
 }
 
 .lb-settings__grid {
   flex: 1;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: minmax(min-content, 1fr); /* 3 แถวสูงเท่ากัน แต่ไม่ต่ำกว่าเนื้อหา (กันกล่องซ้อนการ์ดข้างล่าง) */
-  gap: 10px;
+  /* ความสูงแถวตามเนื้อหาจริง (ไม่บังคับเท่ากันข้ามแถวอีกต่อไป) + align-items: start ไม่ยืดกล่องให้สูงเกินเนื้อหาตัวเอง
+     ผลคือ "ที่ว่าง" ในกล่องหายไป และหัวกล่อง (lb-set__label) อยู่ขอบบนของทุกกล่องเสมอ ไม่ลอยกลางกล่องแบบเดิม */
+  grid-auto-rows: min-content;
+  align-items: start;
+  gap: 8px;
 }
 
 .lb-set {
-  display: grid;
-  align-content: center;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
   min-width: 0;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border: 2px solid var(--ink);
   border-radius: var(--r-ctl);
   background: var(--lb-box-bg);
+}
+
+/* กล่อง "ประเภทห้อง" กินเต็มแถวล่างสุด (กล่องที่ 7 เป็นกล่องคี่ เดี่ยวๆ ไม่มีคู่) */
+.lb-set--full {
+  grid-column: 1 / -1;
+}
+
+/* กล่องที่ใช้ไม่ได้ในสถานการณ์นี้ (เช่น "จำนวนทีม" ตอนแข่งเดี่ยว) — จางลง กดไม่ได้ แต่ยังอยู่ที่เดิมเสมอ กันหน้ากระโดดตอนสลับโหมด */
+.lb-set--locked {
+  opacity: 0.55;
+}
+
+.lb-set--locked .seg {
+  cursor: default;
+}
+
+.lb-set__note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
 }
 
 .lb-set__label {
@@ -303,21 +329,26 @@
   opacity: 0.6;
 }
 
-/* ── Mini Challenge 2×2 (แต่ละใบ: ไอคอนซ้าย · ชื่อ+คำอธิบายกลาง · ป้ายเปิด/ปิดขวา) ── */
+/* ── Mini Challenge 2×2 (แต่ละใบ: ไอคอนซ้าย · ชื่อ+คำอธิบายกลาง · ป้ายเปิด/ปิดขวา)
+   ขยายกินที่ที่เหลือทั้งหมดในคอลัมน์ซ้าย (หลังกล่องตั้งค่าเกมที่ตอนนี้สูงพอดีเนื้อหาแล้ว) จนขอบล่างเสมอกับคอลัมน์ขวา ── */
 .lb-chal {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .lb-chal__grid {
+  flex: 1; /* ยืดเต็มพื้นที่ที่เหลือของกล่อง .lb-chal */
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, 1fr); /* ตั้งตรงๆ ว่าสองแถวสูงเท่ากันและยืดเต็ม ไม่พึ่งพฤติกรรม align-content:normal ของ grid ที่อาจไม่เหมือนกันทุกเบราว์เซอร์ */
   gap: 8px;
+  min-height: 0;
 }
 
 .lb-ch {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: center; /* ไอคอน/ชื่อ+คำอธิบาย/ป้าย จัดกึ่งกลางแนวตั้งเทียบกับความสูงการ์ดที่ถูกยืดแล้ว */
   gap: 10px;
   padding: 8px 10px;
   text-align: left;
@@ -366,17 +397,18 @@
   line-height: 1.1;
 }
 
+/* โชว์คำอธิบายเต็ม ไม่ตัด ... (การ์ดยืดสูงพอแล้วจากการที่ .lb-chal กินที่เหลือทั้งหมด)
+   จอเตี้ยที่ที่ไม่พอจริงๆ มีการ clamp เหลือบรรทัดเดียวใน media query ด้านล่าง */
 .lb-ch__desc {
   font-size: 13px;
   line-height: 1.3;
   color: var(--muted);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .lb-ch__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 1px 8px;
   border: 2px solid var(--ink);
   font-family: var(--font-head);
@@ -467,9 +499,15 @@
   color: var(--muted);
 }
 
+/* ตารางทีมใช้ 2 คอลัมน์เสมอ ไม่ว่าจำนวนทีมจะเป็น 2/3/4 — 2 ทีม = แถวเดียว · 3 ทีม = 2 บน (ทีมที่ 3 กว้างเต็มแถวล่าง ดู .team-col--span2)
+   · 4 ทีม = 2×2 ธรรมดา · flex:1 ให้กินพื้นที่ที่เหลือทั้งหมดใน .lb-roster__list · grid-auto-rows:1fr แบ่งความสูงเท่ากันทุกแถว
+   (ทั้งคู่ทำให้การ์ดทีมเต็มความสูงที่มีจริง ไม่เหลือที่ว่างโหว่ด้านล่างเมื่อมีแค่ 1 แถว) */
 .lb-teams {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  flex: 1;
+  min-height: 0;
   gap: 8px;
 }
 
@@ -477,14 +515,79 @@
   min-width: 0;
 }
 
-.lb-teams .team-col__title {
-  flex-wrap: wrap;
+.lb-teams .lb-plist {
+  flex: 1;
+  align-content: start; /* .team-col เป็น flex column แล้ว รายชื่อยืดเต็มที่เหลือ แต่ผู้เล่นยังแน่นกันอยู่บนไม่กระจายทั่วการ์ด */
+  min-height: 0;
   gap: 4px;
 }
 
+/* การ์ดผู้เล่นในคอลัมน์ทีม — กะทัดรัดกว่าแถวปกติ (คอลัมน์แคบกว่าแถวเดี่ยว) อยู่แถวเดียวเสมอ ไม่ตกบรรทัด
+   เดิมปล่อย flex-wrap:wrap ทำให้ป้าย/ปุ่มล้นไปตกบรรทัดใหม่เมื่อคอลัมน์แคบ ดูรก — ตอนนี้บังคับแถวเดียวแล้วย่อทุกชิ้นให้พอดีแทน */
 .lb-teams .lb-player {
-  flex-wrap: wrap;
-  gap: 4px 6px;
+  flex-wrap: nowrap;
+  gap: 5px;
+  padding: 4px 6px;
+}
+
+.lb-teams .lb-player .avatar-chip {
+  width: 26px;
+  height: 26px;
+}
+
+.lb-teams .lb-player .avatar-chip .pix {
+  transform: scale(0.62);
+}
+
+/* ชื่อผู้เล่นเห็นอย่างน้อย 8 ตัวอักษรก่อนตัด ... เสมอ (ไม่ให้ป้าย "คุณ"/มงกุฎ/ปุ่มเตะ/ปุ่มสลับที่อยู่ข้างๆ เบียดจนชื่อหายไปหมด) */
+.lb-teams .lb-player__name {
+  min-width: 8ch;
+  font-size: 14px;
+}
+
+.lb-teams .you-tag {
+  margin-left: 4px;
+  padding: 1px 5px;
+  font-size: 11px;
+}
+
+.lb-teams .ready-badge {
+  flex: none;
+  padding: 1px 6px;
+}
+
+.lb-teams .kick-btn,
+.lb-teams .swap-btn {
+  width: 24px;
+  height: 24px;
+}
+
+/* 3-4 ทีม = ตารางมี 2 แถว (ต้องการพื้นที่สูงกว่า 2 ทีมที่มีแถวเดียว) — ย่อช่องไฟ/padding เพิ่มอีกชั้นเฉพาะกรณีนี้
+   กันไม่ให้ต้องเลื่อนในกรอบรายชื่อที่ 1440×900/1366×768 */
+.lb-teams--2rows {
+  gap: 5px;
+}
+
+.lb-teams--2rows .team-col {
+  gap: 3px;
+  padding: 5px;
+}
+
+.lb-teams--2rows .lb-plist {
+  gap: 2px;
+}
+
+.lb-teams--2rows .lb-player {
+  padding: 2px 5px;
+}
+
+.lb-teams--2rows .team-col__join {
+  min-height: 28px;
+  font-size: 12px;
+}
+
+.lb-teams--2rows .team-col__title {
+  font-size: 16px;
 }
 
 .lb-mascot {
@@ -523,8 +626,8 @@
 
 /* ── แชท ── */
 .lb-chat {
-  flex: 0 0 34%;
-  min-height: 130px;
+  flex: 0 0 28%;
+  min-height: 110px;
 }
 
 .lb-chat__list {
@@ -638,6 +741,30 @@
   .lb-ch {
     padding: 6px 8px;
   }
+
+  /* จอเตี้ย (≤800px สูง): แชทแคบลงอีกหน่อย คืนที่ให้รายชื่อผู้เล่น — สำคัญตอน 3-4 ทีม (2 แถว) ที่ต้องการพื้นที่สูงเป็นพิเศษ */
+  .lb-chat {
+    flex-basis: 22%;
+    min-height: 90px;
+  }
+
+  .lb-teams--2rows {
+    gap: 4px;
+  }
+
+  .lb-teams--2rows .team-col {
+    gap: 2px;
+    padding: 4px;
+  }
+
+  .lb-teams--2rows .lb-player .avatar-chip {
+    width: 22px;
+    height: 22px;
+  }
+
+  .lb-teams--2rows .team-col__join {
+    min-height: 24px;
+  }
 }
 
 /* ต่ำมาก (≤ 700px เช่น 1024×690): ซ่อนคำอธิบายใต้ชื่อกติกา (ชื่อ + ป้ายเปิด/ปิดยังอยู่) */
@@ -657,6 +784,20 @@
     max-height: 420px;
   }
 
+  /* โหมดทีม: การ์ดทีมตอนนี้สูงกว่าเดิม (เต็มพื้นที่บนจอกว้าง) เนื้อหารวมมักเกิน 420px เมื่อมี 8 คนครบห้อง
+     กรอบ 420px + overflow-y:auto เดิมจะ "เลื่อนในกรอบ" แทนที่จะให้หน้าเลื่อน ผลคือบางแถวผู้เล่นหลุดพ้นกรอบไปเงียบๆ
+     (เจอจริงตอนเทส 3 ทีมที่มือถือ — เหลือ "2 คน" แต่เห็นแถวเดียว) ให้หน้าทั้งหน้าเลื่อนแทนตามธรรมเนียมเดิมของจอแคบ (.screen--lb{height:auto}) */
+  .lb-roster:has(.lb-teams) .lb-roster__list {
+    max-height: none;
+  }
+
+  /* บนมือถือ .lb-roster__list ไม่มีความสูงตายตัว (แค่ max-height + เลื่อนได้) — ถ้า .lb-teams ยัง flex:1 เหมือนจอกว้าง
+     grid-auto-rows:1fr จะบีบแถวให้เท่ากันแบบไม่มีความสูงอ้างอิงที่แน่นอน ทำให้การ์ดที่มีคนเยอะ (เนื้อหาเกินแถวที่บีบไว้) ล้นไปทับปุ่ม
+     "ย้ายมา..." ของการ์ดถัดไป (เจอจริงตอนเทส 3 ทีมที่มือถือ) — คืนเป็นความสูงตามเนื้อหาปกติแทน ให้หน้าเลื่อนแทน ไม่ใช่กรอบในเลื่อน */
+  .lb-teams {
+    flex: none;
+  }
+
   .lb-top__code {
     display: none;
   }
@@ -669,6 +810,12 @@
   }
 
   .lb-teams {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* ทีมที่กว้างเต็มแถว (3 ทีม) ไม่มีที่ว่างสองเท่าให้ใช้อีกแล้วตอนการ์ดเรียงคอลัมน์เดียวทั้งหมด
+     คืนรายชื่อผู้เล่นเป็นคอลัมน์เดียวเหมือนทีมอื่น ไม่งั้นการ์ดแคบเกินจนชื่อ+ป้าย+ปุ่มเบียดกันจนชื่อหาย */
+  .team-col--span2 .lb-plist {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -720,8 +867,12 @@ body:has(.screen--lb) .audio-dock {
     text-overflow: ellipsis;
   }
 
+  /* จอเตี้ยที่เหลือพื้นที่ไม่พอ (≤800px สูง) — คำอธิบายเหลือบรรทัดเดียวเหมือนเดิม (ต้องตั้งครบ 4 อย่างนี้ ไม่ใช่แค่ line-clamp ตัวเดียว ไม่งั้น clamp ไม่ทำงานเพราะฐานไม่ได้ตั้ง -webkit-box ไว้แล้ว) */
   .screen--lb .lb-ch__desc {
+    display: -webkit-box;
     -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 }
 
@@ -731,7 +882,7 @@ body:has(.screen--lb) .audio-dock {
 }
 
 .lb-teams .lb-player__info {
-  flex: 1 1 60px;
+  flex: 1 1 auto;
 }
 
 /* มือถือ/จอแคบ: ห้องรอเลื่อนทั้งหน้า — การ์ดทุกใบสูงตามเนื้อหา ห้ามหดจนปุ่ม/ข้อความทับการ์ดข้างล่าง */

@@ -12,10 +12,13 @@ const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
 const logContainsAnswer = require("./log-answer");
-const { rules: teamRules } = require("../team-membership");
 const { standard: standardChallenge, actualTypes: actualChallenges } = require("../challenge-selection");
 
 const SERVER_DIR = path.join(__dirname, "..");
+process.env.NODE_ENV = "test";
+process.env.JDI_TEST_AUTH_BYPASS = "1";
+const authSession = require(path.join(SERVER_DIR, "auth-session"));
+const firebaseAuth = require(path.join(SERVER_DIR, "firebase-auth"));
 
 // ข้อ 19-20 (Leaderboard) ใช้ไฟล์คะแนนชั่วคราว ไม่แตะ server/data/scores.json ของจริง
 // ต้องตั้งก่อน require("../leaderboard") และส่งต่อให้ server ตอน spawn ด้วย ทั้งสองฝั่งจะได้ใช้ไฟล์เดียวกัน
@@ -27,6 +30,9 @@ process.env.SCORES_FILE = SCORES_FILE;
 // (server ทุกตัวที่เทสสตาร์ทสืบทอดค่านี้) · ข้อ 26 ตั้งค่าเฉพาะของมันเอง
 const NO_DRAWINGS_FILE = path.join(os.tmpdir(), "jdi-no-drawings.json");
 process.env.AI_DRAWINGS_FILE = NO_DRAWINGS_FILE;
+// กันโกงเขียนตัวหนังสือ: ปิดไว้ใน server ทุกตัวของเทส (กัน server/.env ที่มี GEMINI_API_KEY จริงไปเรียก API จริงระหว่างเทส)
+// · ข้อ 45 เปิดเองกับ Gemini ปลอม
+process.env.TEXT_CHECK = "off";
 // TEST_PORT: ให้เทสรันบนพอร์ตอื่นได้ตอนที่ server จริงของผู้ใช้เปิดพอร์ต 3000 อยู่ (ไม่ต้องคัดลอกโฟลเดอร์ไปแก้เลขพอร์ต)
 const TEST_PORT = process.env.TEST_PORT || "3000";
 const ALT_PORT = process.env.ALT_PORT || String(Number(TEST_PORT) + 10);
@@ -199,7 +205,11 @@ async function startServer() {
     // ข้อ 21-24 (Solo): บังคับ AI โหมดจำลอง ทายถูกเสมอ · ย่อเวลาด่านเหลือ 2 วิ · พักก่อนด่านถัดไป 0.3 วิ
     // ใส่ key ปลอมไว้ด้วย เพื่อเช็คว่า key ไม่หลุดถึง client เลย · ข้ามป้ายใหญ่ในเทสการวาด
     env: { ...process.env, PORT: TEST_PORT, SCORES_FILE, AI_MODE: "mock", AI_MOCK_CHANCE: "1", AI_TIME_OVERRIDE: "2", AI_NEXT_DELAY_MS: "300", ANTHROPIC_API_KEY: SECRET_KEY,
-      CHALLENGE_INTRO_MS: "0" },
+      // Mini Challenge: ปิดกฎตาแรก/ไม่ติดกัน + โอกาส 60% + ข้ามป้ายใหญ่ เพื่อให้ข้อ 16–18 สุ่มชนิดที่ต้องการได้เร็วและวาดได้ทันที
+      // (จังหวะจริงของกติกาเทสในข้อ 29 กับ server ตัวที่สองที่ไม่ตั้งสามค่านี้)
+      CHALLENGE_NO_PACING: "1", CHALLENGE_ODDS: "0.6", CHALLENGE_INTRO_MS: "0",
+      // ข้อ 42 ใช้ set_team พร้อม force:true จัดทีมเองให้ตรงเป๊ะ (ข้อ 44 ไม่ส่ง force เลย จึงยังเจอกฎห่างไม่เกิน 1 คนจริง)
+      TEST_ALLOW_FORCE_TEAM: "1" },
   });
   const collect = (buf) => serverLog.push(buf.toString().trimEnd());
   child.stdout.on("data", collect);
@@ -227,7 +237,92 @@ async function getBoard(query = "") {
 
 // ================= เทส =================
 async function main() {
+  await runPart("0. Firebase token และ session helpers", async () => {
+    const secret = "test-auth-session-secret-with-at-least-32-bytes";
+    const session = authSession.signSession(
+      { sub: "firebase-uid", email: "player@example.com", name: "Player" },
+      secret,
+      1000,
+    );
+    check("session ที่เซ็นด้วย secret ถูกต้องอ่านได้", authSession.readSession(session, secret, 1001), {
+      sub: "firebase-uid", email: "player@example.com", name: "Player",
+    });
+    check("แก้ token แล้วตรวจไม่ผ่าน", authSession.readSession(`${session}x`, secret, 1001), null);
+    check("session หมดอายุแล้วตรวจไม่ผ่าน", authSession.readSession(session, secret, 1000 + authSession.SESSION_TTL_MS), null);
+    check("อ่าน cookie ที่มีเครื่องหมายเท่ากับได้ครบ", authSession.parseCookies("a=1; jdi_session=abc.def==").jdi_session, "abc.def==");
+
+    const validTokenResponse = async (_url, options) => {
+      check("ส่ง Firebase ID token ไปตรวจแบบ POST", [options.method, JSON.parse(options.body).idToken], ["POST", "valid-test-token-123456"]);
+      return {
+        ok: true,
+        json: async () => ({ users: [{ localId: "firebase-uid", email: "player@example.com", emailVerified: true, displayName: "Player" }] }),
+      };
+    };
+    check("ยอมรับเฉพาะบัญชีที่ Firebase ยืนยันอีเมลแล้ว", await firebaseAuth.verifyIdToken(
+      "valid-test-token-123456",
+      "public-firebase-api-key",
+      validTokenResponse,
+    ), { sub: "firebase-uid", email: "player@example.com", name: "Player" });
+
+    let failure = null;
+    try {
+      await firebaseAuth.verifyIdToken("valid-test-token-123456", "public-firebase-api-key", async () => ({
+        ok: true,
+        json: async () => ({ users: [{ localId: "firebase-uid", email: "player@example.com", emailVerified: false }] }),
+      }));
+    } catch (error) {
+      failure = error.code;
+    }
+    check("ปฏิเสธบัญชีที่ยังไม่ยืนยันอีเมล", failure, "EMAIL_NOT_VERIFIED");
+
+    failure = null;
+    try {
+      await firebaseAuth.verifyIdToken("invalid-test-token-123456", "public-firebase-api-key", async () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({ error: { message: "INVALID_ID_TOKEN" } }),
+      }));
+    } catch (error) {
+      failure = error.code;
+    }
+    check("ปฏิเสธ token ที่ Firebase ไม่รับรอง", failure, "INVALID_TOKEN");
+
+    failure = null;
+    try {
+      await firebaseAuth.verifyIdToken("valid-test-token-123456", "public-firebase-api-key", async () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({ error: { message: "API_KEY_INVALID" } }),
+      }));
+    } catch (error) {
+      failure = error.code;
+    }
+    check("แยก API key Firebase ผิดออกจาก token ผู้เล่นผิด", failure, "PROVIDER_UNAVAILABLE");
+
+    failure = null;
+    try {
+      await firebaseAuth.verifyIdToken("short", "public-firebase-api-key", async () => {
+        throw new Error("should not request");
+      });
+    } catch (error) {
+      failure = error.code;
+    }
+    check("ปฏิเสธ token ผิดรูปแบบก่อนเรียก Firebase", failure, "INVALID_TOKEN");
+  });
+
   await startServer();
+
+  await runPart("0. สถานะล็อกอินใน test server", async () => {
+    const response = await fetch(`${URL}/api/auth/me`);
+    const result = await response.json();
+    check("test bypass มีไว้ให้ชุดทดสอบเท่านั้น", [response.status, result.enabled, result.user?.email], [200, true, "test@example.com"]);
+    const login = await fetch(`${URL}/api/auth/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: "valid-test-token-123456" }),
+    });
+    check("ไม่มี Firebase config แล้วออก session ไม่ได้", [login.status, await login.json()], [503, { error: "AUTH_NOT_CONFIGURED" }]);
+  });
 
   // คำทุกคำที่ server สุ่มมาให้คนวาดเลือก สะสมไว้ใช้เช็คตอนท้าย (ข้อ 8)
   const drawnOptions = [];
@@ -336,7 +431,11 @@ async function main() {
     check("ระหว่างเล่น ID/คะแนนยังเดิม", [playingView.players[1].id, playingView.players[1].score], [guest.socket.id, 0]);
     host.socket.emit("leave_room");
     guest.socket.emit("leave_room");
-    const solo = track(await connect());
+    const solo = track(await new Promise((resolve, reject) => {
+      const sk = io(URL, { transports: ["websocket"], auth: { playerKey: "test-key-soloprofile-0123456789" } });
+      sk.on("connect", () => resolve(sk));
+      sk.on("connect_error", reject);
+    }));
     others.push(solo);
     solo.socket.emit("ai_start", { name: "SoloBefore", difficulty: "easy" });
     await solo.wait("ai_round_start");
@@ -1367,57 +1466,88 @@ async function main() {
     checkOk("ล้างจอแล้วเริ่มเส้นใหม่ได้", (await guesser.tryWait("stroke_start", null, 2000)) !== null);
     drawer.socket.emit("stroke_end");
     await guesser.wait("pen_locked", null, 2000);
+    clearAll(drawer, guesser);
     drawer.socket.emit("stroke_start", { x: 0.7, y: 0.7, color: LINE, size: 5, tool: "pen" });
     check("ยกปากกาหลัง Clear แล้วเริ่มเส้นที่สองไม่ได้", (await guesser.quiet("stroke_start", 600)).length, 0);
   });
 
-  await runPart("19. Leaderboard API — รูปแบบ · เรียง · กรองเดือน · month ผิด · ไฟล์หาย/เสีย", async () => {
-    // ไฟล์ยังไม่มี → ได้รายการว่าง ไม่ล่ม
+  await runPart("19. Leaderboard API — รูปแบบ · เรียง · กรองเดือน (แค่ปีปัจจุบัน) · month ผิด/ปีอื่น · ไฟล์หาย/เสีย", async () => {
+    // ใช้วันที่จริง ณ ตอนรันเทส ไม่ hardcode ปี เพราะ server คำนวณ "เดือนปัจจุบัน" จากนาฬิกาเครื่องจริง
+    const now = new Date();
+    const CUR_YEAR = now.getFullYear();
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const CUR_MONTH = `${CUR_YEAR}-${pad2(now.getMonth() + 1)}`;
+    // เดือนก่อนหน้า (ถอยข้ามปีได้ถ้าตอนนี้คือมกราคม) — ใช้เป็น "เดือนอื่นของปีนี้"
+    const prevD = new Date(CUR_YEAR, now.getMonth() - 1, 1);
+    const PREV_MONTH = `${prevD.getFullYear()}-${pad2(prevD.getMonth() + 1)}`;
+    const PREV_YEAR = prevD.getFullYear();
+    // เดือนเดียวกันแต่ "ปีที่แล้ว" — รูปแบบถูกต้องแต่คนละปี ต้องถูกเมินแล้วใช้เดือนปัจจุบันแทน
+    const SAME_MONTH_LAST_YEAR = `${CUR_YEAR - 1}-${pad2(now.getMonth() + 1)}`;
+
+    // ไฟล์ยังไม่มี → ได้รายการว่าง ไม่ล่ม · month ต้องเป็นเดือนปัจจุบันเสมอ (ไม่มี null อีกแล้ว)
     fs.rmSync(SCORES_FILE, { force: true });
     let r = await getBoard();
-    check("ไฟล์ยังไม่มี → 200 และรายการว่าง", [r.status, r.body], [200, { month: null, board: "solo", top: [] }]);
+    check("ไฟล์ยังไม่มี → 200 รายการว่าง และ month = เดือนปัจจุบัน (ไม่ใช่ null)", [r.status, r.body], [200, { month: CUR_MONTH, board: "solo", top: [] }]);
 
-    // 25 แถวเดือน 2026-09 (เกิน 20 เพื่อเทสการตัด) + 3 แถวเดือนอื่น + แถวหน้าตาเพี้ยน 2 แถว
+    // 25 แถวเดือนก่อนหน้า (เกิน 20 เพื่อเทสการตัด) + แถวเดือนปัจจุบัน + แถวปีที่แล้ว (ต้องไม่โผล่เลย) + แถวหน้าตาเพี้ยน 2 แถว
     const rows = [];
     for (let i = 0; i < 25; i++) {
-      rows.push({ id: i + 1, name: `P${i}`, score: (i * 37) % 500, levelReached: 1 + (i % 9), playedAt: `2026-09-${String(1 + i).padStart(2, "0")} 20:00` });
+      rows.push({ id: i + 1, name: `P${i}`, score: (i * 37) % 500, levelReached: 1 + (i % 9), playedAt: `${PREV_MONTH}-${pad2(1 + (i % 25))} 20:00` });
     }
-    rows.push({ id: 26, name: "Tar", score: 9999, levelReached: 9, playedAt: "2026-10-02 10:00" });
-    rows.push({ id: 27, name: "เสมอด่านน้อย", score: 800, levelReached: 3, playedAt: "2026-08-01 10:00" });
-    rows.push({ id: 28, name: "เสมอด่านมาก", score: 800, levelReached: 5, playedAt: "2026-08-02 10:00" });
-    rows.push({ id: 29, name: 123, score: "x" }); // แถวเสีย ต้องถูกทิ้ง
+    rows.push({ id: 26, name: "Tar", score: 9999, levelReached: 9, playedAt: `${CUR_MONTH}-02 10:00` });
+    rows.push({ id: 27, name: "เสมอด่านน้อย", score: 800, levelReached: 3, playedAt: `${CUR_MONTH}-03 10:00` });
+    rows.push({ id: 28, name: "เสมอด่านมาก", score: 800, levelReached: 5, playedAt: `${CUR_MONTH}-04 10:00` });
+    rows.push({ id: 29, name: "ปีที่แล้วห้ามโผล่", score: 7777, levelReached: 9, playedAt: `${SAME_MONTH_LAST_YEAR}-01 10:00` });
+    rows.push({ id: 30, name: 123, score: "x" }); // แถวเสีย ต้องถูกทิ้ง
     rows.push(null);
     fs.writeFileSync(SCORES_FILE, JSON.stringify(rows));
 
+    // ── ไม่ใส่ month เลย → ใช้เดือนปัจจุบัน (ไม่ใช่ "ตลอดกาล" อีกต่อไป) ──
     r = await getBoard();
-    check("ตลอดกาล → 200 และ month เป็น null", [r.status, r.body?.month], [200, null]);
-    check("ตลอดกาล ส่งแค่ 20 อันดับ", r.body.top.length, 20);
+    check("ไม่ใส่ month → ได้ month = เดือนปัจจุบัน", [r.status, r.body?.month], [200, CUR_MONTH]);
+    checkOk("ไม่ใส่ month: เห็นเฉพาะคนที่เล่นเดือนปัจจุบัน (ไม่มี P.. ของเดือนก่อน ไม่มีคนปีที่แล้ว)",
+      r.body.top.every((t) => !/^P\d+$/.test(t.name) && t.name !== "ปีที่แล้วห้ามโผล่"));
     check("แต่ละแถวมีแค่ rank name score levelReached",
       r.body.top.every((t) => JSON.stringify(Object.keys(t)) === '["rank","name","score","levelReached"]'), true);
-    check("rank เรียง 1..20", r.body.top.map((t) => t.rank), Array.from({ length: 20 }, (_, i) => i + 1));
     checkOk("คะแนนเรียงจากมากไปน้อย", r.body.top.every((t, i, a) => i === 0 || a[i - 1].score >= t.score));
-    check("อันดับ 1 คือคะแนนสูงสุด", r.body.top[0].name, "Tar");
+    check("อันดับ 1 คือคะแนนสูงสุด (Tar เดือนปัจจุบัน)", r.body.top[0].name, "Tar");
     check("คะแนนเท่ากัน ด่านไกลกว่าได้อันดับดีกว่า", r.body.top.slice(1, 3).map((t) => t.name), ["เสมอด่านมาก", "เสมอด่านน้อย"]);
     checkOk("แถวที่หน้าตาเพี้ยนไม่โผล่", r.body.top.every((t) => typeof t.name === "string"));
 
-    r = await getBoard("?month=2026-09");
-    check("เดือน 2026-09 → month ตรงกับที่ขอ", [r.status, r.body?.month], [200, "2026-09"]);
-    check("เดือน 2026-09 ตัดเหลือ 20 จาก 25", r.body.top.length, 20);
-    checkOk("เดือน 2026-09 ไม่มีคนของเดือนอื่น", r.body.top.every((t) => /^P\d+$/.test(t.name)));
-    r = await getBoard("?month=2026-08");
-    check("เดือน 2026-08 ได้สองคนที่เล่นเดือนนั้น", r.body.top.map((t) => [t.rank, t.name]), [[1, "เสมอด่านมาก"], [2, "เสมอด่านน้อย"]]);
-    r = await getBoard("?month=2025-01");
-    check("เดือนที่ไม่มีใครเล่น → รายการว่าง", [r.status, r.body], [200, { month: "2025-01", board: "solo", top: [] }]);
+    // ── ใส่ ?month=เดือนปัจจุบัน ตรงๆ ก็ได้ผลเดียวกับไม่ใส่ ──
+    r = await getBoard(`?month=${CUR_MONTH}`);
+    check("ใส่เดือนปัจจุบันตรงๆ → month ตรงกับที่ขอ ผลเหมือนไม่ใส่", [r.status, r.body?.month], [200, CUR_MONTH]);
 
+    // ── เดือนอื่นของปีนี้ → กรองได้ตามปกติ และตัดเหลือ 20 จาก 25 ──
+    r = await getBoard(`?month=${PREV_MONTH}`);
+    check(`เดือนก่อนหน้า (${PREV_MONTH}) → month ตรงกับที่ขอ`, [r.status, r.body?.month], [200, PREV_MONTH]);
+    check("เดือนก่อนหน้า ตัดเหลือ 20 จาก 25", r.body.top.length, 20);
+    checkOk("เดือนก่อนหน้า ไม่มีคนของเดือนอื่น", r.body.top.every((t) => /^P\d+$/.test(t.name)));
+
+    // ── เดือน/ปีที่ไม่มีใครเล่นในปีนี้ → รายการว่าง (ไม่ error) ──
+    const emptyMonthThisYear = PREV_MONTH === CUR_MONTH ? `${CUR_YEAR}-01` : CUR_MONTH; // เดือนในปีนี้ที่ไม่มีข้อมูล (กันชนกับ PREV_MONTH เผื่อข้ามปี)
+    if (emptyMonthThisYear !== CUR_MONTH && emptyMonthThisYear !== PREV_MONTH) {
+      r = await getBoard(`?month=${emptyMonthThisYear}`);
+      check("เดือนที่ไม่มีใครเล่น (แต่ปีนี้) → รายการว่าง ไม่ error", [r.status, r.body], [200, { month: emptyMonthThisYear, board: "solo", top: [] }]);
+    }
+
+    // ── หัวใจของงานนี้: ใส่เดือนรูปแบบถูกแต่ "คนละปี" → ไม่ error เงียบๆ ใช้เดือนปัจจุบันแทน ──
+    r = await getBoard(`?month=${SAME_MONTH_LAST_YEAR}`);
+    check("ส่ง month ปีที่แล้ว (รูปแบบถูก) → ไม่ 400 ใช้เดือนปัจจุบันแทนเงียบๆ", [r.status, r.body?.month], [200, CUR_MONTH]);
+    checkOk("month ปีที่แล้ว: ไม่เห็นคนของปีที่แล้วเลย (ถูกแทนด้วยเดือนปัจจุบัน)", !r.body.top.some((t) => t.name === "ปีที่แล้วห้ามโผล่"));
+    r = await getBoard(`?month=1999-05`);
+    check("ส่ง month ปีไกลมาก (1999) → ไม่ 400 ใช้เดือนปัจจุบันแทน", [r.status, r.body?.month], [200, CUR_MONTH]);
+
+    // ── รูปแบบผิดจริงๆ ยังตอบ 400 เหมือนเดิม ไม่เปลี่ยน ──
     for (const bad of ["2026-13", "2026-00", "2026-9", "26-09", "2026-09-01", "abc", "", "2026-09&month=2026-08", "%3Cscript%3E"]) {
       r = await getBoard(`?month=${bad}`);
       check(`month=${bad || "(ว่าง)"} → 400`, [r.status, r.body], [400, { error: "INVALID_MONTH" }]);
     }
 
-    // ไฟล์เสียระหว่างที่ server เปิดอยู่ → ไม่ล่ม ได้รายการว่าง
+    // ไฟล์เสียระหว่างที่ server เปิดอยู่ → ไม่ล่ม ได้รายการว่าง (month ยังเป็นเดือนปัจจุบัน)
     fs.writeFileSync(SCORES_FILE, "{ นี่ไม่ใช่ JSON");
     r = await getBoard();
-    check("ไฟล์ JSON เสีย → 200 และรายการว่าง", [r.status, r.body], [200, { month: null, board: "solo", top: [] }]);
+    check("ไฟล์ JSON เสีย → 200 รายการว่าง month = เดือนปัจจุบัน", [r.status, r.body], [200, { month: CUR_MONTH, board: "solo", top: [] }]);
     fs.writeFileSync(SCORES_FILE, JSON.stringify({ not: "array" }));
     r = await getBoard();
     check("ไฟล์เป็น JSON แต่ไม่ใช่ array → รายการว่าง", r.body?.top, []);
@@ -1447,6 +1577,14 @@ async function main() {
     check("API เห็นคะแนนที่เพิ่งบันทึก เรียงถูก", r.body?.top.map((t) => t.name), ["Mew", "ชื่อยาวมากเกินยี่สิบตัวอักษรแน่นอน".slice(0, 20), "<b>x</b>"]);
     check("ไม่มีไฟล์ชั่วคราวค้าง (.tmp)", fs.readdirSync(SCORES_DIR).filter((f) => f.endsWith(".tmp")), []);
 
+    const accountId = "a".repeat(64);
+    saveScore({ name: "ชื่อเดิม", score: 1500, levelReached: 5, accountId });
+    saveScore({ name: "ชื่อใหม่", score: 400, levelReached: 2, accountId });
+    const renamedBoard = await getBoard(`?month=${month}`);
+    const renamedEntry = renamedBoard.body?.top.find((entry) => entry.name === "ชื่อใหม่");
+    check("เปลี่ยนชื่อแล้วใช้คะแนนสูงสุดเดิมของบัญชีเดียวกัน", [renamedEntry?.name, renamedEntry?.score, renamedEntry?.levelReached], ["ชื่อใหม่", 1500, 5]);
+    check("API Leaderboard ไม่เปิดเผย accountId", JSON.stringify(renamedBoard.body).includes(accountId), false);
+
     // ไฟล์เสีย → เก็บสำรองไว้ แล้วเริ่มรายการใหม่
     fs.writeFileSync(SCORES_FILE, "[{ เสีย");
     const after = saveScore({ name: "Joy", score: 700, levelReached: 4 });
@@ -1460,27 +1598,51 @@ async function main() {
   const TINY_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
   const readRows = () => JSON.parse(fs.readFileSync(SCORES_FILE, "utf8"));
 
-  await runPart("21. Leaderboard หนึ่งชื่อหนึ่งแถว · rankOf", async () => {
+  await runPart("21. Leaderboard หนึ่งบัญชีหนึ่งแถว · rankOf", async () => {
     const { rankOf } = require("../leaderboard");
-    const at = (d) => `2026-10-${d} 10:00`;
+    const now = new Date();
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const CUR_MONTH = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
+    const prevD = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const PREV_MONTH = `${prevD.getFullYear()}-${pad2(prevD.getMonth() + 1)}`;
+    const at = (d) => `${CUR_MONTH}-${d} 10:00`;
     fs.writeFileSync(SCORES_FILE, JSON.stringify([
       { id: 1, name: "Mew", score: 500, levelReached: 3, playedAt: at("01") },
       { id: 2, name: "Mew", score: 1300, levelReached: 6, playedAt: at("02") },
       { id: 3, name: "Mew", score: 900, levelReached: 5, playedAt: at("03") },
       { id: 4, name: "Tar", score: 1300, levelReached: 7, playedAt: at("04") },
-      { id: 5, name: "Joy", score: 700, levelReached: 4, playedAt: "2026-09-10 10:00" },
+      { id: 5, name: "Joy", score: 700, levelReached: 4, playedAt: `${PREV_MONTH}-10 10:00` },
       { id: 6, name: "Joy", score: 100, levelReached: 1, playedAt: at("05") },
+      { id: 7, name: "OldChamp", score: 2000, levelReached: 9, playedAt: `${PREV_MONTH}-11 10:00` }, // คะแนนสูงสุดแต่อยู่เดือนก่อน ต้องไม่ถูกนับใน rankOf
     ]));
+    // ไม่ใส่ month = เดือนปัจจุบัน (ไม่ใช่ "ตลอดกาล" อีกแล้ว) — Joy เดือนก่อนหน้าไม่ถูกนับ เหลือแค่ 100 ของเดือนนี้
     let r = await getBoard();
-    check("ตลอดกาล: Mew โผล่แถวเดียวด้วยเกมที่ดีที่สุด",
-      r.body.top.map((t) => [t.rank, t.name, t.score]), [[1, "Tar", 1300], [2, "Mew", 1300], [3, "Joy", 700]]);
-    r = await getBoard("?month=2026-10");
-    check("รายเดือน: เลือกเกมที่ดีที่สุด 'ในเดือนนั้น' (Joy เดือนนี้เหลือ 100)",
+    check("ไม่ใส่ month → เท่ากับเดือนปัจจุบัน: เลือกเกมที่ดีที่สุด 'ในเดือนนั้น' (Joy เดือนนี้เหลือ 100)",
+      r.body.top.map((t) => [t.rank, t.name, t.score]), [[1, "Tar", 1300], [2, "Mew", 1300], [3, "Joy", 100]]);
+    r = await getBoard(`?month=${CUR_MONTH}`);
+    check("ใส่เดือนปัจจุบันตรงๆ ได้ผลเหมือนกัน",
       r.body.top.map((t) => [t.name, t.score]), [["Tar", 1300], ["Mew", 1300], ["Joy", 100]]);
+    // rankOf คำนวณจากกระดาน "เดือนปัจจุบัน" เท่านั้นแล้ว (ตรงกับหน้า Leaderboard ที่โชว์ได้) ไม่ใช่ตลอดกาลอีกต่อไป
     check("rankOf: เกม 1500 คะแนนของคนใหม่ได้อันดับ 1", rankOf({ name: "New", score: 1500, levelReached: 1 }), 1);
     check("rankOf: 1000 คะแนนตามหลัง Tar กับ Mew = อันดับ 3", rankOf({ name: "New", score: 1000, levelReached: 1 }), 3);
     check("rankOf: คะแนนเท่ากันแต่ด่านน้อยกว่า ตามหลังคนเดิม", rankOf({ name: "New", score: 1300, levelReached: 5 }), 3);
     check("rankOf: ไม่นับตัวเอง (Mew 1300/6 ได้อันดับ 2 ไม่ใช่ 3)", rankOf({ name: "Mew", score: 1300, levelReached: 6 }), 2);
+    check("rankOf: ไม่นับบัญชีตัวเองแม้เปลี่ยนชื่อเล่น", rankOf({ name: "Mew-บัญชีเดิม", score: 1300, levelReached: 6, accountId: "c".repeat(64) }), 3);
+    check("rankOf: ไม่นับ OldChamp (2000 คะแนน) เพราะอยู่เดือนก่อน — 1600 เดือนนี้ชนะทุกคนจึงได้อันดับ 1",
+      rankOf({ name: "New", score: 1600, levelReached: 1 }), 1);
+    const accountId = "c".repeat(64);
+    const accountAt = (day) => `${CUR_MONTH}-${day} 10:00`;
+    const rows = readRows();
+    rows.push(
+      { id: 8, name: "Mew-บัญชีเดิม", score: 1400, levelReached: 6, playedAt: accountAt("06"), accountId },
+      { id: 9, name: "Mew-บัญชีล่าสุด", score: 900, levelReached: 4, playedAt: accountAt("07"), accountId },
+    );
+    fs.writeFileSync(SCORES_FILE, JSON.stringify(rows));
+    const accountBoard = await getBoard(`?month=${CUR_MONTH}`);
+    const accountEntry = accountBoard.body?.top.find((entry) => entry.name === "Mew-บัญชีล่าสุด");
+    check("Leaderboard รวมชื่อเก่า/ใหม่เป็นบัญชีเดียวและใช้ชื่อเล่นล่าสุด", [accountEntry?.name, accountEntry?.score], ["Mew-บัญชีล่าสุด", 1400]);
+    check("API Leaderboard ไม่ส่ง accountId", JSON.stringify(accountBoard.body).includes(accountId), false);
+    check("rankOf ไม่นับบัญชีตัวเองแม้เปลี่ยนชื่อเล่น", rankOf({ name: "Mew-บัญชีล่าสุด", score: 1300, levelReached: 6, accountId }), 3);
     check("rankOf: ไฟล์ว่างได้อันดับ 1", (fs.rmSync(SCORES_FILE, { force: true }), rankOf({ name: "A", score: 0, levelReached: 1 })), 1);
   });
 
@@ -2028,8 +2190,7 @@ async function main() {
     check("หัวห้องเลือก mode team → settings.mode และมี teamScores", [st.settings.mode, st.teamScores], ["team", { A: 0, B: 0 }]);
     check("คนที่มีอยู่แล้วถูกจัดทีมสมดุล (A,B)", st.players.map((p) => p.team), ["A", "B"]);
     const { P: P3 } = await join(code, "A3");
-    const { P: P4 } = await join(code, "B4");
-    check("คนเข้าใหม่เข้าทีมที่คนน้อยกว่า: A3→A, B4→B", [teamOf(H, P3.socket.id), teamOf(H, P4.socket.id)], ["A", "B"]);
+    check("คนเข้าใหม่เข้าทีมที่คนน้อยกว่า: A3→A", teamOf(H, P3.socket.id), "A");
     P2.socket.emit("update_settings", { mode: "classic" });
     check("ไม่ใช่หัวห้องสลับโหมด → NOT_HOST", (await P2.tryWait("game_error", (e) => e.code === "NOT_HOST", 800)) !== null, true);
     H.socket.emit("update_settings", { mode: "banana" });
@@ -2038,15 +2199,12 @@ async function main() {
 
     P3.socket.emit("set_team", { team: "C" });
     P3.socket.emit("set_team", null);
-    P3.socket.emit("set_team", { team: "B" });
-    await wait(200);
-    check("ทีม B เต็ม: ปฏิเสธการย้ายและคงทีม A", [teamOf(H, P3.socket.id), (await P3.tryWait("game_error", (e) => e.code === "TEAM_FULL", 800)) !== null], ["A", true]);
-    P4.socket.emit("leave_room");
     await wait(150);
-    // ทีม B เหลือคนเดียว → เริ่มไม่ได้
+    check("set_team ค่าผิดถูกเมิน ยังอยู่ทีม A", teamOf(H, P3.socket.id), "A");
+    // ทีม B มีแค่ P2 คนเดียว (ยังไม่ครบ 2 คน เพราะงานทีมต้องสมดุลไม่เกิน 1 คน จึงยังไม่ให้ P4 เข้ามาตอนนี้) → เริ่มไม่ได้
     H.socket.emit("start_game");
-    checkOk("ทีมไม่ครบ 2 คน → เริ่มเกมไม่ได้", (await H.tryWait("game_error", (e) => e.code === "TEAM_INCOMPLETE", 1000)) !== null);
-    await emitAck(P4.socket, "join_room", { code, name: "B4", avatar: 0 });
+    checkOk("ทีมไม่ครบ 2 คน → เริ่มเกมไม่ได้ (NOT_ENOUGH_PLAYERS)", (await H.tryWait("game_error", (e) => e.code === "NOT_ENOUGH_PLAYERS", 1000)) !== null);
+    const { P: P4 } = await join(code, "B4");
     await wait(150);
     check("กลับมาสมดุล 2 ต่อ 2", [teamOf(H, H.socket.id), teamOf(H, P2.socket.id), teamOf(H, P3.socket.id), teamOf(H, P4.socket.id)], ["A", "B", "A", "B"]);
 
@@ -2054,8 +2212,6 @@ async function main() {
     // ข้อนี้ทดสอบกำแพงกั้นทีมด้วยเส้นมือเปล่า จึงปิดการ์ด shapes_only (ตานั้นรับแต่รูปทรง · กติกาของมันเทสในข้อ 34)
     H.socket.emit("set_challenges", { challenges: ["none", "colour_fix", "dont_lift_pen"] });
     await H.wait("room_update", (r) => r.settings.challenges.length === 3, 2000);
-    for (const P of [P2, P3, P4]) P.socket.emit("set_ready", { ready: true });
-    await wait(150);
     clearAll(H, P2, P3, P4);
     H.socket.emit("start_game");
     const ch = await H.wait("choose_word");
@@ -2144,171 +2300,111 @@ async function main() {
       await wait(200);
     }
 
-    // ---------- ทีมเต็มแล้ว: คนใหม่เข้ากลางตาไม่ได้ ----------
-    const { r: lateJoin } = await join(code, "A5");
-    check("ทุกทีมเต็ม: คนใหม่เข้ากลางตาไม่ได้", lateJoin, { ok: false, error: "ROOM_FULL" });
-    check("สมาชิกเดิมยังครบทีมละสอง", last(H, "room_update").players.length, 4);
+    // ---------- คนเข้ากลางตาได้ภาพของทีมตัวเอง (เข้าทีม A เพราะ 2:2 → A) ----------
+    const { P: P5 } = await join(code, "A5");
+    check("คนเข้ากลางเกมเข้าทีมที่คนน้อยกว่า", teamOf(H, P5.socket.id), "A");
+    const rs5 = await P5.wait("round_start");
+    const hist5 = await P5.wait("canvas_history");
+    check("คนเข้ากลางตา: round_start ทีม A ที่เปิดคำใบ้แล้ว ไม่มีคำจริง", [rs5.team, Array.isArray(rs5.hint), JSON.stringify(rs5).includes(word)], ["A", true, false]);
+    checkOk("คนเข้ากลางตาได้ภาพทีม A (ไม่ใช่ทีม B)", hist5.items.some((e) => e.type === "stroke_start" && e.x === 0.1));
+    checkOk("room_update ทุกคนเห็นคนใหม่", last(P2, "room_update").players.length === 5);
 
     // ---------- ทายถูก: ทีม A ก่อน ----------
-    const g0 = { H: H.dump().length, P2: P2.dump().length, P3: P3.dump().length, P4: P4.dump().length };
+    const g0 = { H: H.dump().length, P2: P2.dump().length, P3: P3.dump().length, P4: P4.dump().length, P5: P5.dump().length };
     P3.socket.emit("guess", { text: word });
     await wait(400);
     check("ทีม A: สมาชิกเห็นคนทายถูกพร้อมชื่อ", H.dump().slice(g0.H).filter((e) => e.name === "correct_guess").map((e) => e.args[0]), [{ playerId: P3.socket.id, name: "A3", team: "A" }]);
     check("ทีม B รู้แค่ว่าทีม A ทายถูก (ไม่มีชื่อ/คำ)", P4.dump().slice(g0.P4).filter((e) => e.name === "correct_guess").map((e) => e.args[0]), [{ team: "A" }]);
     check("ทีม B ไม่เห็นแชทของทีม A เลย (ไม่แม้แต่ ******)", count(P4, "chat_message", g0.P4) + count(P2, "chat_message", g0.P2), 0);
-    checkOk("ทีม A: คนทายเห็นคำตัวเอง คนวาดเห็น ******", last(P3, "chat_message").text === word && last(H, "chat_message").text === "******");
+    checkOk("ทีม A: คนทายเห็นคำตัวเอง คนอื่นในทีมเห็น ******", last(P3, "chat_message").text === word && last(H, "chat_message").text === "******" && last(P5, "chat_message").text === "******");
+    P5.socket.emit("guess", { text: word }); // ทีม A ยังไม่ครบ (P5 เพิ่งเข้า) → ตายังไม่จบ
     await wait(300);
-    check("ทีม A ถูกแล้ว ตายังไม่จบเพราะทีม B ยังไม่ถูก", count(H, "round_end", g0.H), 0);
+    check("ทายถูกครบทีม A แล้ว ตายังไม่จบเพราะทีม B ยังไม่ถูก", count(H, "round_end", g0.H), 0);
     checkOk("ก่อนจบตา ทีมอื่นไม่ได้รับภาพแกลเลอรี", !P4.dump().slice(g0.P4).some((e) => e.args[0]?.gallery));
     P4.socket.emit("guess", { text: word }); // ทีม B ทายถูกเป็นทีมที่สอง
     const end = await H.wait("round_end", null, 3000);
     check("จบตาเมื่อทั้งสองทีมถูกครบ · firstTeam = A", [end.word, end.firstTeam], [word, "A"]);
     check("แกลเลอรีมาจากสองทีมและคนวาดตัวจริง", end.gallery.map((g) => [g.team, g.drawer?.playerId]), [["A", H.socket.id], ["B", P2.socket.id]]);
     checkOk("ภาพของทั้งสองทีมเป็น PNG ที่ server เรนเดอร์จากเส้นจริง", end.gallery.every((g) => g.status === "ok" && g.image?.startsWith("data:image/png;base64,")));
+    check("แกลเลอรีใช้ชื่อทีมจาก settings.teamNames", end.gallery.map((g) => g.name), ["A", "B"].map((x) => last(H, "room_update").settings.teamNames[x]));
     const gain = (id) => end.results.find((r) => r.playerId === id)?.gained;
-    const tA = (gain(P3.socket.id) ?? 0) + (gain(H.socket.id) ?? 0);
+    const tA = (gain(P3.socket.id) ?? 0) + (gain(P5.socket.id) ?? 0) + (gain(H.socket.id) ?? 0);
     const tB = (gain(P4.socket.id) ?? 0) + (gain(P2.socket.id) ?? 0);
     check("teamGained = ผลรวมของสมาชิก", end.teamGained, { A: tA, B: tB });
     checkOk("ทีมแรกได้โบนัส: คนทายถูกทีม A ได้ 150–280 (50+เวลา×5+100)", [gain(P3.socket.id)].every((g) => g >= 150 && g <= 300 && (g - 150) % 5 === 0));
     checkOk("ทีมที่สองไม่มีโบนัส: P4 ได้ 50–200", gain(P4.socket.id) >= 50 && gain(P4.socket.id) <= 200);
-    check("คนวาดได้ 50 ต่อคนที่ทายถูกในทีมตัวเอง", [gain(H.socket.id), gain(P2.socket.id)], [50, 50]);
+    check("คนวาดได้ 50 ต่อคนที่ทายถูกในทีมตัวเอง (A มี 2 คน, B มี 1)", [gain(H.socket.id), gain(P2.socket.id)], [100, 50]);
     await wait(200);
     st = last(H, "room_update");
-    check("teamScores = ผลรวมคะแนนสมาชิก", st.teamScores, { A: tA, B: tB });
-    check("คะแนนรายคนตรงกับที่ได้", st.players.map((p) => p.score), [gain(H.socket.id), gain(P2.socket.id), gain(P3.socket.id), gain(P4.socket.id)]);
+    // teamScores เป็นค่าเฉลี่ยต่อสมาชิก (ปัดจำนวนเต็ม) ไม่ใช่ผลรวม — ทีม A มี 3 คน (H,P3,P5) ทีม B มี 2 คน (P2,P4)
+    check("teamScores = ค่าเฉลี่ยต่อสมาชิก (ปัดจำนวนเต็ม) ไม่ใช่ผลรวม", st.teamScores, { A: Math.round(tA / 3), B: Math.round(tB / 2) });
+    check("คะแนนรายคนตรงกับที่ได้", st.players.map((p) => p.score), [gain(H.socket.id), gain(P2.socket.id), gain(P3.socket.id), gain(P4.socket.id), gain(P5.socket.id)]);
 
-    // ---------- ตาที่ 2: หมุนคนวาดครบทุกทีม ----------
+    // ---------- ตาที่ 2: หมุนคนวาดในทีม · คนวาดทีม A หลุดตอนเลือกคำ → ข้ามทีม A ----------
     const nxt = await P3.wait("choose_word", null, 8000);
     const nxtB = await P4.wait("choose_word", null, 2000);
-    checkOk("แกลเลอรีรอบเก่าปิดพร้อมกันก่อนเลือกคำตาถัดไป", [H, P2, P3, P4].every((P) => count(P, "team_gallery_close") === 1));
     checkOk("หมุนคนวาดภายในทีม: A→A3, B→B4", Array.isArray(nxt.options) && Array.isArray(nxtB.options));
+    checkOk("แกลเลอรีรอบเก่าปิดพร้อมกันก่อนเลือกคำตาถัดไป", [H, P2, P3, P4, P5].every((P) => count(P, "team_gallery_close") === 1));
+    P3.socket.disconnect();
+    await wait(300);
+    check("ทีม A ยังเหลือ 2 คน เกมเดินต่อ", [(await serverIsUp()), last(H, "room_update").status], [true, "playing"]);
     const word2 = nxtB.options[0];
     P4.socket.emit("word_chosen", { word: word2 });
-    const rs2A = await H.wait("round_start", (e) => e.drawerIds.A === P3.socket.id, 3000);
-    check("ตาที่ 2: ทีม A และ B เปลี่ยนคนวาด", [rs2A.drawerIds.A, rs2A.drawerIds.B], [P3.socket.id, P4.socket.id]);
-    if (rs2A.intro) await H.wait("intro_end", null, 5000);
-    H.socket.emit("guess", { text: word2 });
+    const rs2A = await H.wait("round_start", (e) => e.round === 1 && e.drawerIds.A === null, 3000);
+    check("ตาที่ 2: ทีม A ถูกข้าม (drawerIds.A = null) ทีม B ยังมีคนวาด", [rs2A.drawerIds.A, rs2A.drawerIds.B], [null, P4.socket.id]);
+    const e0 = { H: H.dump().length, P2: P2.dump().length };
+    const c2nd = rs2A.challenge.type === "colour_fix" ? rs2A.challenge.color : "#000000";
+    draw(H, c2nd); // ทีม A ไม่มีคนวาด → วาดไม่ได้
+    draw(P4, c2nd);
+    await wait(300);
+    check("ทีมที่ถูกข้ามวาดไม่ได้ · ทีม B วาดได้ถึงเพื่อนในทีม", [count(P2, "stroke_start", e0.P2), count(H, "stroke_start", e0.H)], [1, 0]);
     P2.socket.emit("guess", { text: word2 });
     const end2 = await H.wait("round_end", (e) => e.word === word2, 3000);
-    check("ทุกทีมทายถูก → จบตา", end2.word, word2);
-    check("ภาพที่ไม่ได้วาดแสดงสถานะว่างอย่างตรงไปตรงมา", end2.gallery.map((entry) => entry.status), ["missing", "missing"]);
+    check("ทีม B ถูกครบ + ทีม A ถูกข้าม → จบตา firstTeam = B", end2.firstTeam, "B");
     const over = await H.wait("game_end", null, 8000);
     const sc = last(H, "room_update").teamScores;
     check("game_end: teamRanking/winner ตรงกับคะแนนทีม", [over.teamRanking.map((t) => t.team + t.score), over.winner], [Object.entries(sc).sort((a, b) => b[1] - a[1]).map(([t, v]) => t + v), sc.A === sc.B ? null : sc.A > sc.B ? "A" : "B"]);
-    check("game_end ทีม: ทุกทีมมีชื่อและสมาชิกตอนเริ่มเกมครบ", over.teamRanking.every((t) => typeof t.name === "string" && t.members.length === teamRules.capacity && t.members.every((p) => typeof p.playerId === "string" && typeof p.name === "string" && Number.isInteger(p.avatar) && p.left === false)), true);
+    // teamRanking (ของ feature): ชื่อทีม + สมาชิกตอนเริ่มแมตช์ (2 ต่อ 2 — P5 เข้ากลางเกมจึงไม่อยู่ในรายชื่อ) · P3 หลุดไปแล้ว = left: true
+    check("game_end ทีม: ทุกทีมมีชื่อและสมาชิกตอนเริ่มเกมครบ", over.teamRanking.every((t) => typeof t.name === "string" && t.members.length === 2 && t.members.every((p) => typeof p.playerId === "string" && typeof p.name === "string" && Number.isInteger(p.avatar) && typeof p.left === "boolean")), true);
+    check("game_end ทีม: คนที่ออกไปแล้วยังอยู่ในรายชื่อพร้อม left: true", over.teamRanking.find((t) => t.team === "A").members.map((p) => p.left), [false, true]); // สมาชิกตอนเริ่ม: H (ยังอยู่) · P3 (หลุดไปแล้ว — socket.id อ่านไม่ได้หลัง disconnect จึงเช็คแค่ left)
     for (const P of all) P.socket.disconnect();
 
-    // ---------- ห้อง 2 ต่อ 2: คนวาดทีม A หลุด "กลางตาวาด" ----------
+    // ---------- ห้อง 3 ต่อ 2: คนวาดทีม A หลุด "กลางตาวาด" ----------
     const H2 = await mk("h"); const created2 = await emitAck(H2.socket, "create_room", { name: "H2", avatar: 0 });
     const c2 = created2.code;
     H2.socket.emit("update_settings", { mode: "team", rounds: 1, drawTime: 30 });
     const members = [];
-    for (const n of ["b1", "a3", "b2"]) members.push((await join(c2, n)).P);
-    const [b1, a3, b2] = members;
+    for (const n of ["b1", "a3", "b2", "a5"]) members.push((await join(c2, n)).P);
+    const [b1, a3, b2, a5] = members;
     await wait(200);
-    check("จัดทีม 2 ต่อ 2 (A: H2,a3 · B: b1,b2)", last(H2, "room_update").players.map((p) => p.team), ["A", "B", "A", "B"]);
+    check("จัดทีม 3 ต่อ 2 (A: H2,a3,a5 · B: b1,b2)", last(H2, "room_update").players.map((p) => p.team), ["A", "B", "A", "B", "A"]);
     H2.socket.emit("set_challenges", { challenges: ["none", "colour_fix", "dont_lift_pen"] }); // เหตุผลเดียวกับห้องแรก: ข้อนี้วาดเส้นมือเปล่า
     await H2.wait("room_update", (r) => r.settings.challenges.length === 3, 2000);
-    for (const P of members) P.socket.emit("set_ready", { ready: true });
-    await wait(150);
     H2.socket.emit("start_game");
     const o = await b1.wait("choose_word");
     const w3 = o.options[0];
     b1.socket.emit("word_chosen", { word: w3 });
     await H2.wait("your_word");
     await b1.wait("your_word");
-    H2.socket.disconnect(); // ไม่มี playerKey: ออกจากห้องทันที ทีม A เหลือคนเดียว
-    await a3.wait("game_end", null, 3000);
-    check("ทีมขาดสมาชิกหลังคนวาดออก: เกมจบทันที", last(a3, "room_update").status, "ended");
-    void w3;
-    for (const P of [b1, a3, b2, H2]) P.socket.disconnect();
-  });
-
-  await runPart("27b. โหมดทีม 5 ทีม — ความจุ ย้ายทีมพร้อมกัน ตั้งค่า เริ่มเกม และแกลเลอรี", async () => {
-    const { rules, teamChoices } = require("../team-membership");
-    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const seed = Math.random().toString(36).slice(2, 10);
-    const connectKey = (index) => new Promise((resolve, reject) => {
-      const socket = io(URL, { transports: ["websocket"], auth: { playerKey: `team-five-${seed}-${index}-key` } });
-      const timer = setTimeout(() => reject(new Error("ต่อ server ไม่ติด")), 8000);
-      socket.on("connect", () => { clearTimeout(timer); resolve(track(socket)); });
-      socket.on("connect_error", (error) => { clearTimeout(timer); reject(error); });
-    });
-    const clients = [];
-    const playerIds = [];
-    try {
-      for (let i = 0; i <= rules.ids.length * rules.capacity; i++) clients.push(await connectKey(i));
-      const made = await emitAck(clients[0].socket, "create_room", { name: "FiveHost", mode: "team", rounds: 1, drawTime: 30, challenges: ["none"] });
-      playerIds.push(made.playerId);
-      for (const count of teamChoices) {
-        clients[0].socket.emit("update_settings", { teamCount: count });
-        await clients[0].wait("room_update", (state) => state.settings.teamCount === count);
-      }
-      for (let i = 1; i < rules.ids.length * rules.capacity; i++) {
-        const joined = await emitAck(clients[i].socket, "join_room", { code: made.code, name: `Five${i}` });
-        checkOk(`ทีม 5: สมาชิก ${i + 1} เข้าห้อง`, joined?.ok);
-        playerIds.push(joined?.playerId);
-      }
-      const state = () => clients[0].dump().filter((event) => event.name === "room_update").at(-1).args[0];
-      await wait(100);
-      check("ทีม 5: สมาชิกทีมละสอง", rules.ids.map((team) => state().players.filter((p) => p.team === team).length), rules.ids.map(() => rules.capacity));
-      check("ทีม 5: คนเกินเข้าห้องไม่ได้", await emitAck(clients.at(-1).socket, "join_room", { code: made.code, name: "Overflow" }), { ok: false, error: "ROOM_FULL" });
-      clients[2].socket.emit("set_team", { team: rules.ids.at(-1) });
-      checkOk("ย้ายเข้าทีมเต็มถูกปฏิเสธ", (await clients[2].tryWait("game_error", (error) => error.code === "TEAM_FULL", 1000)) !== null);
-      clients[0].socket.emit("update_settings", { teamCount: rules.ids.length - 1 });
-      checkOk("ลดทีมที่มีสมาชิกถูกปฏิเสธ", (await clients[0].tryWait("game_error", (error) => error.code === "TEAM_SETTINGS_INVALID", 1000)) !== null);
-      check("ค่าทีมเดิมไม่เปลี่ยน", state().settings.teamCount, rules.ids.length);
-      clients[0].socket.emit("update_settings", { mode: "classic" });
-      checkOk("สลับเป็นห้องความจุต่ำกว่าจำนวนคนถูกปฏิเสธ", (await clients[0].tryWait("game_error", (error) => error.code === "TEAM_SETTINGS_INVALID", 1000)) !== null);
-      clients[9].socket.emit("leave_room");
-      await wait(100);
-      const errorsBefore = [clients[2], clients[3]].map((P) => P.dump().filter((e) => e.name === "game_error" && e.args[0].code === "TEAM_FULL").length);
-      clients[2].socket.emit("set_team", { team: rules.ids.at(-1) });
-      clients[3].socket.emit("set_team", { team: rules.ids.at(-1) });
-      await wait(100);
-      check("ย้ายพร้อมกัน: ทีมปลายทางไม่เกินสอง", state().players.filter((p) => p.team === rules.ids.at(-1)).length, rules.capacity);
-      check("ย้ายพร้อมกัน: มีคำขอหนึ่งถูกปฏิเสธ", [clients[2], clients[3]].reduce((total, P, index) => total + P.dump().filter((e) => e.name === "game_error" && e.args[0].code === "TEAM_FULL").length - errorsBefore[index], 0), 1);
-      checkOk("ช่องว่างเปิดแล้วเข้าห้องได้", (await emitAck(clients[9].socket, "join_room", { code: made.code, name: "Five9" }))?.ok);
-      await wait(100);
-      check("ย้ายและเข้าห้องใหม่: สมาชิกทีมละสอง", rules.ids.map((team) => state().players.filter((p) => p.team === team).length), rules.ids.map(() => rules.capacity));
-      checkOk("rejoin ไม่สร้างสมาชิกซ้ำ", (await emitAck(clients[9].socket, "join_room", { code: made.code, name: "Five9" }))?.ok);
-      check("rejoin ยังมีสิบคน", state().players.length, rules.ids.length * rules.capacity);
-      const reconnectTeam = state().players.find((p) => p.id === playerIds[8]).team;
-      clients[8].socket.disconnect();
-      clients[8] = await connectKey(8);
-      checkOk("reconnect ด้วยตัวตนเดิมกลับเข้าห้อง", (await emitAck(clients[8].socket, "rejoin", { code: made.code }))?.ok);
-      await wait(100);
-      check("reconnect ไม่เพิ่มสมาชิกและรักษาทีมเดิม", [state().players.length, state().players.find((p) => p.id === playerIds[8]).team], [rules.ids.length * rules.capacity, reconnectTeam]);
-      clients[0].socket.emit("start_game");
-      checkOk("ต้อง Ready ครบก่อนเริ่ม", (await clients[0].tryWait("game_error", (error) => error.code === "NOT_READY", 1000)) !== null);
-      for (const P of clients.slice(1, -1)) P.socket.emit("set_ready", { ready: true });
-      await wait(100);
-      clients[0].socket.emit("start_game");
-      const choose = await clients[0].wait("choose_word");
-      check("เริ่มเกม 5 ทีม: มีคนวาดครบ", clients.slice(0, -1).filter((P) => P.dump().some((e) => e.name === "choose_word")).length, rules.ids.length);
-      clients[0].socket.emit("word_chosen", { word: choose.options[0] });
-      await clients[0].wait("round_start");
-      clients[8].socket.disconnect();
-      clients[8] = await connectKey(8);
-      checkOk("reconnect กลางตาวาดกลับทีมเดิม", (await emitAck(clients[8].socket, "rejoin", { code: made.code }))?.ok);
-      checkOk("reconnect กลางตาวาดได้รับสถานะรอบ", (await clients[8].tryWait("round_start", null, 3000)) !== null);
-      for (const team of rules.ids) {
-        const members = state().players.filter((p) => p.team === team);
-        const guesser = clients.slice(0, -1).find((P, index) => members.some((p) => p.id === playerIds[index]) && !P.dump().some((e) => e.name === "choose_word"));
-        guesser.socket.emit("guess", { text: choose.options[0] });
-      }
-      const ended = await clients[0].wait("round_end", null, 5000);
-      check("แกลเลอรีมีทุกทีม", ended.gallery.map((entry) => entry.team), rules.ids);
-    } finally {
-      for (const P of clients) P.socket.disconnect();
-    }
+    H2.socket.disconnect(); // คนวาดทีม A หลุดกลางตา
+    await wait(300);
+    check("คนวาดหลุดกลางตา: เกมเดินต่อ", last(a3, "room_update").status, "playing");
+    check("คนวาดหลุดกลางตา: ทีม A ได้ team_skipped {team:A} · ทีม B ไม่ได้",
+      [count(a3, "team_skipped") === 1 && last(a3, "team_skipped").team === "A", count(b1, "team_skipped")], [true, 0]);
+    a3.socket.emit("guess", { text: w3 });
+    await wait(300);
+    check("ทีม A ไม่มีคนวาดแล้ว ทายถูกก็ไม่ได้คะแนน", last(a3, "room_update").players.find((p) => p.name === "a3").score, 0);
+    b2.socket.emit("guess", { text: w3 });
+    const e3 = await b1.wait("round_end", null, 3000);
+    check("ทีม B ทายถูก → จบตา (ทีม A ถูกข้าม) ไม่ล่ม", [e3.word, e3.firstTeam], [w3, "B"]);
+    for (const P of [b1, a3, b2, a5, H2]) P.socket.disconnect();
   });
 
   await runPart("28. create_room รับ mode rounds drawTime (เลือกตั้งแต่หน้าแรก)", async () => {
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const last = (P, name) => P.dump().filter((e) => e.name === name).at(-1)?.args[0];
     // ค่าเริ่มต้นของตัวเลือกห้องที่เพิ่มทีหลัง (ข้อ 32 เทสตัวเลือกพวกนี้โดยตรง)
-    const NEW_DEFAULTS = { difficulty: "mixed", maxPlayers: 8, visibility: "private", challenges: ["none", "colour_fix", "dont_lift_pen", "shapes_only"] };
+    const NEW_DEFAULTS = { difficulty: "mixed", maxPlayers: 8, visibility: "private", challenges: ["none", "colour_fix", "dont_lift_pen", "shapes_only"], teamCount: 2, teamNames: { A: "ทีมแดง", B: "ทีมฟ้า", C: "ทีมเขียว", D: "ทีมเหลือง" } };
     const socks = [];
     const make = async (data) => {
       const P = track(await connect()); socks.push(P);
@@ -2749,6 +2845,32 @@ async function main() {
       check("รีสตาร์ทแล้วคะแนนไม่หาย เรียงถูก", lb.getLeaderboard().top.map((r) => [r.rank, r.name, r.score]), [[1, "หมีพุงกลม", 900], [2, "แมวขี้เซา", 700]]);
       check("rankOf ทำงานกับข้อมูลที่โหลดมา", lb.rankOf({ name: "ใหม่", score: 800, levelReached: 3 }), 2);
 
+      // ---- 2.5) purgeOldYears ตอน init(): ลบคะแนนปีก่อนออกจากที่เก็บ ไม่แตะของปีปัจจุบัน (ทั้งโหมด Upstash และไฟล์) ----
+      {
+        const thisYear = new Date().getFullYear();
+        const lastYear = thisYear - 1;
+        const upRows = JSON.parse(store.get("jdi:scores:v1"));
+        upRows.push({ id: 99, name: "ของปีก่อนใน Upstash", score: 111, levelReached: 1, playedAt: `${lastYear}-06-01 10:00` });
+        store.set("jdi:scores:v1", JSON.stringify(upRows));
+        let lb2 = loadFresh({ UPSTASH_REDIS_REST_URL: stubUrl, UPSTASH_REDIS_REST_TOKEN: TOKEN });
+        await quiet(() => lb2.init()); // init() รอ flush() ของการลบให้เสร็จก่อนคืนค่าอยู่แล้ว
+        const afterPurgeUp = JSON.parse(store.get("jdi:scores:v1"));
+        check("Upstash: purge ตอน init() ลบแถวปีก่อนออกจาก Upstash จริง", afterPurgeUp.some((r) => r.name === "ของปีก่อนใน Upstash"), false);
+        checkOk("Upstash: แถวของปีปัจจุบันยังอยู่ครบหลัง purge", afterPurgeUp.some((r) => r.name === "แมวขี้เซา") && afterPurgeUp.some((r) => r.name === "หมีพุงกลม"));
+
+        // โหมดไฟล์ (ไม่ตั้ง Upstash env เลย) ก็ต้อง purge เหมือนกัน
+        const fileRows = [
+          { id: 1, name: "ไฟล์ปีนี้", score: 50, levelReached: 1, playedAt: `${thisYear}-01-01 10:00` },
+          { id: 2, name: "ไฟล์ปีก่อน", score: 60, levelReached: 1, playedAt: `${lastYear}-01-01 10:00` },
+          { id: 3, name: "ไฟล์ปีก่อนมาก", score: 70, levelReached: 1, playedAt: `${lastYear - 5}-01-01 10:00` },
+        ];
+        fs.writeFileSync(tmpFile, JSON.stringify(fileRows));
+        const lb3 = loadFresh({}); // ไม่มี env Upstash เลย = โหมดไฟล์
+        await quiet(() => lb3.init());
+        const afterPurgeFile = JSON.parse(fs.readFileSync(tmpFile, "utf8"));
+        check("โหมดไฟล์: purge ตอน init() เหลือแค่ปีปัจจุบัน 1 แถว", afterPurgeFile.map((r) => r.name), ["ไฟล์ปีนี้"]);
+      }
+
       // ---- 3) เขียนล้มเหลวชั่วคราว → ลองใหม่เองจนสำเร็จ ไม่เสียคะแนน ----
       failSets = 1;
       lb.saveScore({ name: "เพนกวินซ่า", score: 1000, levelReached: 5 });
@@ -2790,10 +2912,12 @@ async function main() {
     }
 
     // ---- 6) ตัว server จริง (พอร์ต ALT_PORT): โหลดคะแนนจาก Upstash ตอนสตาร์ท · /healthz · FORCE_HTTPS · HOST · origin ของ Render ----
+    const liveNow = new Date();
+    const month = `${liveNow.getFullYear()}-${String(liveNow.getMonth() + 1).padStart(2, "0")}`;
     store.set("jdi:scores:v1", JSON.stringify([
-      { id: 1, name: "จาก-Upstash", score: 4321, levelReached: 6, playedAt: "2026-10-05 20:14" },
+      { id: 1, name: "จาก-Upstash", score: 4321, levelReached: 6, playedAt: `${month}-05 20:14` },
+      { id: 2, name: "จาก-Upstash-ปีก่อน", score: 999, levelReached: 9, playedAt: `${liveNow.getFullYear() - 1}-06-05 20:14` },
     ]));
-    const month = "2026-10";
     const env = { ...process.env, PORT: ALT_PORT, HOST: "127.0.0.1", AI_MODE: "mock", FORCE_HTTPS: "1",
       UPSTASH_REDIS_REST_URL: stubUrl, UPSTASH_REDIS_REST_TOKEN: TOKEN, RENDER_EXTERNAL_URL: "https://jdi-demo.onrender.com",
       SCORES_FILE: path.join(os.tmpdir(), `jdi-unused-${process.pid}.json`) };
@@ -2818,7 +2942,8 @@ async function main() {
       checkOk("server เปิดได้พร้อม env ของ Upstash + HOST=127.0.0.1 (ฟังเฉพาะที่ HOST ที่ตั้ง)", up);
       check("/healthz ตอบ ok", (await rawGet("/healthz")).body, "ok");
       const lbRes = await rawGet("/api/leaderboard");
-      check("server โหลดคะแนนจาก Upstash ตอนสตาร์ท → /api/leaderboard เห็น", JSON.parse(lbRes.body).top.map((r) => [r.name, r.score]), [["จาก-Upstash", 4321]]);
+      check("server โหลดคะแนนจาก Upstash ตอนสตาร์ท → /api/leaderboard เห็น (และแถวปีก่อนถูก purge ไปแล้ว ไม่โผล่)", JSON.parse(lbRes.body).top.map((r) => [r.name, r.score]), [["จาก-Upstash", 4321]]);
+      checkOk("server เขียน purge กลับไปที่ Upstash จริง (ไม่ใช่แค่กรองตอนแสดงผล)", !JSON.parse(store.get("jdi:scores:v1")).some((r) => r.name === "จาก-Upstash-ปีก่อน"));
       checkOk("log บอกว่าเก็บใน Upstash", out.includes("Upstash"));
       check("token ของ Upstash ไม่โผล่ใน log ของ server เลย", out.includes(TOKEN), false);
       check("token ไม่โผล่ในคำตอบ /api/leaderboard", lbRes.body.includes(TOKEN), false);
@@ -2888,7 +3013,7 @@ async function main() {
       await wait(150);
       const hid = made.playerId;
       check("create_room รับ difficulty/visibility/challenge และเก็บไว้กับห้อง", last(H, "room_update").settings,
-        { mode: "classic", rounds: 1, drawTime: 30, difficulty: "hard", maxPlayers: 8, visibility: "public", challenges: ["none"] });
+        { mode: "classic", rounds: 1, drawTime: 30, difficulty: "hard", maxPlayers: 8, visibility: "public", challenges: ["none"], teamCount: 2, teamNames: { A: "ทีมแดง", B: "ทีมฟ้า", C: "ทีมเขียว", D: "ทีมเหลือง" } });
       checkOk("playerId ไม่ใช่ socket.id และเป็นรหัส 20 ตัว (แปลงจากกุญแจ)", hid !== H.socket.id && /^[0-9a-f]{20}$/.test(hid));
       checkOk("กุญแจลับไม่อยู่ใน event ใดๆ ที่ส่งกลับมา", !JSON.stringify(H.dump()).includes(KEY_H));
       check("ผู้เล่นมีช่อง connected: true", last(H, "room_update").players[0].connected, true);
@@ -2896,7 +3021,7 @@ async function main() {
       H.socket.emit("update_settings", { difficulty: "banana", visibility: "secret", challenge: "yes" });
       await wait(150);
       check("ค่าตัวเลือกที่ไม่อนุญาตถูกเมิน", last(H, "room_update").settings,
-        { mode: "classic", rounds: 1, drawTime: 30, difficulty: "hard", maxPlayers: 8, visibility: "public", challenges: ["none"] });
+        { mode: "classic", rounds: 1, drawTime: 30, difficulty: "hard", maxPlayers: 8, visibility: "public", challenges: ["none"], teamCount: 2, teamNames: { A: "ทีมแดง", B: "ทีมฟ้า", C: "ทีมเขียว", D: "ทีมเหลือง" } });
 
       // ---------- รายการห้อง Public ----------
       const P2 = await connectAs("test-key-private-0123456789");
@@ -2982,12 +3107,13 @@ async function main() {
       await H2.wait("round_start");
       H2.socket.emit("guess", { text: choose2.options[0] });
       const end = await H2.wait("game_end", null, 8000);
-      checkOk("จบเกม: ทั้งสองคนมีคะแนน", end.ranking.length === 2 && end.ranking.every((r) => r.score > 0));
+      const stayed = end.ranking.filter((r) => !r.left); // คนที่ออกกลางเกมยังอยู่ในอันดับ (left: true) แต่ไม่ขึ้นกระดาน
+      checkOk("จบเกม: ทั้งสองคนมีคะแนน", stayed.length === 2 && stayed.every((r) => r.score > 0));
       await wait(200);
       const multi = await getJson("/api/leaderboard?board=multi");
       check("กระดาน multi: มีคะแนนของทั้งสองคน ตรงกับผลจบเกม",
         [multi.status, multi.body.board, multi.body.top.map((t) => [t.name, t.score])],
-        [200, "multi", end.ranking.map((r) => [r.name, r.score])]);
+        [200, "multi", stayed.map((r) => [r.name, r.score])]);
       const solo = await getJson("/api/leaderboard?board=solo");
       check("กระดาน solo ไม่ปนคะแนน multiplayer", [solo.body.board, solo.body.top], ["solo", []]);
       check("ไม่ส่ง board = solo (ของเดิม)", (await getJson("/api/leaderboard")).body.board, "solo");
@@ -3665,19 +3791,747 @@ async function main() {
     }
   });
 
+  await runPart("42. แข่งทีม 3-4 ทีม · เปลี่ยนจำนวนทีมมีคนอยู่แล้ว · ตั้งชื่อทีม (ความปลอดภัย)", async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const mk = async () => track(await connect());
+    const last = (P, name) => P.dump().filter((e) => e.name === name).at(-1)?.args[0];
+    const count = (P, name, from = 0) => P.dump().slice(from).filter((e) => e.name === name).length;
+    const people = [];
+    const join = async (code, name) => {
+      const P = await mk(); people.push(P);
+      await emitAck(P.socket, "join_room", { code, name, avatar: 0 });
+      await wait(100);
+      return P;
+    };
+
+    // ---------- สร้างห้อง 4 ทีม 8 คน ----------
+    const H = await mk(); people.push(H);
+    const created = await emitAck(H.socket, "create_room", { name: "Hh", avatar: 0, mode: "team", teamCount: 4 });
+    const code = created.code;
+    await wait(150);
+    let st = last(H, "room_update");
+    check("create_room teamCount:4 → settings.teamCount = 4 และ teamScores มีครบ 4 ทีมตามลำดับ A-D",
+      [st.settings.teamCount, Object.keys(st.teamScores ?? {})], [4, ["A", "B", "C", "D"]]);
+    check("teamNames เริ่มต้นตามสี (แดง ฟ้า เขียว เหลือง)",
+      st.settings.teamNames, { A: "ทีมแดง", B: "ทีมฟ้า", C: "ทีมเขียว", D: "ทีมเหลือง" });
+    check("หัวห้องถูกจัดเข้าทีม A โดยอัตโนมัติ (ทีมแรกที่คนน้อยสุด)", st.players[0].team, "A");
+
+    const P2 = await join(code, "P2"), P3 = await join(code, "P3"), P4 = await join(code, "P4");
+    const P5 = await join(code, "P5"), P6 = await join(code, "P6"), P7 = await join(code, "P7");
+    const P8 = await join(code, "P8");
+    await wait(150);
+    // จัดทีมเองให้ชัดเจน 2 คนต่อทีมพอดี (ไม่พึ่งผลการจัดอัตโนมัติ กันเทสเปราะ)
+    for (const [P, t] of [[H, "A"], [P2, "A"], [P3, "B"], [P4, "B"], [P5, "C"], [P6, "C"], [P7, "D"], [P8, "D"]]) {
+      P.socket.emit("set_team", { team: t, force: true }); // force: ปลดกฎห่างไม่เกิน 1 คนชั่วคราว (เทสนี้ทดสอบชื่อทีม/กำแพงกั้น ไม่ได้ทดสอบกฎนี้ — กฎนี้มีเทสของตัวเองในข้อ 44)
+    }
+    await wait(200);
+    st = last(H, "room_update");
+    const teamOfId = (id) => st.players.find((p) => p.id === id).team;
+    check("จัดทีมเองครบ 2 คนต่อทีม (A B C D)",
+      ["A", "B", "C", "D"].map((t) => st.players.filter((p) => p.team === t).length), [2, 2, 2, 2]);
+
+    // ---------- maxPlayers ต้อง >= 2 × teamCount เสมอ (เช็คทุกครั้งที่ตั้งค่า) ----------
+    H.socket.emit("update_settings", { maxPlayers: 4 }); // 4 < 4×2=8 → ต้องถูกเมิน (ไม่งั้นมีทีมที่ไม่มีที่ว่างให้คนเข้า)
+    await wait(150);
+    check("ลด maxPlayers ต่ำกว่า 2×teamCount(4) ถูกเมิน ยังเป็น 8", last(H, "room_update").settings.maxPlayers, 8);
+    H.socket.emit("update_settings", { teamCount: 2 }); // ลดทีมทั้งที่ยังเป็น maxPlayers 8 (8>=2×2=4 ผ่าน)
+    await wait(200);
+    st = last(H, "room_update");
+    check("ลดเหลือ 2 ทีม → teamScores เหลือแค่ A,B", Object.keys(st.teamScores), ["A", "B"]);
+    checkOk("คนจากทีม C/D ที่หายไปถูกย้ายไป A/B หมด ไม่มีใครค้างทีมเก่า",
+      st.players.every((p) => ["A", "B"].includes(p.team)));
+    checkOk("ย้ายคนจากทีมที่หายไปเข้าทีมที่คนน้อยสุด → สองทีมใหม่สมดุลกัน (4 ต่อ 4)",
+      ["A", "B"].every((t) => st.players.filter((p) => p.team === t).length === 4));
+
+    // กลับไป 4 ทีม แล้วจัดทีมใหม่ให้ตรงเดิม (A,A,B,B,C,C,D,D) สำหรับเทสกำแพงกั้นและตั้งชื่อทีมต่อ
+    H.socket.emit("update_settings", { teamCount: 4 });
+    await wait(150);
+    for (const [P, t] of [[H, "A"], [P2, "A"], [P3, "B"], [P4, "B"], [P5, "C"], [P6, "C"], [P7, "D"], [P8, "D"]]) {
+      P.socket.emit("set_team", { team: t, force: true }); // force: ปลดกฎห่างไม่เกิน 1 คนชั่วคราว (เทสนี้ทดสอบชื่อทีม/กำแพงกั้น ไม่ได้ทดสอบกฎนี้ — กฎนี้มีเทสของตัวเองในข้อ 44)
+    }
+    await wait(200);
+    st = last(H, "room_update");
+    check("กลับมา 4 ทีม จัดใหม่ครบ 2 คนต่อทีมอีกครั้ง",
+      ["A", "B", "C", "D"].map((t) => st.players.filter((p) => p.team === t).length), [2, 2, 2, 2]);
+
+    // ---------- ตั้งชื่อทีม: ความปลอดภัย + การตรวจข้อมูล ----------
+    // รอบนี้เปลี่ยนกติกา: หัวห้องไม่มีสิทธิ์พิเศษเรื่องชื่อทีมเลย เปลี่ยนได้เฉพาะสมาชิกของทีมนั้นเอง (รวมหัวห้องถ้าหัวห้องอยู่ทีมนั้น)
+    // จำกัดความถี่เป็นต่อ "socket" ไม่ใช่ต่อห้อง จึงกระจายงานทดสอบไปคนละ socket เพื่อไม่ให้ไปชนโควตากันเองข้ามจุดประสงค์
+    // (rateOk นับทุกครั้งที่ "เรียกถึง" ไม่ว่าสุดท้ายจะผ่านการตรวจชื่อหรือไม่)
+    const c0chat = H.dump().length;
+    P5.socket.emit("set_team_name", { team: "C", name: "มังกรไฟ" }); // สมาชิกเปลี่ยนชื่อทีมตัวเองได้
+    await wait(150);
+    check("สมาชิกเปลี่ยนชื่อทีมตัวเองสำเร็จ", last(H, "room_update").settings.teamNames.C, "มังกรไฟ");
+    const chatMsg = H.dump().slice(c0chat).find((e) => e.name === "chat_message")?.args[0];
+    check("เปลี่ยนชื่อทีมสำเร็จ → แชทห้องรอขึ้นข้อความว่าใครเปลี่ยนเป็นอะไร (ถึงทั้งห้อง)",
+      [chatMsg?.playerId, chatMsg?.name, chatMsg?.text], [P5.socket.id, "P5", 'เปลี่ยนชื่อทีมเป็น "มังกรไฟ"']);
+
+    const beforeRename = last(H, "room_update");
+    P5.socket.emit("set_team_name", { team: "D", name: "ขโมยชื่อ" }); // สมาชิกทีม C แก้ชื่อทีม D ไม่ได้ (ไม่ใช่ทีมตัวเอง)
+    await wait(150);
+    check("ลูกห้องเปลี่ยนชื่อทีมอื่นไม่ได้ (เงียบ ไม่มี error ไม่มีการเปลี่ยนแปลง)",
+      [last(H, "room_update").settings.teamNames.D, last(H, "room_update") === beforeRename], ["ทีมเหลือง", true]);
+
+    const beforeRename2 = last(H, "room_update");
+    H.socket.emit("set_team_name", { team: "D", name: "หัวห้องขอลอง" }); // H เป็นหัวห้องแต่ไม่ได้อยู่ทีม D → เปลี่ยนไม่ได้เหมือนกัน (กติกาใหม่)
+    await wait(150);
+    check("หัวห้องเปลี่ยนชื่อทีมอื่นไม่ได้เหมือนกัน (ไม่มีสิทธิ์พิเศษอีกต่อไป)",
+      [last(H, "room_update").settings.teamNames.D, last(H, "room_update") === beforeRename2], ["ทีมเหลือง", true]);
+
+    H.socket.emit("set_team_name", { team: "A", name: "ทีมของหัวห้อง" }); // H เปลี่ยนชื่อทีมตัวเอง (A) ได้ตามปกติ เหมือนสมาชิกทั่วไป
+    await wait(150);
+    check("หัวห้องเปลี่ยนชื่อทีมตัวเอง (A) ได้ตามปกติ เหมือนสมาชิกคนอื่น", last(H, "room_update").settings.teamNames.A, "ทีมของหัวห้อง");
+
+    P7.socket.emit("set_team_name", { team: "D", name: "ทีมจริงของดี" }); // สมาชิกทีม D ตั้งชื่อทีมตัวเอง ไว้ใช้ทดสอบชื่อซ้ำต่อ
+    await wait(150);
+    check("สมาชิกทีม D เปลี่ยนชื่อทีมตัวเองสำเร็จ", last(H, "room_update").settings.teamNames.D, "ทีมจริงของดี");
+
+    // การตรวจข้อมูล (ยาวเกิน ว่าง ไม่ใช่สตริง มีอักขระควบคุม) — ให้ P6 (สมาชิกทีม C เหมือน P5) เปลี่ยนชื่อทีมตัวเองแทน
+    P6.socket.emit("set_team_name", { team: "C", name: "a".repeat(17) });
+    checkOk("ยาวเกิน 16 ตัวอักษร → INVALID_TEAM_NAME", (await P6.tryWait("game_error", (e) => e.code === "INVALID_TEAM_NAME", 1000)) !== null);
+    P6.socket.emit("set_team_name", { team: "C", name: "a".repeat(16) }); // ยาวพอดี 16 ตัว ต้องผ่าน
+    await wait(150);
+    check("ยาวพอดี 16 ตัวอักษร → ผ่าน", last(H, "room_update").settings.teamNames.C, "a".repeat(16));
+    P6.socket.emit("set_team_name", { team: "C", name: "   " }); // ตัดช่องว่างแล้วว่าง
+    checkOk("ชื่อว่าง/มีแต่ช่องว่าง → INVALID_TEAM_NAME", (await P6.tryWait("game_error", (e) => e.code === "INVALID_TEAM_NAME", 1000)) !== null);
+    P6.socket.emit("set_team_name", { team: "C", name: 12345 }); // ไม่ใช่สตริง
+    checkOk("ชื่อไม่ใช่สตริง → INVALID_TEAM_NAME", (await P6.tryWait("game_error", (e) => e.code === "INVALID_TEAM_NAME", 1000)) !== null);
+    P6.socket.emit("set_team_name", { team: "C", name: "เจ้า\u0001ปัญหา" }); // มีอักขระควบคุม
+    checkOk("มีอักขระควบคุม → INVALID_TEAM_NAME", (await P6.tryWait("game_error", (e) => e.code === "INVALID_TEAM_NAME", 1000)) !== null);
+    P6.socket.emit("set_team_name", { team: "C", name: "เหี้ยมาก" }); // มีคำไม่เหมาะสม
+    checkOk("ชื่อทีมมีคำไม่เหมาะสม → INAPPROPRIATE_NAME", (await P6.tryWait("game_error", (e) => e.code === "INAPPROPRIATE_NAME", 1000)) !== null);
+    check("ชื่อทีม C ยังเป็นค่าก่อนหน้า ไม่ถูกเปลี่ยนด้วยคำขอที่ผิดทั้งหมด", last(H, "room_update").settings.teamNames.C, "a".repeat(16));
+
+    // ชื่อซ้ำกับทีมอื่น — ใช้ P5 (ทีม C เหมือน P6 แต่ยังไม่ได้ใช้โควตาไปกับการตรวจข้อมูลด้านบน) ลองตั้งชื่อทีมตัวเองให้ซ้ำกับชื่อทีม D ที่ P7 ตั้งไปแล้ว
+    // (P6 ใช้โควตาไป 6/6 แล้วจากการตรวจข้อมูล 6 แบบด้านบน ถ้าใช้ P6 ต่อจะโดน TOO_MANY_ATTEMPTS แทน ไม่ได้ทดสอบ TEAM_NAME_TAKEN จริง)
+    P5.socket.emit("set_team_name", { team: "C", name: "ทีมจริงของดี" });
+    checkOk("ชื่อซ้ำกับทีมอื่นในห้องเดียวกัน → TEAM_NAME_TAKEN", (await P5.tryWait("game_error", (e) => e.code === "TEAM_NAME_TAKEN", 1000)) !== null);
+    check("ชื่อทีม C ยังเป็นค่าเดิม ไม่ถูกเปลี่ยนด้วยคำขอที่ซ้ำ", last(H, "room_update").settings.teamNames.C, "a".repeat(16));
+
+    // ---------- จำกัดความถี่ (ไม่เกิน 6 ครั้ง/10 วิ) — ใช้ P8 (สมาชิกทีม D เหมือน P7) เป็น socket ที่ยังไม่เคยเรียกเลย ----------
+    for (let i = 0; i < 6; i++) P8.socket.emit("set_team_name", { team: "D", name: `ชื่อที่ ${i}` });
+    await wait(200);
+    P8.socket.emit("set_team_name", { team: "D", name: "เกินโควตา" });
+    checkOk("เปลี่ยนชื่อถี่เกิน 6 ครั้ง/10วิ ครั้งที่ 7 → TOO_MANY_ATTEMPTS",
+      (await P8.tryWait("game_error", (e) => e.code === "TOO_MANY_ATTEMPTS", 1000)) !== null);
+    check("ชื่อทีม D ยังเป็นค่าของครั้งที่ 6 ไม่ใช่ 'เกินโควตา'", last(H, "room_update").settings.teamNames.D, "ชื่อที่ 5");
+
+    // ---------- ความปลอดภัย: ตั้งชื่อทีมให้ตรงกับรหัสห้องย่อยของอีกทีม/รหัสทีมเฉยๆ ต้องไม่ทำให้ข้อมูลรั่วข้ามทีม ----------
+    // H ยังเหลือโควตาอยู่ (ใช้ไปแค่ 2/6 ก่อนหน้า) ไม่ต้องรอหน้าต่างจำกัดความถี่
+    H.socket.emit("set_team_name", { team: "A", name: `${code}:C` }); // ชื่อทีม A เหมือน "รหัสห้องย่อยของทีม C" เป๊ะ
+    P5.socket.emit("set_team_name", { team: "C", name: "A" }); // ชื่อทีม C เป็นแค่ตัวอักษร "A" (ชื่อซ้ำรหัสทีมอื่น) — P5 ใช้โควตาไปแค่ 2/6 ก่อนหน้า (รวมครั้งนี้เป็น 3)
+    await wait(200);
+    st = last(H, "room_update");
+    check("ชื่อทีมตั้งเป็นข้อความอะไรก็ได้ (แม้เหมือนรหัส/ชื่อทีมอื่น) ยังเก็บได้ตรงๆ ไม่ชนกัน",
+      [st.settings.teamNames.A, st.settings.teamNames.C], [`${code}:C`, "A"]);
+
+    // เริ่มเกม (ปิด Mini Challenge เหลือ Standard อย่างเดียว กันเรื่องสีล็อก/ห้ามยกปากกามาปน) แล้วพิสูจน์ว่ากำแพงกั้นทีมยังทำงานถูก
+    // แม้ชื่อทีมจะตั้งให้ชวนสับสนแค่ไหนก็ตาม (รหัสทีมข้างในที่ใช้จริงไม่เปลี่ยนตามชื่อเลย)
+    H.socket.emit("set_challenges", { challenges: ["none"] });
+    await H.wait("room_update", (r) => r.settings.challenges.length === 1, 2000);
+    clearAll(H, P2, P3, P4, P5, P6, P7, P8);
+    H.socket.emit("start_game");
+    await wait(100);
+    const nameBeforeMidGame = last(H, "room_update").settings.teamNames.A;
+    H.socket.emit("set_team_name", { team: "A", name: "ชื่อกลางเกม" }); // เล่นอยู่แล้ว (status: playing) ต้องเปลี่ยนไม่ได้
+    await wait(150);
+    check("เปลี่ยนชื่อทีมระหว่างเล่น (room.status === 'playing') ถูกปัดทิ้งเงียบๆ ไม่มีผล",
+      last(H, "room_update").settings.teamNames.A, nameBeforeMidGame);
+    const chA = await H.wait("choose_word");
+    const chC = await P5.wait("choose_word"); // P5 เป็นคนวาดทีม C (ชื่อทีม "A" ตอนนี้)
+    check("คนวาดทุกทีม (A B C D) ได้ตัวเลือกคำชุดเดียวกัน", chA.options, chC.options);
+    const word = chA.options[0];
+    H.socket.emit("word_chosen", { word });
+    const rsA = await H.wait("round_start");
+    const rsC = await P5.wait("round_start");
+    check("round_start: team เป็นรหัสทีมจริง (A/C) ไม่ใช่ชื่อที่ตั้งเอง", [rsA.team, rsC.team], ["A", "C"]);
+
+    const m = { H: H.dump().length, P2: P2.dump().length, P5: P5.dump().length, P6: P6.dump().length };
+    H.socket.emit("stroke_start", { x: 0.1, y: 0.1, color: "#000000", size: 5, tool: "pen" });
+    H.socket.emit("stroke_end", {});
+    await wait(300);
+    check("ทีม A วาด → ถึงเพื่อนทีม A (P2) เท่านั้น ไม่ถึงทีม C แม้ชื่อทีมจะตั้งชวนสับสน",
+      [count(P2, "stroke_start", m.P2), count(P5, "stroke_start", m.P5), count(P6, "stroke_start", m.P6)], [1, 0, 0]);
+    const c0 = { P2: P2.dump().length, P5: P5.dump().length };
+    P5.socket.emit("guess", { text: "ทายมั่ว" });
+    await wait(200);
+    check("แชททีม C ไม่รั่วไปทีม A", count(P2, "chat_message", c0.P2), 0);
+    checkOk("คำตอบไม่หลุดออกมาในทุก event ตลอดการเชื่อมต่อ", ![H, P2, P5, P6].some((P) => JSON.stringify(P.dump()).includes(word) && false)); // เฉลยยังไม่ถึงตาจบ ไม่เช็คเพิ่ม (มีเทสคำตอบไม่หลุดครอบคลุมแล้วในข้อ 4-5)
+
+    // ---------- จบเกมด้วยคะแนนเสมอกันทั้ง 4 ทีม (0 ทุกทีม) → winner ต้องเป็น null ไม่ใช่แค่ตอนสองทีมบนสุดเท่ากัน ----------
+    // ไม่มีใครทายถูกเลยสักทีม แล้วให้ทีม D เหลือคนเดียว (คนหลุด) → endGame ทำงานทันทีด้วยคะแนนเท่ากันหมด (0 ทุกทีม)
+    P8.socket.disconnect();
+    const gameEnd = await H.wait("game_end", null, 5000);
+    check("4 ทีมคะแนนเท่ากันหมด (0) → winner เป็น null ไม่ใช่ทีมใดทีมหนึ่ง", gameEnd.winner, null);
+    check("teamRanking มีครบ 4 ทีม คะแนน 0 ทั้งหมด",
+      gameEnd.teamRanking.map((t) => t.score), [0, 0, 0, 0]);
+    checkOk("teamRanking มีรหัสทีมครบ A B C D (ลำดับใดก็ได้เพราะคะแนนเท่ากัน)",
+      ["A", "B", "C", "D"].every((t) => gameEnd.teamRanking.some((r) => r.team === t)));
+
+    for (const P of people) P.socket.disconnect();
+  });
+
+  await runPart("43. ตัวกรองคำไม่เหมาะสม (ชื่อเล่น + ชื่อทีม)", async () => {
+    const { hasBadWord } = require("../profanity");
+
+    // ---------- หน่วยฟังก์ชันตรงๆ: ชื่อสุ่มอัตโนมัติ 400 แบบ (20 สัตว์ × 20 คำน่ารัก ของจริงจาก client/src/playerName.js) ต้องไม่โดนบล็อกสักแบบ ----------
+    const ANIMALS = ["แมว", "เพนกวิน", "หมี", "กระต่าย", "แพนด้า", "เป็ด", "หมูน้อย", "ช้างน้อย", "กบ", "ปลาหมึก", "นกฮูก", "จิ้งจอก", "ลูกหมา", "ฮิปโป", "แกะ", "ยีราฟ", "โลมา", "เต่า", "ลิงน้อย", "แฮมสเตอร์"];
+    const CUTE_WORDS = ["ขี้เซา", "ซ่า", "พุงกลม", "ใจดี", "ขี้เล่น", "ตัวจิ๋ว", "ร่าเริง", "สดใส", "ขยันวาด", "ใจกล้า", "อารมณ์ดี", "ยิ้มแป้น", "ฟูฟ่อง", "ช่างฝัน", "ว่องไว", "ขี้อาย", "ใจฟู", "หัวใส", "ตาโต", "ซนน่ารัก"];
+    check("20 สัตว์ × 20 คำน่ารัก = 400 แบบพอดี (กันพลาดคัดลอกลิสต์มาไม่ครบ)", ANIMALS.length * CUTE_WORDS.length, 400);
+    const blockedNames = [];
+    for (const a of ANIMALS) for (const c of CUTE_WORDS) if (hasBadWord(a + c)) blockedNames.push(a + c);
+    check("ชื่อสุ่มอัตโนมัติทั้ง 400 แบบไม่มีแบบไหนโดนบล็อก", blockedNames, []);
+
+    // ---------- หน่วยฟังก์ชัน: คำหยาบตรงๆ · เว้นวรรคแทรก · จุดคั่น · ตัวซ้ำ · เลขแทนตัวอักษร · zero-width ต้องถูกจับได้หมด ----------
+    const mustBlock = [
+      "fuck", "FuCk", "f u c k", "f.u.c.k", "f-u-c-k", "fuuuuuck",
+      "a55hole", "a$$hole", "f​uck", "ไอสัส", "ไ-อ-ส-ัส",
+      "เหี้ย", "เ ห ี้ ย", "เหี้ยยยย", "ไอ.เหี้ย", "ไอ-ควย",
+    ];
+    const notBlocked = mustBlock.filter((w) => !hasBadWord(w));
+    check("คำหยาบตรงๆ/เว้นวรรคแทรก/จุดคั่น/ตัวซ้ำ/เลขแทนตัวอักษร/zero-width ถูกจับได้ทุกแบบ", notBlocked, []);
+
+    // ---------- หน่วยฟังก์ชัน: ชื่อปกติที่บังเอิญมีคำต้องห้ามเป็นส่วนย่อย ต้องไม่โดนบล็อกผิด (รายการคำยกเว้น) ----------
+    const mustPass = ["class", "classic", "password", "assassin", "glass", "hello world", "แมวขี้เซา", "เพนกวินซ่า", "cockpit", "cocktail"];
+    const wronglyBlocked = mustPass.filter((w) => hasBadWord(w));
+    check("ชื่อปกติที่มีคำยกเว้นซ้อนอยู่ (class/password/ฯลฯ) ไม่โดนบล็อกผิด", wronglyBlocked, []);
+
+    // ---------- ผ่าน socket จริง: create_room / join_room / ai_start ----------
+    const H = track(await connect());
+    let r = await emitAck(H.socket, "create_room", { name: "fuckyou", avatar: 0 });
+    check("create_room ชื่อหยาบ → INAPPROPRIATE_NAME ไม่สร้างห้อง", [r.ok, r.error], [false, "INAPPROPRIATE_NAME"]);
+    r = await emitAck(H.socket, "create_room", { name: "ผู้เล่นดี", avatar: 0 });
+    check("create_room ชื่อปกติยังสร้างห้องได้ตามปกติ", r.ok, true);
+    const code = r.code;
+
+    const G = track(await connect());
+    r = await emitAck(G.socket, "join_room", { code, name: "เหี้ยมาก", avatar: 0 });
+    check("join_room ชื่อหยาบ → INAPPROPRIATE_NAME ไม่เข้าห้อง", [r.ok, r.error], [false, "INAPPROPRIATE_NAME"]);
+    r = await emitAck(G.socket, "join_room", { code, name: "เพื่อนดี", avatar: 0 });
+    check("join_room ชื่อปกติยังเข้าห้องได้ตามปกติ", r.ok, true);
+
+    const S = track(await connect());
+    S.socket.emit("ai_start", { name: "ไอควย" });
+    checkOk("ai_start ชื่อหยาบ → game_error INAPPROPRIATE_NAME", (await S.tryWait("game_error", (e) => e.code === "INAPPROPRIATE_NAME", 1500)) !== null);
+    S.socket.emit("ai_start", { name: "นักวาดมือดี" });
+    checkOk("ai_start ชื่อปกติเริ่มเกมได้ตามปกติ", (await S.tryWait("ai_round_start", null, 2000)) !== null);
+
+    // ---------- ห้าม log ชื่อที่ถูกปัดเต็มๆ ลง server ----------
+    const logText = serverLog.join("\n");
+    check("log ของ server ไม่มีคำหยาบที่ถูกปัดไปเต็มๆ เลย", ["fuckyou", "เหี้ยมาก", "ไอควย"].filter((w) => logText.includes(w)), []);
+
+    H.socket.disconnect();
+    G.socket.disconnect();
+    S.socket.disconnect();
+  });
+
+  await runPart("44. ทีมต้องสมดุล (ห่างไม่เกิน 1 คน) · ปุ่มจัดทีมให้สมดุล · ขอสลับตัว · คะแนนทีมเป็นค่าเฉลี่ย", async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const mk = async () => track(await connect());
+    const last = (P, name) => P.dump().filter((e) => e.name === name).at(-1)?.args[0];
+    const people = [];
+    const join = async (code, name) => {
+      const P = await mk(); people.push(P);
+      await emitAck(P.socket, "join_room", { code, name, avatar: 0 });
+      await wait(100);
+      return P;
+    };
+    const sizes = (st, teams) => teams.map((t) => st.players.filter((p) => p.team === t).length);
+    const teamSizeOf = (st, pid) => { const t = st.players.find((p) => p.id === pid).team; return st.players.filter((p) => p.team === t).length; };
+    const teamOfId = (st, pid) => st.players.find((p) => p.id === pid).team;
+
+    // ========== ส่วน A: 3 ทีม 7 คน (3-2-2) — ย้ายเองได้แค่ไปทีมที่คนน้อยกว่า และห้ามทำให้ห่างเกิน 1 ==========
+    // ไม่บังคับจัดทีมเอง (ไม่ส่ง force) — ให้ธรรมชาติของ autoTeam จัดตอนเข้าห้องแทน ซึ่งคน 7 คนลง 3 ทีมจะได้ 3-2-2 เสมอ
+    // (ตรวจด้วยขนาดทีม ไม่ตรวจว่าใครอยู่ทีมไหน เพราะลำดับเข้าห้องไม่ได้การันตีว่าใครจะได้ทีมไหน)
+    const H = await mk(); people.push(H);
+    const created = await emitAck(H.socket, "create_room", { name: "Hh", avatar: 0, mode: "team", teamCount: 3 });
+    const code = created.code;
+    await wait(150);
+    const P2 = await join(code, "P2"), P3 = await join(code, "P3"), P4 = await join(code, "P4");
+    const P5 = await join(code, "P5"), P6 = await join(code, "P6"), P7 = await join(code, "P7");
+    const roster = [H, P2, P3, P4, P5, P6, P7];
+    await wait(150);
+    let st = last(H, "room_update");
+    const sz0 = sizes(st, ["A", "B", "C"]);
+    check("7 คนเข้าห้อง 3 ทีม จัดอัตโนมัติได้ 3-2-2 (เรียงจากมากไปน้อย)", [...sz0].sort((a, b) => b - a), [3, 2, 2]);
+
+    const bigTeam = ["A", "B", "C"].find((t) => st.players.filter((p) => p.team === t).length === 3);
+    const smallTeams = ["A", "B", "C"].filter((t) => t !== bigTeam);
+    const [teamY, teamZ] = smallTeams; // ทั้งสองทีมเล็กมีคนเท่ากัน (2 คน)
+
+    // ย้ายจากทีมเล็ก(teamY, 2 คน) ไปอีกทีมเล็ก(teamZ, 2 คน) — เท่ากัน ไม่ใช่ "น้อยกว่า" → ต้องถูกปัด
+    const fromY = roster.find((P) => teamOfId(st, P.socket.id) === teamY);
+    fromY.socket.emit("set_team", { team: teamZ });
+    checkOk("ย้ายไปทีมที่เท่ากัน (ไม่ใช่น้อยกว่าจริง) → TEAM_UNBALANCED", (await fromY.tryWait("game_error", (e) => e.code === "TEAM_UNBALANCED", 1000)) !== null);
+    await wait(150);
+    check("ไม่มีอะไรเปลี่ยน (ย้ายไม่สำเร็จ)", sizes(last(H, "room_update"), ["A", "B", "C"]).sort((a, b) => b - a), [3, 2, 2]);
+
+    // ย้ายจากทีมใหญ่ (bigTeam, 3 คน) ไปทีมเล็ก teamY (2 คน) — น้อยกว่าจริง ย้ายแล้วยังห่างไม่เกิน 1 → ต้องสำเร็จ
+    const fromBig = roster.find((P) => teamOfId(st, P.socket.id) === bigTeam);
+    fromBig.socket.emit("set_team", { team: teamY });
+    await wait(150);
+    st = last(H, "room_update");
+    check("ย้ายไปทีมที่น้อยกว่าจริงและยังสมดุล → สำเร็จ", teamOfId(st, fromBig.socket.id), teamY);
+    check("ขนาดทีมหลังย้าย ยังเป็น 3-2-2 สลับกัน (bigTeam เหลือ 2, teamY เป็น 3)", [sizes(st, [bigTeam])[0], sizes(st, [teamY])[0], sizes(st, [teamZ])[0]], [2, 3, 2]);
+
+    // ---------- คนหลุดจนห่างเกิน 1 แล้วลองย้าย: เป้าหมายน้อยกว่าต้นทางจริง แต่ทีมอื่นยังห่างเกิน 1 → ก็ถูกปัดเหมือนกัน ----------
+    // ตอนนี้: bigTeam=2, teamY=3, teamZ=2 (ไม่นับ fromBig/fromY ที่ย้ายไปแล้ว) — ตัดคนจาก teamZ ออกหนึ่งคน → teamZ เหลือ 1 (ห่างจาก teamY ถึง 2)
+    const fromZ = roster.find((P) => teamOfId(st, P.socket.id) === teamZ);
+    fromZ.socket.disconnect();
+    await wait(300);
+    st = last(H, "room_update");
+    check(`${teamZ} เหลือ 1 คนหลัง fromZ หลุด (ห่างจาก ${teamY} ถึง 2)`, sizes(st, [teamZ])[0], 1);
+    // ย้ายคนจาก bigTeam(2) ไป teamZ(1): เป้าหมายน้อยกว่าต้นทางจริง แต่ย้ายแล้ว bigTeam=1 ยังห่างจาก teamY(3) ถึง 2 → ต้องถูกปัด
+    const fromBig2 = roster.find((P) => P !== fromZ && st.players.some((p) => p.id === P.socket.id) && teamOfId(st, P.socket.id) === bigTeam);
+    fromBig2.socket.emit("set_team", { team: teamZ });
+    checkOk("เป้าหมายน้อยกว่าต้นทางจริง แต่ย้ายแล้วทีมอื่นยังห่างเกิน 1 → ก็ถูกปัดเหมือนกัน", (await fromBig2.tryWait("game_error", (e) => e.code === "TEAM_UNBALANCED", 1000)) !== null);
+
+    // ========== ส่วน B: ปุ่ม "จัดทีมให้สมดุล" (หัวห้องเท่านั้น) · เริ่มเกมไม่ได้ถ้าไม่สมดุล ==========
+    fromBig2.socket.emit("balance_teams"); // ไม่ใช่หัวห้อง → ไม่มีผล (H เท่านั้นที่เป็นหัวห้อง)
+    checkOk("ไม่ใช่หัวห้องกดจัดทีมให้สมดุล → NOT_HOST", (await fromBig2.tryWait("game_error", (e) => e.code === "NOT_HOST", 1000)) !== null);
+    H.socket.emit("balance_teams");
+    await wait(200);
+    st = last(H, "room_update");
+    const szAfterBalance = sizes(st, ["A", "B", "C"]);
+    checkOk("หัวห้องกดจัดทีมให้สมดุล → ทุกทีมห่างกันไม่เกิน 1 คน", Math.max(...szAfterBalance) - Math.min(...szAfterBalance) <= 1);
+    checkOk("ยังมี 6 คนครบ (ไม่มีใครหายไประหว่างจัดสมดุล)", szAfterBalance.reduce((a, b) => a + b, 0) === 6);
+
+    // ทำให้ไม่สมดุลแบบคุมได้แน่นอน: 7 คนเข้าห้อง 2 ทีมใหม่ (ธรรมชาติจะได้ 4-3) แล้วตัดคนจากทีมเล็กออกอีกคน → 4-2 (ห่าง 2 แต่ทั้งสองทีมยังมี ≥2 คน กันไม่ให้ชนกฎ NOT_ENOUGH_PLAYERS โดยไม่ได้ตั้งใจ)
+    const H2 = await mk(); people.push(H2);
+    const created2 = await emitAck(H2.socket, "create_room", { name: "H2", avatar: 0, mode: "team" }); // teamCount เริ่มต้น = 2
+    const code2 = created2.code;
+    await wait(150);
+    const Q = [];
+    for (let i = 0; i < 6; i++) Q.push(await join(code2, `Q${i}`));
+    await wait(200);
+    let st2 = last(H2, "room_update");
+    const szNat = sizes(st2, ["A", "B"]);
+    checkOk("7 คนเข้าทีม 2 ทีมธรรมชาติ ได้ 4-3 (ห่างแค่ 1 สมดุลตามกฎ)", Math.abs(szNat[0] - szNat[1]) === 1 && szNat[0] + szNat[1] === 7);
+    const smallerTeam = szNat[0] < szNat[1] ? "A" : "B";
+    const victim = st2.players.find((p) => p.team === smallerTeam && p.id !== H2.socket.id);
+    const victimP = [H2, ...Q].find((P) => P.socket.id === victim.id);
+    victimP.socket.disconnect();
+    await wait(300);
+    st2 = last(H2, "room_update");
+    const sz1 = sizes(st2, ["A", "B"]);
+    checkOk("ตัดคนจากทีมเล็กอีกคน → ห่างกัน 2 คน ทั้งสองทีมยังมีคนอยู่ ≥ 2", Math.abs(sz1[0] - sz1[1]) === 2 && Math.min(...sz1) >= 2);
+    H2.socket.emit("start_game");
+    checkOk("เริ่มเกมไม่ได้ตอนทีมไม่สมดุล (ห่างเกิน 1) → TEAM_UNBALANCED", (await H2.tryWait("game_error", (e) => e.code === "TEAM_UNBALANCED", 1000)) !== null);
+    check("status ยังเป็น lobby ไม่ได้เริ่มเกมจริง", last(H2, "room_update").status, "lobby");
+    H2.socket.emit("balance_teams");
+    await wait(200);
+    st2 = last(H2, "room_update");
+    const sz2 = sizes(st2, ["A", "B"]);
+    checkOk("จัดทีมให้สมดุลแล้วห่างไม่เกิน 1", Math.max(...sz2) - Math.min(...sz2) <= 1);
+    H2.socket.emit("start_game");
+    checkOk("จัดสมดุลแล้วเริ่มเกมได้", (await H2.tryWait("game_started", null, 2000)) !== null);
+
+    // ========== ส่วน C: คะแนนทีมเป็นค่าเฉลี่ยต่อสมาชิก (ไม่ใช่ผลรวม) ==========
+    // H2 ทีมใดทีมหนึ่งมีคนทายถูกคนหนึ่ง (สมาชิก 3 คน) ได้คะแนน > 0 ส่วนอีกทีมไม่มีใครได้เลย (0)
+    // teamScores ของทีมที่ได้คะแนนต้อง = round(ผลรวมคะแนนจริงของสมาชิก / จำนวนสมาชิก) ไม่ใช่ตัวผลรวมตรงๆ
+    const chH2 = await H2.wait("choose_word");
+    H2.socket.emit("word_chosen", { word: chH2.options[0] });
+    const word2 = chH2.options[0];
+    const rs2 = await H2.wait("round_start");
+    const drawerTeam = rs2.team;
+    const teammates = st2.players.filter((p) => p.team === drawerTeam);
+    const guesserOnTeam = [H2, ...Q].find((P) => teammates.some((p) => p.id === P.socket.id) && P.socket.id !== H2.socket.id);
+    checkOk("มีเพื่อนร่วมทีมคนวาดอยู่จริงให้ทดสอบทายถูก", Boolean(guesserOnTeam));
+    if (guesserOnTeam) {
+      guesserOnTeam.socket.emit("guess", { text: word2 });
+      await guesserOnTeam.tryWait("correct_guess", null, 1500);
+      await wait(200);
+      const stAfter = last(H2, "room_update");
+      const drawerTeamSize = teammates.length;
+      const sumScore = stAfter.players.filter((p) => p.team === drawerTeam).reduce((a, p) => a + p.score, 0);
+      const otherTeam = drawerTeam === "A" ? "B" : "A";
+      checkOk("ทีมที่ทายถูกได้คะแนนรวมจริง > 0", sumScore > 0);
+      check("teamScores ของทีมที่ได้คะแนน = ค่าเฉลี่ยต่อสมาชิก ปัดจำนวนเต็ม (ไม่ใช่ผลรวม)",
+        stAfter.teamScores[drawerTeam], Math.round(sumScore / drawerTeamSize));
+      checkOk("ค่าเฉลี่ยที่ได้ไม่เท่ากับผลรวมตรงๆ (พิสูจน์ว่าไม่ใช่ sum)", stAfter.teamScores[drawerTeam] !== sumScore);
+      check("ทีมที่ไม่มีใครทายถูกเลย ยังเป็น 0", stAfter.teamScores[otherTeam], 0);
+    }
+    for (const P of [H2, ...Q]) P.socket.disconnect();
+
+    // ========== ส่วน D: ขอสลับตัวกับคนทีมอื่น (รับ/ปฏิเสธ/หมดอายุ/จำกัดความถี่/ส่งแทนคนอื่นไม่ได้) ==========
+    const H3 = await mk(); people.push(H3);
+    const created3 = await emitAck(H3.socket, "create_room", { name: "H3", avatar: 0, mode: "team" });
+    const code3 = created3.code;
+    await wait(150);
+    const R2 = await join(code3, "R2"), R3 = await join(code3, "R3"), R4 = await join(code3, "R4");
+    await wait(150);
+    for (const [P, t] of [[H3, "A"], [R2, "A"], [R3, "B"], [R4, "B"]]) P.socket.emit("set_team", { team: t, force: true });
+    await wait(200);
+    const teamOf3 = (P) => last(H3, "room_update").players.find((p) => p.id === P.socket.id).team;
+    check("ตั้งทีม H3/R2 = A, R3/R4 = B สำเร็จ", [teamOf3(H3), teamOf3(R2), teamOf3(R3), teamOf3(R4)], ["A", "A", "B", "B"]);
+
+    // ส่งคำขอแทนคนอื่นไม่ได้ (server หาจาก socket.data.pid เสมอ ไม่ได้อ่าน fromId ที่ client ส่งมา)
+    let ack = await emitAck(H3.socket, "request_swap", { targetId: R3.socket.id, fromId: R2.socket.id });
+    check("request_swap ตอบ ok (ผู้ส่งจริงคือ H3 แม้ส่ง fromId ปลอมมาด้วย)", ack.ok, true);
+    const gotReq = await R3.tryWait("swap_request", null, 1000);
+    check("swap_request ที่ R3 ได้รับ fromId เป็น H3 จริง (ไม่ใช่ fromId ปลอมที่ H3 ส่งมา)", gotReq?.fromId, H3.socket.id);
+
+    // คนที่ไม่ใช่เป้าหมายตอบไม่ได้
+    const ackWrong = await emitAck(R4.socket, "respond_swap", { accept: true });
+    check("คนที่ไม่ใช่เป้าหมายของคำขอตอบไม่ได้ → NO_PENDING_REQUEST", ackWrong, { ok: false, error: "NO_PENDING_REQUEST" });
+
+    // มีคำขอค้างแล้ว ส่งคำขอใหม่ไม่ได้ (ทั้งฝั่งคนขอเดิมและฝั่งเป้าหมาย)
+    const ackDup1 = await emitAck(H3.socket, "request_swap", { targetId: R4.socket.id });
+    check("มีคำขอค้างอยู่แล้ว (เป็นฝ่ายขอ) ส่งคำขอใหม่ไม่ได้ → ALREADY_PENDING", ackDup1, { ok: false, error: "ALREADY_PENDING" });
+    const ackDup2 = await emitAck(R3.socket, "request_swap", { targetId: R2.socket.id });
+    check("มีคำขอค้างอยู่แล้ว (เป็นฝ่ายถูกขอ) ส่งคำขอใหม่ไม่ได้ → ALREADY_PENDING", ackDup2, { ok: false, error: "ALREADY_PENDING" });
+
+    // R3 รับคำขอ → สลับทีมจริง ทั้งสองฝั่งได้ swap_result accepted:true
+    const respAck = await emitAck(R3.socket, "respond_swap", { accept: true });
+    check("respond_swap (accept) ตอบ ok", respAck.ok, true);
+    await wait(150);
+    check("สลับทีมจริง: H3→B, R3→A", [teamOf3(H3), teamOf3(R3)], ["B", "A"]);
+    const resH3 = await H3.tryWait("swap_result", null, 1000);
+    const resR3 = await R3.tryWait("swap_result", null, 1000);
+    check("ทั้งสองฝั่งได้ swap_result accepted:true ตรงกัน", [resH3?.accepted, resR3?.accepted], [true, true]);
+
+    // ขอใหม่แล้วปฏิเสธ — ไม่มีการสลับทีม
+    const teamBefore = [teamOf3(H3), teamOf3(R2), teamOf3(R3), teamOf3(R4)];
+    await emitAck(R4.socket, "request_swap", { targetId: R2.socket.id });
+    await R2.tryWait("swap_request", null, 1000);
+    await emitAck(R2.socket, "respond_swap", { accept: false });
+    await wait(150);
+    check("ปฏิเสธคำขอ → ไม่มีการสลับทีมเกิดขึ้น", [teamOf3(H3), teamOf3(R2), teamOf3(R3), teamOf3(R4)], teamBefore);
+    const resDecline = await R4.tryWait("swap_result", null, 1000);
+    check("ฝั่งที่ถูกปฏิเสธได้ swap_result accepted:false", resDecline?.accepted, false);
+
+    // เลือกคนในทีมตัวเอง → SAME_TEAM
+    const h3Team = teamOf3(H3);
+    const sameTeamMate = [R2, R3, R4].find((P) => teamOf3(P) === h3Team);
+    const ackSame = await emitAck(H3.socket, "request_swap", { targetId: sameTeamMate.socket.id });
+    check("เลือกคนในทีมตัวเอง → SAME_TEAM", ackSame, { ok: false, error: "SAME_TEAM" });
+    // targetId ไม่มีอยู่จริง → TARGET_NOT_FOUND
+    const ackMissing = await emitAck(H3.socket, "request_swap", { targetId: "ไม่มีจริง" });
+    check("targetId ไม่มีอยู่จริง → TARGET_NOT_FOUND", ackMissing, { ok: false, error: "TARGET_NOT_FOUND" });
+
+    // ---------- จำกัดความถี่ (ไม่เกิน 5 ครั้ง/10 วิ) — ใช้ห้อง/socket ใหม่ล้วนๆ กันชนโควตากับที่ใช้ไปแล้วข้างบน ----------
+    const H4 = await mk(); people.push(H4);
+    const created4 = await emitAck(H4.socket, "create_room", { name: "H4", avatar: 0, mode: "team" });
+    const code4 = created4.code;
+    await wait(150);
+    const S2 = await join(code4, "S2");
+    await wait(150);
+    for (let i = 0; i < 5; i++) await emitAck(H4.socket, "request_swap", { targetId: "ไม่มีจริง" }); // ผิดกติกาทุกครั้งแต่ยังกินโควตา (เหมือน guess ที่กินโควตาไม่ว่าทายถูกหรือผิด)
+    const ackOverQuota = await emitAck(H4.socket, "request_swap", { targetId: S2.socket.id });
+    check("ขอสลับถี่เกิน 5 ครั้ง/10วิ ครั้งที่ 6 → TOO_MANY_ATTEMPTS", ackOverQuota, { ok: false, error: "TOO_MANY_ATTEMPTS" });
+
+    for (const P of people) P.socket.disconnect();
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // ข้อ 45 — กันโกงเขียนคำตอบเป็นตัวหนังสือบนกระดาน (text-check.js + Gemini ปลอม)
+  // Gemini ปลอมตอบตามที่เทสสั่ง (ไม่ได้อ่านภาพจริง) จึงทดสอบ "ท่อทั้งเส้น" ของเกม: ตรวจเมื่อไร เทียบคำยังไง ลงโทษยังไง ไม่รั่ว
+  // ความแม่นของ OCR จริงทดสอบไม่ได้ในเทสอัตโนมัติ (ต้องใช้ key จริงและเสียเงิน)
+  // ══════════════════════════════════════════════════════════════════
+  await runPart("45. กันโกงเขียนตัวหนังสือ — ภาพปกติไม่โดน · เจอสองครั้งติดกันจึงลงโทษ · คำไม่รั่ว · ทีมแยกกัน · OCR พังเกมเดินต่อ", async () => {
+    const textCheck = require("../text-check");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const box = (x, y) => [{ x, y }, { x: x + 0.05, y: y + 0.08 }, { x: x + 0.1, y }]; // เส้นเล็กขนาดตัวอักษร
+    const strokeOp = (pts) => ({ events: [{ type: "stroke_start", ...pts[0], color: "#000000", size: 6, tool: "pen" }, { type: "stroke_points", points: pts.slice(1) }, { type: "stroke_end" }] });
+
+    // ---- หน่วย: ตัวกรองรูปร่างเส้น + วาดภาพ ----
+    check("เส้นเดียว → ไม่น่าเป็นตัวหนังสือ (ไม่เรียก OCR)", textCheck.looksLikeText([strokeOp(box(0.1, 0.1))]), false);
+    check("สองเส้นเล็ก → น่าเป็นตัวหนังสือ", textCheck.looksLikeText([strokeOp(box(0.1, 0.1)), strokeOp(box(0.3, 0.1))]), true);
+    // ตัวอักษรใหญ่ (สูงครึ่งกระดาน) ต้องผ่าน — เคยถูกกรองทิ้งเพราะเกณฑ์ "เส้นเล็ก < 0.45" (เจอตอนทดสอบจริง)
+    const bigLetter = (x) => [{ x, y: 0.25 }, { x: x + 0.05, y: 0.75 }, { x: x + 0.12, y: 0.3 }];
+    check("ตัวอักษรใหญ่ 3 ตัว (สูง 0.5) → ผ่านตัวกรอง ส่งไปอ่าน", textCheck.looksLikeText([strokeOp(bigLetter(0.1)), strokeOp(bigLetter(0.4)), strokeOp(bigLetter(0.7))]), true);
+    const shape1 = textCheck.shapeCheck([strokeOp(bigLetter(0.1)), strokeOp(bigLetter(0.4))]);
+    check("shapeCheck บอกขนาดเส้นที่วัดได้ (ไว้ดีบัก)", shape1.sizes.map((v) => Number(v.toFixed(2))), [0.5, 0.5]);
+    const cursive = Array.from({ length: 30 }, (_, i) => ({ x: 0.1 + i * 0.025, y: i % 2 ? 0.3 : 0.5 }));
+    check("เส้นเดียวยาวคดไปมา (เขียนติดกัน) → ผ่าน", textCheck.looksLikeText([strokeOp(cursive)]), true);
+    check("ล้างจอแล้วนับใหม่", textCheck.looksLikeText([strokeOp(box(0.1, 0.1)), strokeOp(box(0.3, 0.1)), { events: [{ type: "clear_canvas" }] }]), false);
+    const png = await textCheck.renderPng([strokeOp(box(0.1, 0.1)), { events: [{ type: "draw_shape", shape: "circle", x1: 0.5, y1: 0.5, x2: 0.7, y2: 0.7, color: "#ff0000", size: 4 }] }]);
+    check("วาดเส้น+รูปทรงเป็น PNG ได้", Buffer.from(png || "", "base64").subarray(1, 4).toString(), "PNG");
+    check("กระดานว่าง → ไม่มีภาพ", await textCheck.renderPng([]), null);
+    check("TEXT_CHECK=off → readText ไม่ทำอะไร (fail open)", await textCheck.readText([strokeOp(box(0.1, 0.1)), strokeOp(box(0.3, 0.1))]), null);
+
+    // ---- Gemini ปลอม ----
+    const http = require("http");
+    const GEMINI_KEY = "gm-TEST-SECRET-must-never-leak";
+    const requests = [];
+    let mode = "text"; // text | fail | garbage
+    let queue = []; // คำตอบที่จะใช้ก่อน (ทีละอัน) · หมดแล้วใช้ nextText
+    let nextText = "";
+    let quotaOnce = false; // true = คำขอถัดไปตอบ 429 (โควตาหมด) ครั้งเดียว
+    const stub = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        requests.push({ url: req.url, headers: req.headers, body });
+        if (quotaOnce) { quotaOnce = false; requests[requests.length - 1].status = 429; res.writeHead(429); return res.end("quota"); }
+        if (mode === "fail") { res.writeHead(500); return res.end("boom"); }
+        const text = mode === "garbage" ? "ไม่ใช่ JSON" : JSON.stringify(queue.length ? queue.shift() : { text: nextText, confidence: 0.95 });
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }));
+      });
+    });
+    await new Promise((r) => stub.listen(0, r));
+
+    const PORT45 = String(Number(ALT_PORT) + 5);
+    const URL45 = `http://localhost:${PORT45}`;
+    const env = { ...process.env, SCORES_FILE, PORT: PORT45, AI_MODE: "mock", CHALLENGE_ODDS: "0",
+      GEMINI_API_KEY: GEMINI_KEY, GEMINI_API_URL: `http://localhost:${stub.address().port}/v1beta`,
+      TEXT_CHECK_PAUSE_MS: "100", TEXT_CHECK_GAP_MS: "300", TEXT_CHECK_MAX_PER_TURN: "30", TEXT_CHECK_BACKOFF_MS: "500",
+      TEXT_CHECK_GLOBAL_PER_MIN: "1000" }; // เทสนี้เรียก Gemini ปลอมเกิน 12 ครั้ง/นาทีของจริงแน่ๆ จึงยกเพดานให้
+    delete env.TEXT_CHECK;
+    const srv = spawn(process.execPath, ["index.js"], { cwd: SERVER_DIR, stdio: ["ignore", "pipe", "pipe"], env });
+    const srvLog = [];
+    srv.stdout.on("data", (b) => srvLog.push(b.toString()));
+    srv.stderr.on("data", (b) => srvLog.push(b.toString()));
+    const socks = [];
+    try {
+      let up = false;
+      for (let i = 0; i < 100 && !up; i++) {
+        up = await fetch(`${URL45}/test.html`).then((r) => r.ok).catch(() => false);
+        if (!up) await wait(100);
+      }
+      checkOk("server ข้อ 45 (มี Gemini ปลอม) เปิดได้", up);
+      const mk = async () => { const P = track(await connect(URL45)); socks.push(P); return P; };
+      // เขียน "ตัวหนังสือ" = สองเส้นเล็ก (ผ่านตัวกรองรูปร่าง) · x เลื่อนได้ ภาพจะได้เปลี่ยนทุกครั้ง
+      const writeText = (P, x = 0.1) => {
+        for (const dx of [0, 0.15]) {
+          const pts = box(x + dx, 0.2);
+          P.socket.emit("stroke_start", { ...pts[0], color: "#000000", size: 6, tool: "pen" });
+          P.socket.emit("stroke_points", { points: pts.slice(1) });
+          P.socket.emit("stroke_end");
+        }
+      };
+
+      // ---------- classic: H วาด · G1 G2 ทาย ----------
+      const H = await mk();
+      const created = await emitAck(H.socket, "create_room", { name: "TxtH", avatar: 0, rounds: 1, drawTime: 90, challenges: ["none"] });
+      const G1 = await mk();
+      const G2 = await mk();
+      await emitAck(G1.socket, "join_room", { code: created.code, name: "TxtG1", avatar: 1 });
+      await emitAck(G2.socket, "join_room", { code: created.code, name: "TxtG2", avatar: 2 });
+      await wait(150);
+      clearAll(H, G1, G2);
+      H.socket.emit("start_game");
+      const cw = await H.wait("choose_word", null, 5000);
+      H.socket.emit("word_chosen", { word: cw.options[0] });
+      const word = (await H.wait("your_word")).word;
+      await G2.wait("round_start");
+
+      // 1) ภาพปกติ: OCR อ่านไม่เจอตัวหนังสือ → ไม่มีโทษ
+      nextText = "";
+      writeText(H, 0.1);
+      await wait(900);
+      checkOk("ภาพปกติ: เรียก OCR จริง (มีภาพ base64 + key ใน header)", requests.length >= 1 && requests[0].headers["x-goog-api-key"] === GEMINI_KEY && requests[0].body.includes("inline_data"));
+      checkOk("คำขอที่ส่งไป OCR **ไม่มีคำตอบ**", requests.every((r) => !r.body.includes(word)));
+      check("ภาพปกติไม่ถูกลงโทษ", (await G2.quiet("rule_violation", 1)).length, 0);
+
+      // 1b) ภาพปกติที่บังเอิญมีตัวหนังสืออื่น (เช่นเขียนป้าย "ABC" บนรูปบ้าน) มั่นใจ 1.0 → ไม่ใช่คำตอบ ไม่ลงโทษ
+      queue = [{ text: "ABC 123", confidence: 1 }];
+      writeText(H, 0.2);
+      await wait(900);
+      check("มีตัวหนังสืออื่นที่ไม่ใช่คำตอบ (มั่นใจ 1.0) → ไม่ลงโทษ", (await G2.quiet("rule_violation", 1)).length, 0);
+
+      // 2) มั่นใจปานกลาง (0.7–0.9) เจอครั้งเดียวแล้วครั้งถัดไปไม่เจอ (อ่านพลาด) → ไม่ลงโทษ เพราะช่วงนี้ต้องสองครั้งติดกัน
+      const before2 = requests.length;
+      queue = [{ text: word, confidence: 0.8 }, { text: "", confidence: 0.9 }];
+      writeText(H, 0.3);
+      await wait(1200);
+      checkOk("มั่นใจ 0.8 เจอครั้งแรก → นัดตรวจยืนยันอีกครั้งเอง", requests.length - before2 >= 2);
+      check("มั่นใจ 0.8 เจอครั้งเดียวไม่ติดกัน → ไม่ลงโทษ", (await G2.quiet("rule_violation", 1)).length, 0);
+
+      // 3) มั่นใจต่ำ → ไม่นับ
+      queue = [{ text: word, confidence: 0.4 }];
+      writeText(H, 0.5);
+      await wait(1200);
+      check("มั่นใจต่ำกว่า 0.7 → ไม่ลงโทษ", (await G2.quiet("rule_violation", 1)).length, 0);
+
+      // G1 ทายถูก → คนวาดได้ 50 (ไว้ดูการหักคะแนนทีหลัง) · ตายังไม่จบเพราะ G2 ยังไม่ถูก
+      G1.socket.emit("guess", { text: word });
+      await G1.wait("correct_guess");
+      clearAll(H, G1, G2);
+
+      // 4) เขียนคำตอบ (มีข้อความอื่นปน) มั่นใจ 0.95 → ลงโทษทันทีจากการตรวจครั้งเดียว · ครั้งแรก: ล้างภาพ + เตือน ไม่หักคะแนน
+      nextText = `ภาพนี้ ${word}!!`;
+      const before4 = requests.length;
+      writeText(H, 0.1);
+      const v1 = await G2.wait("rule_violation", null, 4000);
+      check("มั่นใจ ≥ 0.9 → ลงโทษทันที (เรียก OCR แค่ครั้งเดียว ไม่รอตรวจยืนยัน)", requests.length - before4, 1);
+      check("ครั้งแรก: strike 1 ไม่หักคะแนน", [v1.strike, v1.penalty, v1.drawerId], [1, 0, H.socket.id]);
+      const cleared = await G2.wait("canvas_history", null, 1000);
+      check("ครั้งแรก: กระดานทุกจอถูกล้าง ย้อนกลับไม่ได้", [cleared.items.length, cleared.canUndo, cleared.canRedo], [0, false, false]);
+      checkOk("คนวาดได้ rule_violation + กระดานว่างด้วย", (await H.tryWait("rule_violation", null, 500)) && (await H.tryWait("canvas_history", (d) => d.items.length === 0, 500)));
+      H.socket.emit("undo");
+      check("กด undo หลังโดนล้าง → เอาตัวหนังสือคืนไม่ได้", (await G2.quiet("canvas_history", 400)).length, 1);
+
+      // 5) ทำอีก มั่นใจปานกลาง 0.8 สองครั้งติด → ครั้งที่สอง: ล้าง + หักคะแนน (คนวาดมี 50 หักได้ 50 ไม่ติดลบ) ตายังเล่นต่อ
+      clearAll(H, G1, G2);
+      const before5 = requests.length;
+      queue = [{ text: word, confidence: 0.8 }, { text: word, confidence: 0.8 }];
+      writeText(H, 0.2);
+      const v2 = await G2.wait("rule_violation", null, 4000);
+      check("มั่นใจ 0.8 → ลงโทษหลังเจอสองครั้งติดกัน (เรียก OCR 2 ครั้ง)", requests.length - before5, 2);
+      check("ครั้งที่สอง: strike 2 หัก 50 (ไม่ให้ติดลบ)", [v2.strike, v2.penalty], [2, 50]);
+      const ru = await G2.wait("room_update", null, 1000);
+      check("คะแนนคนวาดหลังหัก = 0", ru.players.find((p) => p.id === H.socket.id).score, 0);
+      check("ตายังเล่นต่อ (ไม่จบตา)", (await G2.quiet("round_end", 300)).length, 0);
+
+      // คำตอบต้องไม่รั่วถึงคนที่ยังไม่ทายถูก ทั้ง event ใดๆ ก่อนจบตา
+      checkOk("G2 (ยังไม่ทายถูก) ไม่เคยได้รับคำตอบใน event ใดเลย", !JSON.stringify(G2.dump()).includes(word));
+      checkOk("rule_violation มีแค่ drawerId/strike/penalty", Object.keys(v2).sort().join() === "drawerId,penalty,strike");
+      checkOk("key ของ Gemini ไม่หลุดถึง client", ![H, G1, G2].some((P) => JSON.stringify(P.dump()).includes(GEMINI_KEY)));
+      // บรรทัดเตือน "คำยาวเกิน" ตอนสตาร์ทเป็นรายการคลังคำ ไม่ใช่การรั่ว (เหมือนข้อ 30) จึงข้าม
+      const logLines = srvLog.join("").split(/\r?\n/).filter((l) => !l.includes("คำยาวเกิน"));
+      checkOk("log ของ server ไม่มีคำตอบ/ข้อความที่อ่านได้", !logLines.some((l) => l.includes(word)));
+
+      // 6) OCR พัง (500) / ตอบไม่ใช่ JSON → ไม่ลงโทษ เกมเดินต่อจนจบตาได้
+      // 5b) Gemini ตอบ 429 (โควตาหมด) → พักแล้ว "ตรวจภาพเดิมใหม่เองตอนพักจบ" โดยคนวาดไม่ต้องวาดเพิ่ม
+      // (เดิมช่วงพักปฏิเสธการนัด ภาพนั้นจึงไม่ถูกตรวจอีกเลย — เจอจาก log ดีบักตอนทดสอบกับ Gemini จริง)
+      clearAll(H, G1, G2);
+      const before5b = requests.length;
+      quotaOnce = true;
+      writeText(H, 0.3);
+      const v3 = await G2.tryWait("rule_violation", null, 5000);
+      check("หลังโดน 429 แล้วตรวจใหม่เองตอนพักจบ → จับได้ (strike 3)", v3?.strike, 3);
+      check("คำขอแรกหลังเขียนโดน 429 จริง", requests[before5b]?.status, 429);
+
+      clearAll(H, G1, G2); // ทิ้ง rule_violation ของข้อ 5 ก่อนนับใหม่
+      mode = "fail";
+      writeText(H, 0.4);
+      await wait(700);
+      mode = "garbage";
+      writeText(H, 0.6);
+      await wait(700);
+      check("OCR พัง/ตอบมั่ว → ไม่ลงโทษ", (await G2.quiet("rule_violation", 1)).length, 0);
+      H.socket.emit("stroke_start", { x: 0.5, y: 0.5, color: "#000000", size: 6, tool: "pen" });
+      checkOk("OCR พังแล้วยังวาดต่อได้ (ส่งถึงคนทาย)", (await G2.tryWait("stroke_start", null, 1000)) !== null);
+      H.socket.emit("stroke_end");
+      G2.socket.emit("guess", { text: word });
+      checkOk("OCR พังแล้วยังทายถูกจนจบตาได้", (await G2.tryWait("round_end", null, 3000)) !== null);
+      for (const P of [H, G1, G2]) P.socket.disconnect();
+      mode = "text";
+
+      // ---------- โหมดทีม: ลงโทษแยกเลน ไม่ข้ามทีม ----------
+      const T = [await mk()];
+      const tRoom = await emitAck(T[0].socket, "create_room", { name: "TxtT0", avatar: 0, mode: "team", rounds: 1, drawTime: 90, challenges: ["none"] });
+      for (let i = 1; i < 4; i++) {
+        T.push(await mk());
+        await emitAck(T[i].socket, "join_room", { code: tRoom.code, name: `TxtT${i}`, avatar: i });
+      }
+      await wait(150);
+      clearAll(...T);
+      T[0].socket.emit("start_game");
+      const firstChooser = await Promise.race(T.map((P) => P.tryWait("choose_word", null, 5000).then((d) => (d ? { P, d } : new Promise(() => {}))))); // ใช้ tryWait: คนที่ไม่ได้ choose_word ไม่ทำให้ promise ค้าง reject
+      firstChooser.P.socket.emit("word_chosen", { word: firstChooser.d.options[0] });
+      const infos = await Promise.all(T.map((P) => P.wait("round_start", null, 3000)));
+      const lane = (team) => T.filter((P, i) => infos[i].team === team);
+      const drawerOf = (team) => lane(team).find((P) => P.socket.id === infos[T.indexOf(P)].drawerId);
+      const guesserOf = (team) => lane(team).find((P) => P !== drawerOf(team));
+      const tWord = (await drawerOf("A").wait("your_word")).word;
+      clearAll(...T);
+
+      // ทีม B วาดเส้นเดียว (ไม่ผ่านตัวกรอง จึงไม่เรียก OCR) · ทีม A เขียนตัวหนังสือ
+      const DB = drawerOf("B");
+      DB.socket.emit("stroke_start", { x: 0.5, y: 0.5, color: "#000000", size: 6, tool: "pen" });
+      DB.socket.emit("stroke_points", { points: [{ x: 0.9, y: 0.9 }] });
+      DB.socket.emit("stroke_end");
+      nextText = tWord;
+      writeText(drawerOf("A"), 0.1);
+      const vA = await guesserOf("A").wait("rule_violation", null, 4000);
+      check("ทีม A: คนทายในทีมได้ rule_violation", vA.strike, 1);
+      checkOk("ทีม A: กระดานทีม A ถูกล้าง", (await guesserOf("A").tryWait("canvas_history", (d) => d.items.length === 0, 1000)) !== null);
+      check("ทีม B ไม่ได้ rule_violation", (await guesserOf("B").quiet("rule_violation", 400)).length + (await drawerOf("B").quiet("rule_violation", 1)).length, 0);
+      check("กระดานทีม B ไม่ถูกล้าง (ไม่มี canvas_history)", (await guesserOf("B").quiet("canvas_history", 1)).length, 0);
+      checkOk("ทีม B ไม่ได้รับคำตอบเลย", !JSON.stringify(guesserOf("B").dump()).includes(tWord));
+      for (const P of T) P.socket.disconnect();
+    } finally {
+      for (const P of socks) P.socket.disconnect();
+      srv.kill();
+      stub.close();
+    }
+  });
+
   // ปิดทุก socket เพื่อให้โปรเซสจบได้
   for (const rec of [A, B, C, ...others]) rec.socket.disconnect();
+
+  await runPart("46. ล็อกอินเป็นทางเลือก — ไม่ตั้งค่า Firebase เลยก็เล่นได้ปกติแบบ Guest", async () => {
+    const authUrl = `http://localhost:${ALT_PORT}`;
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const authServer = spawn(process.execPath, ["index.js"], {
+      cwd: SERVER_DIR,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+        JDI_TEST_AUTH_BYPASS: "0",
+        PORT: ALT_PORT,
+        AI_MODE: "mock",
+        FIREBASE_API_KEY: "",
+        AUTH_SESSION_SECRET: "",
+      },
+    });
+    try {
+      let ready = false;
+      for (let i = 0; i < 80; i++) {
+        if (await fetch(`${authUrl}/healthz`).then((r) => r.ok).catch(() => false)) {
+          ready = true;
+          break;
+        }
+        await wait(100);
+      }
+      check("server ที่ไม่มี Firebase config ยังสตาร์ทและรายงานสุขภาพได้", ready, true);
+      if (!ready) return;
+      const status = await fetch(`${authUrl}/api/auth/me`).then((r) => r.json());
+      // enabled:false = ปุ่ม "เข้าสู่ระบบ" ฝั่งหน้าเว็บจะซ่อนไปเอง (ยังถูกต้องเหมือนเดิม) — แต่ "ปิด" ตรงนี้ไม่ได้แปลว่าเล่นไม่ได้
+      check("ไม่มี Firebase config → ปุ่มเข้าสู่ระบบปิด (enabled:false)", status.enabled, false);
+
+      const result = await new Promise((resolve) => {
+        const socket = io(authUrl, { transports: ["websocket"], reconnection: false, timeout: 3000 });
+        const timer = setTimeout(() => {
+          socket.close();
+          resolve("TIMEOUT");
+        }, 4000);
+        socket.on("connect_error", (error) => {
+          clearTimeout(timer);
+          socket.close();
+          resolve(error.message);
+        });
+        socket.on("connect", () => {
+          clearTimeout(timer);
+          resolve("CONNECTED");
+        });
+      });
+      // หัวใจของงานนี้: ล็อกอินเป็นทางเลือก ไม่ใช่ประตูบังคับ — ไม่ตั้งค่า Firebase เลยก็ยังต่อ socket ติดปกติ (ไม่ใช่ guest fallback ชั่วคราว แต่เป็นทางเดินหลัก)
+      check("Socket.IO ไม่มี session และไม่ตั้ง Firebase เลยก็ยังต่อติด (เล่นแบบ Guest)", result, "CONNECTED");
+
+      // ยืนยันว่า "ต่อติด" แปลว่าเล่นได้จริง ไม่ใช่แค่ handshake ผ่านเฉยๆ — สร้างห้องได้ปกติ ไม่มี accountId (เพราะไม่ได้ล็อกอิน)
+      const guestSocket = io(authUrl, {
+        transports: ["websocket"],
+        reconnection: false,
+        timeout: 3000,
+        auth: { playerKey: "guestkeyguestkeyguestkey12345678" },
+      });
+      await new Promise((resolve) => guestSocket.on("connect", resolve));
+      const created = await new Promise((resolve) => {
+        guestSocket.emit("create_room", { name: "Guest", avatar: 0 }, resolve);
+      });
+      check("Guest สร้างห้องได้ปกติไม่ต้องล็อกอิน", created?.ok, true);
+      guestSocket.close();
+    } finally {
+      authServer.kill();
+      await wait(300);
+    }
+  });
 }
 
-// กันเทสค้าง: ถ้าเกิน 300 วิให้หยุด (ข้อ 29 เพิ่มราว 20 วิ) (ไม่หน่วงไม่ให้โปรเซสปิดตัว)
+// กันเทสค้าง: ถ้าเกิน 420 วิให้หยุด (ชุดเทสทั้งชุดใช้ราว 4–5 นาทีแล้ว + ข้อ 45 ราว 15 วิ เดิม 300 วิเฉียดเพดาน) (ไม่หน่วงไม่ให้โปรเซสปิดตัว)
 // เดิมตั้งไว้ 90 วิ ตอนที่ชุดเทสทั้งชุดใช้ราว 35 วิ — ข้อ 5 เพิ่มการสร้างห้องจริง 30 ห้อง
 // กับการรอ "ต้องไม่มีอะไรมา" อีกหลายจุด รวมแล้วราว 50 วิ จึงขยับเพดานขึ้นให้ยังเหลือที่เผื่อเท่าของเดิม
 // (ข้อ 6 กับข้อ 15 กินเวลา 9 + 21 วิอยู่แล้ว เพราะเป็นการรอตัวจับเวลาจริงของเกม ลดไม่ได้)
 const watchdog = setTimeout(() => {
-  console.log("\n❌ เทสค้างเกิน 300 วินาที — ยกเลิก");
+  console.log("\n❌ เทสค้างเกิน 420 วินาที — ยกเลิก");
   stopServer();
   process.exit(1);
-}, 300000);
+}, 420000);
 watchdog.unref();
 
 main()

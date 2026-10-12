@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { socket } from "./socket";
 import { errorText } from "./messages";
@@ -15,7 +15,9 @@ import Game from "./screens/Game";
 import Leaderboard from "./screens/Leaderboard";
 import SoloAI from "./screens/SoloAI";
 import SetUp from "./screens/SetUp";
+const Login = lazy(() => import("./screens/Login"));
 import AudioDock from "./components/AudioDock";
+import AuthButton from "./components/AuthButton";
 import { roomCodeFromSearch } from "./invite";
 import Toast from "./components/Toast";
 
@@ -29,6 +31,7 @@ import Toast from "./components/Toast";
 function parseRoute(pathname) {
   const path = pathname.replace(/\/+$/, "") || "/";
   if (path === "/") return { screen: "lobby" };
+  if (path === "/login") return { screen: "login" };
   if (path === "/setup") return { screen: "setup" };
   if (path === "/leaderboard") return { screen: "leaderboard" };
   if (path === "/solo") return { screen: "solo" };
@@ -46,6 +49,7 @@ export default function App() {
   const routeCode = route.screen === "room" ? route.code : null;
 
   const [connected, setConnected] = useState(socket.connected);
+  const [auth, setAuth] = useState({ loading: true, enabled: false, user: null, error: null });
   const [room, setRoom] = useState(null); // RoomState ก้อนล่าสุดจาก server
   const [me, setMe] = useState(null); // { playerId, name, avatar, code } ของเครื่องนี้
   const [inGame, setInGame] = useState(false); // อยู่ในห้องแล้วเกมเริ่มหรือยัง (ห้องรอ ↔ หน้าเกม)
@@ -66,6 +70,28 @@ export default function App() {
   // เปิดจากลิงก์เชิญ /?room=12345 → หน้าแรกเปิดกล่องใส่รหัสให้เอง
   const inviteCode = route.screen === "lobby" ? roomCodeFromSearch(location.search) : null;
 
+  // ล็อกอินเป็นทางเลือก ไม่ใช่ของบังคับ — แค่ถามเฉยๆ ว่ามีใครล็อกอินค้างไว้ไหม (cookie) ไม่เคยกันไม่ให้เล่น
+  // ต่อ server ไม่ได้/ยังไม่ได้ตั้งค่า Firebase เลย = enabled:false → ปุ่ม "เข้าสู่ระบบ" ซ่อนไปเอง เกมเล่นได้ปกติทุกกรณี
+  useEffect(() => {
+    let active = true;
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((result) => {
+        if (active) setAuth({ loading: false, enabled: result.enabled === true, user: result.user ?? null, error: null });
+      })
+      .catch(() => {
+        if (active) setAuth({ loading: false, enabled: false, user: null, error: null });
+      });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (route.screen === "login" && auth.user) navigate("/", { replace: true });
+  }, [auth.user, navigate, route.screen]);
+
   // สถานะของเกมที่กำลังเล่น ผูก socket ไว้ที่นี่ (ไม่ใช่ในหน้า Game) เพื่อไม่ให้ event หลุด
   // ดูเหตุผลเต็มๆ ในคอมเมนต์ของ useGame
   const {
@@ -83,7 +109,7 @@ export default function App() {
     askRedo,
     askHint,
     bindCanvas,
-  } = useGame();
+  } = useGame(room?.settings?.teamNames);
   // โหมด Multiplayer vs AI: ผูก event ไว้ที่ App เหมือน useGame (event แรกมาก่อนหน้าจอเกมจะเกิด)
   const { mp, sendSnapshot: mpSnapshot } = useMpAi(me?.playerId);
 
@@ -264,11 +290,54 @@ export default function App() {
   }, [inGame]);
 
   const showGame = roomReady && inGame;
+  // returnTo: หน้าที่จะกลับไปหลังล็อกอินสำเร็จ (กดปุ่ม "เข้าสู่ระบบ" จากหน้าไหนก็กลับไปหน้านั้น)
+  const returnTo = route.screen === "login"
+    ? new URLSearchParams(location.search).get("returnTo") || "/"
+    : `${location.pathname}${location.search}`;
+
+  async function handleLogout() {
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      socket.disconnect();
+      setAuth({ loading: false, enabled: true, user: null, error: null });
+      socket.connect(); // ต่อใหม่ทันทีแบบ Guest — ออกจากระบบแล้วยังเล่นต่อได้เลย ไม่ต้องเด้งไปไหน
+    } catch (error) {
+      showToast(`ออกจากระบบไม่สำเร็จ (${error.message})`);
+    }
+  }
+
+  // /login เป็นหน้าปกติหน้าหนึ่ง ไม่ใช่ประตูที่บังคับผ่านก่อนเล่น — เข้าได้ตรงๆ หรือกดปุ่ม "เข้าสู่ระบบ" พาไปเอง
+  // มีปุ่ม "เล่นเลยแบบ Guest" ในหน้านี้เองให้กลับไปเล่นได้โดยไม่ต้องล็อกอิน
+  if (route.screen === "login") {
+    return (
+      <Suspense fallback={<div className="screen"><div className="panel">กำลังโหลดหน้าเข้าสู่ระบบ...</div></div>}>
+        <Login
+          enabled={auth.enabled}
+          error={auth.error}
+          returnTo={returnTo}
+          onAuthenticated={(user) => {
+            socket.disconnect();
+            setAuth({ loading: false, enabled: true, user, error: null });
+            socket.connect();
+          }}
+        />
+      </Suspense>
+    );
+  }
 
   return (
     <>
-      {/* ปุ่มเพลง/เสียงเอฟเฟกต์: หน้าเกม/Solo อยู่ในแถบบน (TopIcons) หน้าอื่นลอยมุมขวาบนของหน้า */}
-      {!showGame && route.screen !== "solo" && <AudioDock />}
+      {/* ปุ่มเพลง/เสียงเอฟเฟกต์: หน้าเกม/Solo อยู่ในแถบบน (TopIcons) หน้าอื่นลอยมุมขวาบนของหน้า
+          ปุ่มเข้าสู่ระบบ/ชิปบัญชี (ไม่บังคับ) อยู่ข้างๆ กันเฉพาะหน้าแรก — ซ่อนเองถ้ายังไม่ได้ตั้งค่า Firebase บน server */}
+      {!showGame && route.screen !== "solo" && (
+        <div className="top-dock">
+          {route.screen === "lobby" && (
+            <AuthButton enabled={auth.enabled} user={auth.user} avatar={profile.avatar} onLogout={handleLogout} />
+          )}
+          <AudioDock />
+        </div>
+      )}
       {route.screen === "lobby" && (
         <Lobby
           key={inviteCode ?? "home"} // ลิงก์เชิญเปลี่ยน = สร้างหน้าใหม่ให้กล่องเข้าห้องเปิดพร้อมรหัสนั้น
@@ -327,7 +396,7 @@ export default function App() {
       )}
 
       {roomReady && !inGame && (
-        <WaitingRoom room={room} me={me} messages={game.messages} onSend={sendGuess} onLeave={handleLeave} onEditProfile={() => setShowProfile(true)} />
+        <WaitingRoom room={room} me={me} messages={game.messages} onSend={sendGuess} onLeave={handleLeave} onEditProfile={() => setShowProfile(true)} onToast={showToast} />
       )}
 
       {showGame && room.settings.mode === "mpai" && (

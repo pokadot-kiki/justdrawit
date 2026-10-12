@@ -13,12 +13,12 @@ export const DIFFICULTY_CHOICES = [
 // ห้องเล่นกับเพื่อนมี "ผสม" (สุ่มจากทุกระดับปนกัน) เพิ่มเป็นค่าเริ่มต้น · Solo ไม่มีผสม (ยากขึ้นตามด่าน)
 export const ROOM_DIFFICULTY_CHOICES = [["mixed", "ผสม"], ...DIFFICULTY_CHOICES];
 
-// จำนวนทีมและความจุจากกฎร่วมของ server/client · เลือกจำนวนทีมในห้องรอ
+// จำนวนทีมและจำนวนคนขั้นต่ำต่อทีมจากกฎร่วมของ server/client (shared/teamRules.json) · เลือกจำนวนทีมในห้องรอ
 export const TEAM_IDS = teamRules.ids;
-export const TEAM_CAPACITY = teamRules.capacity;
+export const TEAM_MIN_PLAYERS = teamRules.minPlayers; // ทีมละอย่างน้อยกี่คนถึงเริ่มเกมได้ (ไม่มีเพดานต่อทีม — ใช้กฎห่างกันไม่เกิน 1 คน)
 export const TEAM_COUNT_CHOICES = TEAM_IDS.map((_, index) => index + 1).filter((count) => count >= teamRules.minTeams);
 
-// จำนวนผู้เล่นสูงสุดของโหมดที่ไม่ใช่ทีม (โหมดทีมคำนวณจากจำนวนทีม × ความจุต่อทีม)
+// จำนวนผู้เล่นสูงสุดของห้อง (ทุกโหมด · โหมดทีมต้องไม่ต่ำกว่า 2 × จำนวนทีม — server เช็ค)
 export const MAX_PLAYER_CHOICES = [4, 6, 8];
 export const DEFAULT_MAX_PLAYERS = 8;
 

@@ -13,7 +13,7 @@ async function teamGallery(room, teams, render = renderDrawing) {
       try { image = await render(actions); }
       catch (err) { failed = true; console.warn("เรนเดอร์ภาพทีมไม่สำเร็จ:", err.message); }
     }
-    return { team, name: room.teamNames?.[team] ?? `ทีม ${team}`, drawer: lane.roundDrawer,
+    return { team, name: room.settings?.teamNames?.[team] ?? `ทีม ${team}`, drawer: lane.roundDrawer,
       image, status: lane.canvasFrozen ? "incomplete" : failed ? "unavailable" : image ? "ok" : "missing" };
   }));
 }

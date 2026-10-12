@@ -16,6 +16,7 @@
 | Claude Code (agent เขียนโค้ด) ช่วงแรก | DeepSeek (deepseek-v4-flash) ผ่านหน้า Claude Code | เขียนโค้ด server และ client ช่วงแรก จนถึง Mini Challenge | ดมิสา |
 | Claude Code (agent เขียนโค้ด) ช่วงหลัง | Claude Opus 5.5, Claude Sonnet 5.5 และ Claude Sonnet 5 (แพ็กเกจ Claude Pro) | เขียนโค้ด เทสอัตโนมัติ แก้บั๊ก deploy ตรวจความปลอดภัย | ศรัณย์พัชร๋ |
 | agent ของเพื่อนในกลุ่ม (ส่งเป็น Pull Request #1 และ #2) | Claude , Gemini ,ChatGPT | รีเฟรชกลับห้อง ห้องสาธารณะ จำกัดความถี่ เครื่องมือสามเหลี่ยม ธีมหน้าตา | ธนกฤติ |
+| agent ของเพื่อนในกลุ่ม (ส่งเป็น Pull Request #3) | เติม | ช่วยเดาคำล่วงหน้าในช่องแชท ตอบด้วยเสียง (Speech-to-Text) ร้านค้าอวตาร+ระบบเหรียญ | ธนกฤติ |
 | AI ทำโปสเตอร์ | Claude | จัดหน้าโปสเตอร์จากเนื้อหาที่ทีมเขียน เนื้อหาตรวจกับเกมจริงแล้ว | พงศกร |
 
 ช่องที่เขียนว่า "เติม" ให้เพื่อนที่ใช้เครื่องมือนั้นกรอกเอง ชื่อรุ่นจริงดูได้ในแอปที่ใช้หรือคำสั่ง /status ใน Claude Code
@@ -136,6 +137,7 @@
 | The Quick, Draw! Dataset | Google | CC BY 4.0 | ภาพที่ AI วาดให้เราทาย (เล่นซ้ำภาพที่คนจริงเคยวาด) |
 | Children's March Theme | Cleyton Kauffman (OpenGameArt) | CC0 | เพลงพื้นหลัง |
 | ฟอนต์ Jersey 15, Chakra Petch, Prompt | Google Fonts | SIL Open Font License | ตัวหนังสือในเกม |
+| tnc_freq.txt, stopwords_th.txt ([PyThaiNLP](https://github.com/PyThaiNLP/pythainlp)) | PyThaiNLP project | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | คลังคำ "ช่วยเดาคำ" ในช่องทาย (คำเรียงตามความถี่จาก Thai National Corpus กรองคำฟังก์ชันออกด้วยรายการ stopword) ไม่เกี่ยวกับคลังคำของเกมเราเลย |
 | React, Vite, Node.js, Express, Socket.IO, ONNX Runtime, sharp | โครงการโอเพนซอร์ส | ตามแต่ละไลบรารี | โครงสร้างหน้าเว็บ server และการสื่อสาร |
 | Render, Upstash Redis | ผู้ให้บริการ | แพ็กเกจฟรี | โฮสต์เกมและเก็บคะแนน |
 

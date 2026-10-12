@@ -16,6 +16,7 @@ import { beginStroke, extendStroke, endStroke, clearBoard } from "../canvas/acti
 import { PAINT_COLORS, SIZE_DEFAULT, TOOLS } from "../canvas/palette";
 import { Icon } from "../components/Icons";
 import { Sparkles, PAGE_SPARKLES } from "../components/Critter";
+import GuessInput from "../components/GuessInput";
 
 // จังหวะส่งภาพให้ AI ดู (ใช้ร่วมกับ Multiplayer vs AI)
 import { SNAPSHOT_MS, SNAPSHOT_WIDTH, THINK_TIMEOUT_MS } from "../aiSnapshot";
@@ -78,7 +79,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
   const [difficulty, setDifficulty] = useState(boot?.difficulty ?? "easy");
   const [round, setRound] = useState(null); // { level, word, time, lives, aiMode, drawNext }
   const [watch, setWatch] = useState(null); // ช่วง 2: { level, time, lives, category } (ไม่มีคำตอบ)
-  const [answer, setAnswer] = useState(""); // ช่องพิมพ์ทายของช่วง 2
+  // ช่องพิมพ์ทายของช่วง 2 ย้ายไปเป็น state ภายใน GuessInput.jsx เอง (component เดียวกับที่ Chat.jsx ใช้)
   const [wrongAnswers, setWrongAnswers] = useState([]); // คำที่เราทายผิดในช่วง 2
   const [drawHint, setDrawHint] = useState(null); // คำใบ้ช่วง 2 (ช่องวรรณยุกต์จาก server) null = ยังไม่ถึงเวลา
   const [roundId, setRoundId] = useState(0); // นับขึ้นทุกด่าน ไว้สั่งล้างกระดาน
@@ -124,7 +125,6 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
     setGuesses([]);
     setDrawHint(null);
     setWrongAnswers([]);
-    setAnswer("");
     setResult(null);
     setThink(false);
   }
@@ -194,7 +194,6 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
       setWatch(null); // ล้างหมวด/คำใบ้ของช่วง 2 ด่านก่อน
       setDrawHint(null);
       setWrongAnswers([]);
-      setAnswer("");
       setRound(d);
       setLives(d.lives);
       setTimeLeft(d.time);
@@ -233,7 +232,6 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
       setLives(d.lives);
       setTimeLeft(d.time);
       setResult(null);
-      setAnswer("");
       setWrongAnswers([]);
       setDrawHint(null); // ช่องคำใบ้มาจาก server ตอนเวลาเหลือครึ่งหนึ่งเท่านั้น (client ไม่เดาเอง)
       canvasRef.current?.resetBoard();
@@ -278,8 +276,8 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
     const onError = (err) => {
       // AI ไม่ว่าง: ด่านเดินต่อ ไม่เสียชีวิต ส่งภาพใหม่ได้ (App โชว์ Toast ให้แล้ว)
       if (err?.code === "AI_UNAVAILABLE") setThink(false);
-      // ชื่อไม่ผ่าน: ยังไม่ได้เริ่มเกมจริง กลับไปกรอกใหม่
-      if (err?.code === "INVALID_NAME" && phaseRef.current === "starting") setPhase("intro");
+      // ชื่อไม่ผ่าน (ว่าง หรือมีคำไม่เหมาะสม): ยังไม่ได้เริ่มเกมจริง กลับไปกรอกใหม่
+      if ((err?.code === "INVALID_NAME" || err?.code === "INAPPROPRIATE_NAME") && phaseRef.current === "starting") setPhase("intro");
     };
     socket.on("ai_round_start", onRoundStart);
     socket.on("ai_guess", onGuess);
@@ -476,13 +474,10 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
     socket.emit("ai_start", { name, difficulty });
   }
 
-  // ช่วง 2: ส่งคำที่พิมพ์ให้ server ตัดสิน (ฝั่งนี้ไม่รู้คำตอบเลย)
-  function sendAnswer(e) {
-    e.preventDefault();
-    const text = answer.trim();
+  // ช่วง 2: ส่งคำที่พิมพ์ให้ server ตัดสิน (ฝั่งนี้ไม่รู้คำตอบเลย) — GuessInput เรียกมาพร้อมข้อความที่ตัด trim แล้ว
+  function sendAnswer(text) {
     if (phase !== "watch" || !text) return;
     socket.emit("ai_draw_guess", { text });
-    setAnswer("");
   }
 
   function handleLeave() {
@@ -714,21 +709,14 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
                     <p className="ai-box__past">ทายผิดไปแล้ว: {wrongAnswers.join(" · ")}</p>
                   )}
                 </div>
-                <form className="chat__form" onSubmit={sendAnswer}>
-                  <input
-                    className="input chat__input"
-                    value={answer}
-                    onChange={(e) => setAnswer(e.target.value)}
-                    maxLength={MAX_GUESS_CHARS}
-                    placeholder="พิมพ์คำตอบ แล้วกด Enter"
-                    autoComplete="off"
-                    aria-label="พิมพ์คำตอบ"
-                    autoFocus
-                  />
-                  <button type="submit" className="btn btn--primary" disabled={!answer.trim()}>
-                    ทาย
-                  </button>
-                </form>
+                <GuessInput
+                  onSend={sendAnswer}
+                  placeholder="พิมพ์คำตอบ แล้วกด Enter"
+                  inputAriaLabel="พิมพ์คำตอบ"
+                  submitLabel="ทาย"
+                  maxLength={MAX_GUESS_CHARS}
+                  focusKey={roundId}
+                />
                 <button type="button" className="link-btn ai-box__leave" onClick={() => setShowExit(true)}>
                   ออกจากเกม (ไม่บันทึกคะแนน)
                 </button>
@@ -834,7 +822,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
           <p className="solo-result solo-result--ok">
             {final.rank ? (
               <>
-                <Icon name="trophy" size={22} /> อันดับ {final.rank} ของตลอดกาล
+                <Icon name="trophy" size={22} /> อันดับ {final.rank} ของเดือนนี้
               </>
             ) : (
               "บันทึกคะแนนไม่สำเร็จ"

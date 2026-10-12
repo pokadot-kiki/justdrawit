@@ -5,7 +5,7 @@ import { randomName } from "../playerName";
 import { AvatarArt, Icon } from "../components/Icons";
 import { useEnterRoom } from "../hooks/useEnterRoom";
 import OptionRow from "../components/OptionRow";
-import { DIFFICULTY_CHOICES, ROOM_DIFFICULTY_CHOICES, VISIBILITY_CHOICES, TEAM_COUNT_CHOICES, TEAM_CAPACITY } from "../roomOptions";
+import { DIFFICULTY_CHOICES, ROOM_DIFFICULTY_CHOICES, VISIBILITY_CHOICES, TEAM_COUNT_CHOICES, TEAM_MIN_PLAYERS } from "../roomOptions";
 
 // หน้า SET UP (กดสร้างห้องแล้วมาหน้านี้): ซ้าย แผงตั้งค่า · ขวาบน การ์ดแข่งเดี่ยว/แข่งทีมคู่กัน
 // · ขวาล่าง กล่องใหญ่ "แข่งกับ AI" (ข้างในมีการ์ด SOLO VS AI กับ MULTIPLAYER VS AI) · ล่าง ปุ่มสร้างห้อง/เริ่มเกม (ตามภาพ setup-screen.png)
@@ -27,13 +27,13 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
   const [mode, setMode] = useState("classic"); // classic | team | mpai (Multiplayer vs AI สร้างห้อง) | ai (ai = Solo แข่งกับ AI ไม่สร้างห้อง)
   const [rounds, setRounds] = useState(3);
   const [drawTime, setDrawTime] = useState(60);
-  // จำนวนทีมเลือกในห้องรอ ไม่ตั้งที่นี่แล้ว — ห้องเริ่มที่จำนวนทีมต่ำสุดตามกฎร่วม
   const [difficulty, setDifficulty] = useState("mixed"); // ชุดคำของห้อง (ไม่เกี่ยวกับเวลา) · mixed ใช้ได้เฉพาะห้อง
   // ระดับเริ่มต้นของ Solo แยกจาก difficulty ของห้องโดยเจตนา (คนละความหมาย: ห้องคือ "ชุดคำทั้งเกม"
   // ส่วน Solo คือ "จุดเริ่มต้น" แล้วยากขึ้นเอง) สลับไปมาระหว่างโหมดจึงจำค่าของแต่ละฝั่งไว้คนละตัว ไม่ทับกัน
   const [soloLevel, setSoloLevel] = useState("easy");
   const [visibility, setVisibility] = useState("private");
   // Challenge เลือกเปิด/ปิดทีละใบในห้องรอ (การ์ด 4 ใบ) ไม่ตั้งที่นี่แล้ว — ห้องเริ่มด้วยชุดเริ่มต้นของ server
+  // จำนวนทีม: ไม่เลือกที่หน้านี้แล้ว — ห้องโหมดทีมเริ่มที่ 2 ทีมเสมอ (ค่าเริ่มต้นฝั่ง server) หัวห้องปรับต่อได้ในห้องรอ
   const { busy, enter } = useEnterRoom({ connected, onEntered, onError });
   const { name, avatar } = profile;
 
@@ -46,6 +46,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
       return;
     }
     const who = name.trim() || randomName(); // กันกรณีชื่อว่าง
+    // ไม่ส่ง teamCount ไปเลย — ห้องโหมดทีมจึงเริ่มที่ 2 ทีมเสมอ (ค่าเริ่มต้นฝั่ง server) หัวห้องค่อยปรับในห้องรอ
     enter(
       "create_room",
       { name: who, avatar, mode, rounds, drawTime, difficulty, visibility },
@@ -182,7 +183,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
             <span className="mode-card__desc">ทุกคนแข่งกันเอง ผลัดกันวาด คนอื่นพิมพ์ทาย ทายถูกเร็วได้คะแนนเยอะ</span>
           </ModeCard>
 
-          <ModeCard id="team" mode={mode} onPick={setMode} players={`${TEAM_COUNT_CHOICES[0] * TEAM_CAPACITY}–${TEAM_COUNT_CHOICES.at(-1) * TEAM_CAPACITY}`} tag="Team Battle">
+          <ModeCard id="team" mode={mode} onPick={setMode} players={`${TEAM_COUNT_CHOICES[0] * TEAM_MIN_PLAYERS}–${ROOM_MAX_PLAYERS}`} tag="Team Battle">
             <span className="mode-card__art" aria-hidden="true">
               <span className="mode-card__side mode-card__side--A">
                 <AvatarArt index={0} size={30} />
