@@ -162,8 +162,11 @@ export default function Login({ enabled, error, returnTo, onAuthenticated }) {
       <div className="auth-card panel">
         <Logo />
         <Ribbon tone="red">SIGN IN</Ribbon>
-        <h1>เข้าสู่ระบบก่อนเล่น</h1>
-        <p>เลือกเข้าสู่ระบบด้วย Google หรืออีเมล เกมจะเริ่มได้หลังยืนยันอีเมลแล้ว</p>
+        <h1>เข้าสู่ระบบ (ไม่บังคับ)</h1>
+        <p>เข้าสู่ระบบด้วย Google หรืออีเมล เพื่อให้คะแนนผูกกับบัญชีของคุณ — ไม่เข้าสู่ระบบก็เล่นได้ทุกโหมดเหมือนเดิม</p>
+        <button type="button" className="big-btn big-btn--pink auth-guest" onClick={() => navigate(target, { replace: true })}>
+          เล่นเลยแบบ Guest
+        </button>
         {(message || firebaseError) && (
           <p className="auth-message" role="alert">{message || firebaseError}</p>
         )}

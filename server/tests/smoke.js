@@ -4128,7 +4128,7 @@ async function main() {
   // ปิดทุก socket เพื่อให้โปรเซสจบได้
   for (const rec of [A, B, C, ...others]) rec.socket.disconnect();
 
-  await runPart("45. server ปฏิเสธ socket ที่ไม่มี Firebase session", async () => {
+  await runPart("45. ล็อกอินเป็นทางเลือก — ไม่ตั้งค่า Firebase เลยก็เล่นได้ปกติแบบ Guest", async () => {
     const authUrl = `http://localhost:${ALT_PORT}`;
     const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const authServer = spawn(process.execPath, ["index.js"], {
@@ -4156,7 +4156,8 @@ async function main() {
       check("server ที่ไม่มี Firebase config ยังสตาร์ทและรายงานสุขภาพได้", ready, true);
       if (!ready) return;
       const status = await fetch(`${authUrl}/api/auth/me`).then((r) => r.json());
-      check("ไม่มี Firebase config แล้ว login ถูกปิด ไม่ได้เปิดเล่นแบบ guest", status.enabled, false);
+      // enabled:false = ปุ่ม "เข้าสู่ระบบ" ฝั่งหน้าเว็บจะซ่อนไปเอง (ยังถูกต้องเหมือนเดิม) — แต่ "ปิด" ตรงนี้ไม่ได้แปลว่าเล่นไม่ได้
+      check("ไม่มี Firebase config → ปุ่มเข้าสู่ระบบปิด (enabled:false)", status.enabled, false);
 
       const result = await new Promise((resolve) => {
         const socket = io(authUrl, { transports: ["websocket"], reconnection: false, timeout: 3000 });
@@ -4171,11 +4172,25 @@ async function main() {
         });
         socket.on("connect", () => {
           clearTimeout(timer);
-          socket.close();
           resolve("CONNECTED");
         });
       });
-      check("Socket.IO ที่ไม่มี session และยังไม่ตั้ง OAuth ถูกปฏิเสธ", result, "AUTH_NOT_CONFIGURED");
+      // หัวใจของงานนี้: ล็อกอินเป็นทางเลือก ไม่ใช่ประตูบังคับ — ไม่ตั้งค่า Firebase เลยก็ยังต่อ socket ติดปกติ (ไม่ใช่ guest fallback ชั่วคราว แต่เป็นทางเดินหลัก)
+      check("Socket.IO ไม่มี session และไม่ตั้ง Firebase เลยก็ยังต่อติด (เล่นแบบ Guest)", result, "CONNECTED");
+
+      // ยืนยันว่า "ต่อติด" แปลว่าเล่นได้จริง ไม่ใช่แค่ handshake ผ่านเฉยๆ — สร้างห้องได้ปกติ ไม่มี accountId (เพราะไม่ได้ล็อกอิน)
+      const guestSocket = io(authUrl, {
+        transports: ["websocket"],
+        reconnection: false,
+        timeout: 3000,
+        auth: { playerKey: "guestkeyguestkeyguestkey12345678" },
+      });
+      await new Promise((resolve) => guestSocket.on("connect", resolve));
+      const created = await new Promise((resolve) => {
+        guestSocket.emit("create_room", { name: "Guest", avatar: 0 }, resolve);
+      });
+      check("Guest สร้างห้องได้ปกติไม่ต้องล็อกอิน", created?.ok, true);
+      guestSocket.close();
     } finally {
       authServer.kill();
       await wait(300);

@@ -93,7 +93,9 @@ function requestUser(req) {
 // ── ตัวตนผู้เล่นแบบถาวร (playerId) ──
 // socket.id เปลี่ยนทุกครั้งที่รีเฟรชหน้า จึงใช้เป็น "ตัวตน" ไม่ได้ ถ้าใช้ รีเฟรชทีเดียวก็กลายเป็นคนใหม่
 // client เก็บ "กุญแจลับ" (playerKey) ไว้ในแท็บ แล้วส่งมาตอนต่อ socket ทุกครั้ง (handshake.auth)
-// server ผูกกุญแจกับ Firebase UID ก่อนแปลงเป็น playerId ด้วย SHA-256
+// **ล็อกอินเป็นทางเลือก ไม่บังคับ** — ไม่มี session (ไม่ได้ล็อกอิน หรือยังไม่ได้ตั้งค่า Firebase เลยก็ได้) ยังต่อ socket และเล่นได้ปกติทุกโหมด
+// มี session ที่ถูกต้อง → ผูกกุญแจกับ Firebase UID ก่อนแปลงเป็น playerId ด้วย SHA-256 (เหมือนเดิม)
+// ไม่มี session → ทำงานเหมือนก่อนมีระบบล็อกอินเป๊ะ: playerId มาจากกุญแจอย่างเดียว ไม่มี accountId (เก็บคะแนนด้วยชื่อแทน)
 // ทำไมไม่ใช้กุญแจเป็น playerId ตรงๆ: playerId ถูกส่งให้ทุกคนในห้อง (อยู่ใน room_update)
 // ถ้ามันคือกุญแจด้วย ใครก็เอา id ของเพื่อนไป rejoin สวมรอยได้ · แปลงทางเดียวแล้วย้อนกลับไปหากุญแจไม่ได้
 // ไม่ส่งกุญแจมา (test.html / สคริปต์เทส) = ใช้ socket.id เหมือนเดิม และไม่มีสิทธิ์ rejoin
@@ -109,12 +111,12 @@ io.use((socket, next) => {
         name: "ผู้ทดสอบ",
       }
     : authSession.readSession(cookie, AUTH_SESSION_SECRET);
-  if (!user) return next(new Error(AUTH_CONFIGURED ? "AUTH_REQUIRED" : "AUTH_NOT_CONFIGURED"));
+  // user === null = เล่นแบบ Guest (ไม่ได้ล็อกอิน หรือไม่ได้ตั้งค่า Firebase บน server เลย) — ไม่ปฏิเสธการเชื่อมต่อ
   socket.data.user = user;
-  socket.data.accountId = crypto.createHash("sha256").update(`jdi:score-account:v1:${user.sub}`).digest("hex");
+  socket.data.accountId = user ? crypto.createHash("sha256").update(`jdi:score-account:v1:${user.sub}`).digest("hex") : null;
   socket.data.persistent = persistent;
-  socket.data.pid = socket.data.persistent
-    ? crypto.createHash("sha256").update(`${user.sub}:${key}`).digest("hex").slice(0, 20)
+  socket.data.pid = persistent
+    ? crypto.createHash("sha256").update(user ? `${user.sub}:${key}` : key).digest("hex").slice(0, 20)
     : socket.id;
   next();
 });
@@ -2341,8 +2343,9 @@ Promise.all([ai.init(), leaderboard.init()]).then(() => {
   const listenArgs = process.env.HOST ? [PORT, process.env.HOST] : [PORT];
   server.listen(...listenArgs, () => {
     console.log(`server พร้อมแล้ว ที่ http://localhost:${PORT}`);
+    // ล็อกอินเป็นทางเลือก ไม่ตั้งค่าก็เล่นได้ปกติทุกโหมด (ปุ่ม "เข้าสู่ระบบ" ฝั่งหน้าเว็บจะซ่อนไปเอง) — แค่แจ้งเฉยๆ ไม่ใช่ข้อผิดพลาด
     if (!AUTH_CONFIGURED && !TEST_AUTH_BYPASS) {
-      console.warn(`🔒 Firebase login ยังไม่พร้อม — ตั้งค่า ${AUTH_MISSING.join(", ")}`);
+      console.log(`เข้าสู่ระบบ (Firebase): ปิดอยู่ — ตั้งค่า ${AUTH_MISSING.join(", ")} เพื่อเปิด (ไม่ตั้งก็เล่นได้ปกติแบบ Guest)`);
     }
     const ips = lanAddresses();
     if (ips.length) {

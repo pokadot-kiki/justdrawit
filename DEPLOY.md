@@ -73,7 +73,9 @@ git push -u origin deploy   # ส่ง branch deploy ขึ้น GitHub (ค�
 ### 2.4 ใส่ Environment Variables
 เลื่อนลงไปส่วน **Environment Variables** (ถ้าไม่เห็นให้กด **Advanced**) กด **Add Environment Variable** ทีละตัว (ช่องซ้าย = Key, ช่องขวา = Value):
 
-ก่อนกรอก ให้ตั้ง Firebase Authentication:
+**ตัวแปร Firebase 6 ตัวด้านล่างไม่บังคับ** (ล็อกอินเป็นทางเลือก ดูหัวข้อ "ตั้งค่า Firebase Login" ใน README.md) — ข้ามได้เลยถ้ายังไม่อยากทำตอนนี้ เกมเล่นได้ปกติทุกโหมดแบบ Guest ปุ่ม "เข้าสู่ระบบ" จะซ่อนไปเอง ค่อยมาเพิ่มทีหลังได้โดยไม่กระทบของเดิม
+
+ถ้าจะเปิดใช้ ให้ตั้ง Firebase Authentication ก่อนกรอก:
 1. สร้าง Firebase project และเพิ่ม Web app
 2. ใน **Authentication → Sign-in method** เปิด **Email/Password** และ **Google**
 3. ใน **Authentication → Settings → Authorized domains** เพิ่มโดเมน Render จริง (เช่น `justdrawit.onrender.com`) และตรวจว่ามี `localhost` สำหรับพัฒนา
@@ -143,7 +145,7 @@ git push -u origin deploy   # ส่ง branch deploy ขึ้น GitHub (ค�
 |---|---|
 | Build ล้ม (แดง) | เปิด Logs ดูบรรทัดสุดท้ายก่อน error · กด **Manual Deploy → Clear build cache & deploy** ลองอีกครั้ง (ปัญหาเน็ตชั่วคราวเกิดได้) |
 | ใน log ขึ้น `AI Solo: โหมด mock` | โหลดโมเดลตอน build ไม่สำเร็จ (เว็บ Hugging Face ล่มชั่วคราว) เกมยังเล่นได้แต่ Solo จะเดาสุ่ม → กด **Manual Deploy → Clear build cache & deploy** ลองใหม่ |
-| หน้าเว็บแจ้งว่ายังไม่ได้ตั้งค่า Firebase | ตรวจ `FIREBASE_API_KEY`, `AUTH_SESSION_SECRET` และตัวแปร `VITE_FIREBASE_*` ว่าครบและเป็นค่าจาก Firebase project เดียวกัน แล้วกด Deploy ใหม่ |
+| ปุ่ม "เข้าสู่ระบบ" ไม่ขึ้นที่หน้าแรก (อยากเปิดใช้) | ตรวจ `FIREBASE_API_KEY`, `AUTH_SESSION_SECRET` และตัวแปร `VITE_FIREBASE_*` ว่าครบและเป็นค่าจาก Firebase project เดียวกัน แล้วกด Deploy ใหม่ (ไม่ตั้งเลยก็ไม่เป็นไร เกมเล่นได้ปกติแบบ Guest ปุ่มแค่ซ่อนไว้) |
 | Google แจ้งว่าโดเมนไม่ได้รับอนุญาต | เพิ่มโดเมน Render จริงใน **Firebase Authentication → Settings → Authorized domains** |
 | สมัครอีเมลแล้วเข้าเล่นไม่ได้ | เปิด Email/Password ใน Firebase Authentication และกดยืนยันอีเมลจากกล่องจดหมายก่อนเข้าสู่ระบบอีกครั้ง |
 | ใน log ขึ้น `ต่อ Upstash ไม่สำเร็จ` | ค่า `UPSTASH_REDIS_REST_URL` หรือ `..._TOKEN` ผิด/ติดช่องว่าง → ไปที่ Render → **Environment** → แก้ค่าให้ตรงกับ Upstash (ใช้ปุ่ม Copy) → Save (Render จะ deploy ใหม่เอง) · ระหว่างนี้คะแนนจะเก็บในไฟล์ (หายเมื่อรีสตาร์ท) |

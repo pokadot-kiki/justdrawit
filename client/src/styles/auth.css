@@ -27,6 +27,10 @@
   line-height: 1.6;
 }
 
+.auth-guest {
+  width: 100%;
+}
+
 .auth-google {
   width: 100%;
   min-height: 54px;
@@ -111,34 +115,84 @@
   font-weight: 700;
 }
 
-.auth-account {
-  position: fixed;
-  top: 12px;
-  left: 12px;
-  z-index: 40;
-  max-width: min(420px, calc(100vw - 90px));
+/* ปุ่ม "เข้าสู่ระบบ" (ยังไม่ได้ล็อกอิน) — อยู่ใน .top-dock ข้างปุ่มเพลง/เสียง (ดู theme.css) */
+.auth-btn {
+  min-height: 40px;
+  padding: 0 14px;
+  border: var(--border);
+  border-radius: var(--r-pill);
+  background: var(--cream);
+  color: var(--ink);
+  box-shadow: var(--shadow-xs);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* ล็อกอินแล้ว: ชิปอวตาร+ชื่อ กดเปิดเมนูโปรไฟล์ */
+.auth-chip-wrap {
+  position: relative;
+}
+
+.auth-chip {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px 6px 12px;
+  max-width: min(220px, calc(100vw - 150px));
+  min-height: 40px;
+  padding: 3px 12px 3px 4px;
   border: var(--border);
   border-radius: var(--r-pill);
   background: var(--cream);
   box-shadow: var(--shadow-xs);
-  font-size: 13px;
+  cursor: pointer;
 }
 
-.auth-account__name {
+.auth-chip__name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
 }
 
-.auth-account__logout {
-  min-height: 32px;
-  padding: 3px 10px;
-  border: 2px solid var(--ink);
-  border-radius: var(--r-pill);
+.auth-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 41;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: var(--border);
+  border-radius: var(--r-card);
+  background: var(--white);
+  box-shadow: var(--shadow);
+}
+
+.auth-menu__email {
+  margin: 0 0 4px;
+  padding: 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.auth-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--r-ctl);
   background: var(--tab-idle);
   color: var(--ink);
   cursor: pointer;
@@ -146,23 +200,12 @@
   font-weight: 700;
 }
 
-.auth-account__logout:disabled {
-  opacity: 0.55;
-}
-
 @media (max-width: 520px) {
   .auth-card {
     padding: 28px 18px;
   }
 
-  .auth-account {
-    max-width: calc(100vw - 78px);
-    top: 8px;
-    left: 8px;
-    padding-left: 8px;
-  }
-
-  .auth-account__logout {
-    padding-inline: 7px;
+  .auth-chip {
+    max-width: calc(100vw - 150px);
   }
 }

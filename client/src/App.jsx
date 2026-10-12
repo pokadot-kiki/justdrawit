@@ -12,6 +12,7 @@ import SoloAI from "./screens/SoloAI";
 import SetUp from "./screens/SetUp";
 const Login = lazy(() => import("./screens/Login"));
 import AudioDock from "./components/AudioDock";
+import AuthButton from "./components/AuthButton";
 import { roomCodeFromSearch } from "./invite";
 import Toast from "./components/Toast";
 
@@ -63,6 +64,8 @@ export default function App() {
   // เปิดจากลิงก์เชิญ /?room=12345 → หน้าแรกเปิดกล่องใส่รหัสให้เอง
   const inviteCode = route.screen === "lobby" ? roomCodeFromSearch(location.search) : null;
 
+  // ล็อกอินเป็นทางเลือก ไม่ใช่ของบังคับ — แค่ถามเฉยๆ ว่ามีใครล็อกอินค้างไว้ไหม (cookie) ไม่เคยกันไม่ให้เล่น
+  // ต่อ server ไม่ได้/ยังไม่ได้ตั้งค่า Firebase เลย = enabled:false → ปุ่ม "เข้าสู่ระบบ" ซ่อนไปเอง เกมเล่นได้ปกติทุกกรณี
   useEffect(() => {
     let active = true;
     fetch("/api/auth/me", { cache: "no-store" })
@@ -73,8 +76,8 @@ export default function App() {
       .then((result) => {
         if (active) setAuth({ loading: false, enabled: result.enabled === true, user: result.user ?? null, error: null });
       })
-      .catch((error) => {
-        if (active) setAuth({ loading: false, enabled: false, user: null, error: error.message });
+      .catch(() => {
+        if (active) setAuth({ loading: false, enabled: false, user: null, error: null });
       });
     return () => { active = false; };
   }, []);
@@ -111,11 +114,6 @@ export default function App() {
   useEffect(() => {
     const onConnect = () => setConnected(true);
     const onDisconnect = () => setConnected(false);
-    const onConnectError = (error) => {
-      if (error.message === "AUTH_REQUIRED" || error.message === "AUTH_NOT_CONFIGURED") {
-        setAuth({ loading: false, enabled: error.message === "AUTH_REQUIRED", user: null, error: null });
-      }
-    };
     // server ส่ง room_update ทุกครั้งที่มีคนเข้าออก แก้ตั้งค่า หรือคะแนนเปลี่ยน
     // หน้าจอแค่เอาค่าที่ได้ไปแสดง ไม่ต้องคำนวณเอง
     const onRoomUpdate = (next) => setRoom(next);
@@ -134,7 +132,6 @@ export default function App() {
 
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
-    socket.on("connect_error", onConnectError);
     socket.on("room_update", onRoomUpdate);
     socket.on("game_started", onGameStarted);
     socket.on("game_end", onGameEnd);
@@ -150,7 +147,6 @@ export default function App() {
     return () => {
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
-      socket.off("connect_error", onConnectError);
       socket.off("room_update", onRoomUpdate);
       socket.off("game_started", onGameStarted);
       socket.off("game_end", onGameEnd);
@@ -249,15 +245,26 @@ export default function App() {
   }, [inGame]);
 
   const showGame = roomReady && inGame;
-  const needsLogin = ["lobby", "setup", "room", "solo"].includes(route.screen);
+  // returnTo: หน้าที่จะกลับไปหลังล็อกอินสำเร็จ (กดปุ่ม "เข้าสู่ระบบ" จากหน้าไหนก็กลับไปหน้านั้น)
   const returnTo = route.screen === "login"
     ? new URLSearchParams(location.search).get("returnTo") || "/"
     : `${location.pathname}${location.search}`;
 
-  if ((needsLogin || route.screen === "login") && auth.loading) {
-    return <div className="screen"><div className="panel">กำลังตรวจสอบการเข้าสู่ระบบ...</div></div>;
+  async function handleLogout() {
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      socket.disconnect();
+      setAuth({ loading: false, enabled: true, user: null, error: null });
+      socket.connect(); // ต่อใหม่ทันทีแบบ Guest — ออกจากระบบแล้วยังเล่นต่อได้เลย ไม่ต้องเด้งไปไหน
+    } catch (error) {
+      showToast(`ออกจากระบบไม่สำเร็จ (${error.message})`);
+    }
   }
-  if ((needsLogin || route.screen === "login") && !auth.user) {
+
+  // /login เป็นหน้าปกติหน้าหนึ่ง ไม่ใช่ประตูที่บังคับผ่านก่อนเล่น — เข้าได้ตรงๆ หรือกดปุ่ม "เข้าสู่ระบบ" พาไปเอง
+  // มีปุ่ม "เล่นเลยแบบ Guest" ในหน้านี้เองให้กลับไปเล่นได้โดยไม่ต้องล็อกอิน
+  if (route.screen === "login") {
     return (
       <Suspense fallback={<div className="screen"><div className="panel">กำลังโหลดหน้าเข้าสู่ระบบ...</div></div>}>
         <Login
@@ -273,24 +280,19 @@ export default function App() {
       </Suspense>
     );
   }
-  if (route.screen === "login") return null;
-
-  async function handleLogout() {
-    try {
-      const response = await fetch("/api/auth/logout", { method: "POST" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      socket.disconnect();
-      setAuth({ loading: false, enabled: true, user: null, error: null });
-      navigate("/login", { replace: true });
-    } catch (error) {
-      showToast(`ออกจากระบบไม่สำเร็จ (${error.message})`);
-    }
-  }
 
   return (
     <>
-      {/* ปุ่มเพลง/เสียงเอฟเฟกต์: หน้าเกม/Solo อยู่ในแถบบน (TopIcons) หน้าอื่นลอยมุมขวาบนของหน้า */}
-      {!showGame && route.screen !== "solo" && <AudioDock />}
+      {/* ปุ่มเพลง/เสียงเอฟเฟกต์: หน้าเกม/Solo อยู่ในแถบบน (TopIcons) หน้าอื่นลอยมุมขวาบนของหน้า
+          ปุ่มเข้าสู่ระบบ/ชิปบัญชี (ไม่บังคับ) อยู่ข้างๆ กันเฉพาะหน้าแรก — ซ่อนเองถ้ายังไม่ได้ตั้งค่า Firebase บน server */}
+      {!showGame && route.screen !== "solo" && (
+        <div className="top-dock">
+          {route.screen === "lobby" && (
+            <AuthButton enabled={auth.enabled} user={auth.user} avatar={profile.avatar} onLogout={handleLogout} />
+          )}
+          <AudioDock />
+        </div>
+      )}
       {route.screen === "lobby" && (
         <Lobby
           key={inviteCode ?? "home"} // ลิงก์เชิญเปลี่ยน = สร้างหน้าใหม่ให้กล่องเข้าห้องเปิดพร้อมรหัสนั้น
@@ -302,8 +304,6 @@ export default function App() {
           // หน้า Lobby ส่ง "รหัส error" มา ที่นี่แปลงเป็นข้อความไทยก่อนโชว์
           onError={(code) => showToast(errorText(code))}
           onOpenSetup={() => navigate("/setup")}
-          user={auth.user}
-          onLogout={handleLogout}
         />
       )}
 
