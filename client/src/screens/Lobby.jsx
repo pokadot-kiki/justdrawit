@@ -64,7 +64,7 @@ export default function Lobby({
                 style={{ fontSize: "12px", padding: "4px 12px", background: "#fef08a", color: "#854d0e", border: "1px solid #eab308", fontWeight: "bold" }}
                 onClick={() => setShowShop(true)}
               >
-                🛍️ ร้านค้าอวตาร ({auth ? `${coins} 💰` : "Guest"})
+                ร้านค้าอวตาร ({auth ? `${coins} เหรียญ` : "Guest"})
               </button>
             </div>
           )}

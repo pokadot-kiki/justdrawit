@@ -30,12 +30,12 @@ export default function AvatarShopModal({ onClose, onSelectAvatar }) {
   return (
     <Modal labelledBy="shop-title" onClose={onClose}>
       <h2 className="modal__title" id="shop-title">
-        🛍️ ร้านค้าอวตาร (Avatar Shop)
+        ร้านค้าอวตาร (Avatar Shop)
       </h2>
 
       <div style={{ textAlign: "center", marginBottom: "16px" }}>
         <p style={{ fontSize: "16px", fontWeight: "bold" }}>
-          💰 ยอดเหรียญของคุณ: <span style={{ color: "#eab308" }}>{coins}</span> เหรียญ
+          ยอดเหรียญของคุณ: <span style={{ color: "#eab308" }}>{coins}</span> เหรียญ
         </p>
         {!auth && (
           <p style={{ color: "#ef4444", fontSize: "13px" }}>
@@ -79,7 +79,7 @@ export default function AvatarShopModal({ onClose, onSelectAvatar }) {
                   style={{ fontSize: "11px", padding: "2px 8px", background: "#eab308", color: "#ffffff" }}
                   onClick={() => handleBuy(idx)}
                 >
-                  ซื้อ ({AVATAR_COST} 💰)
+                  ซื้อ ({AVATAR_COST} เหรียญ)
                 </button>
               )}
             </div>

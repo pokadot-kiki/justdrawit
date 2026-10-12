@@ -137,6 +137,7 @@
 | The Quick, Draw! Dataset | Google | CC BY 4.0 | ภาพที่ AI วาดให้เราทาย (เล่นซ้ำภาพที่คนจริงเคยวาด) |
 | Children's March Theme | Cleyton Kauffman (OpenGameArt) | CC0 | เพลงพื้นหลัง |
 | ฟอนต์ Jersey 15, Chakra Petch, Prompt | Google Fonts | SIL Open Font License | ตัวหนังสือในเกม |
+| tnc_freq.txt, stopwords_th.txt ([PyThaiNLP](https://github.com/PyThaiNLP/pythainlp)) | PyThaiNLP project | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | คลังคำ "ช่วยเดาคำ" ในช่องทาย (คำเรียงตามความถี่จาก Thai National Corpus กรองคำฟังก์ชันออกด้วยรายการ stopword) ไม่เกี่ยวกับคลังคำของเกมเราเลย |
 | React, Vite, Node.js, Express, Socket.IO, ONNX Runtime, sharp | โครงการโอเพนซอร์ส | ตามแต่ละไลบรารี | โครงสร้างหน้าเว็บ server และการสื่อสาร |
 | Render, Upstash Redis | ผู้ให้บริการ | แพ็กเกจฟรี | โฮสต์เกมและเก็บคะแนน |
 
