@@ -970,7 +970,7 @@ const FRAME_RING = {
   frame_heart: "0 0 0 4px #e8553f",
 };
 // สี/ลายพื้นหลังหลังอวตาร — ตั้งใจทำแค่สีพื้นเรียบๆ ไม่ใช่ลายเต็มรูปแบบ (เร็วและอ่านง่ายทุกขนาด)
-const BG_COLOR = { bg_sky: "#bfe3f7", bg_dots: "#d9c9f6", bg_grass: "#cdeec2" };
+export const BG_COLOR = { bg_sky: "#bfe3f7", bg_dots: "#d9c9f6", bg_grass: "#cdeec2" };
 
 // index = อวตารสัตว์ 0-5 · equipped = { frame, hat, glasses, neck, bg } จาก economy_state (null = ยังไม่ล็อกอิน/ยังไม่มีของ → เหมือนเดิมทุกตัวอักษร)
 export function AvatarArtLayered({ index = 0, equipped, size = 40, label }) {

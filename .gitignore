@@ -74,6 +74,8 @@ web_modules/
 # คะแนนจริงของ Leaderboard ไม่ต้อง commit (ส่วน server/data/words.json ต้อง commit)
 # รวมไฟล์สำรอง/ชั่วคราวที่ leaderboard.js กับ seed สร้าง (scores.json.broken-* .backup-* .tmp)
 server/data/scores.json*
+# กระเป๋าเงิน coin (ไฟล์สำรองตอนไม่มี Upstash) — ข้อมูลจริง/ข้อมูลเทส ห้าม commit
+server/data/wallet.json*
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache

@@ -32,7 +32,7 @@ test("avatar and name form a keyboard-accessible profile trigger", () => {
 test("profile modal shows current preview, all real avatars, name, save and cancel", () => {
   const html = renderToStaticMarkup(React.createElement(ProfileModal, { profile: { name: "เจ้าของ", avatar: 2 }, onSave() {}, onClose() {} }));
   assert.match(html, /role="dialog"/);
-  assert.match(html, /แก้ไขโปรไฟล์/);
+  assert.match(html, /แต่งโปรไฟล์/);
   assert.equal((html.match(/class="profile-avatars__item/g) ?? []).length, AVATARS.length);
   assert.equal((html.match(/aria-pressed="true"/g) ?? []).length, 1);
   assert.match(html, /value="เจ้าของ"/);
