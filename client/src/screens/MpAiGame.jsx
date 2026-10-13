@@ -35,7 +35,7 @@ const OP_START = new Set(["stroke_start", "fill", "draw_shape", "clear_canvas"])
  * ช่วง 2 ดู AI วาด แล้วทายในแชทร่วมของห้อง (Chat + useGame เดิม) → เฉลย → รอบถัดไป/จบเกม
  * สถานะเกมมาจาก useMpAi (ผูกที่ App) — หน้านี้แค่แสดงผล ส่งภาพ และส่งข้อความ server ตัดสินทั้งหมด
  */
-export default function MpAiGame({ room, meId, mp, sendSnapshot, acceptChaosState, sendGuess, game, startGame, backToLobby, onLeave, onToast, onEditProfile }) {
+export default function MpAiGame({ room, meId, mp, sendSnapshot, acceptChaosState, sendGuess, game, startGame, backToLobby, onLeave, onToast, onEditProfile, onLeaderboard }) {
   const canvasRef = useRef(null);
   const [tool, setTool] = useState(TOOLS.PEN);
   const [color, setColor] = useState(PAINT_COLORS[0].hex); // เริ่มที่สีดำ (ตัวแรกในพาเลต)
@@ -396,6 +396,8 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, acceptChaosStat
           onBackToLobby={backToLobby}
           returnAt={game.returnAt}
           onLeave={onLeave}
+          onLeaderboard={onLeaderboard}
+          leaderboardStatus={game.leaderboardStatus?.[meId]}
         />
       )}
 

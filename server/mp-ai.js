@@ -23,6 +23,7 @@ const LEVELS = ["easy", "medium", "hard"];
 const renderDrawing = require("./mp-ai-render");
 const sharp = require("sharp");
 const chaos = require("./chaos");
+const { roomWordBank } = require("./word-categories");
 
 function envMs(name, fallback) {
   const v = process.env[name];
@@ -40,6 +41,7 @@ const OFFLINE_WAIT_MS = envMs("MPAI_OFFLINE_WAIT_MS", 5000);
 
 module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, makeHint, normalize, roomState, endGame, snapshotGapMs, drawBudgetRatio, drawColor, drawSize, rollChallenge, introMsFor, canvasPayload, createPrivateBoard, closePrivateStroke }) {
   const bank = () => ai.soloWords(wordBank); // คำที่มีชื่ออังกฤษให้โมเดลรู้จัก (ai-words.json) · ไม่มีไฟล์ใช้คลังคำปกติ
+  const bankForRoom = (room) => roomWordBank(bank(), room.settings.difficulty, room.settings.category);
   const online = (room) => room.players.filter((p) => p.connected !== false);
   // callback ที่ตั้งไว้ก่อนเปลี่ยนช่วง/ห้องถูกลบ/เกมจบ จะเห็น token ไม่ตรงแล้วเลิกทำงานเอง
   const alive = (room, token) => rooms.get(room.code) === room && room.status === "playing" && room.mp && room.mp.token === token;
@@ -191,7 +193,7 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
   function startDrawPhase(room) {
     const mp = room.mp;
     const token = nextToken(room);
-    const word = ai.pickWord(bank(), pickLevel(room), mp.usedWords);
+    const word = ai.pickWord(bankForRoom(room), pickLevel(room), mp.usedWords);
     if (!word) return finish(room); // ไม่มีคำเลย (ไม่น่าเกิด) → จบเกมแทนการค้าง
     mp.round++;
     chaos.phaseStart(mp.chaos, room.players, mp.round);
@@ -501,7 +503,7 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
     const mp = room.mp;
     const token = nextToken(room);
     chaos.phaseStart(mp.chaos, room.players, mp.round);
-    const picked = aiDrawings.pick(bank(), pickLevel(room), mp.usedWords);
+    const picked = aiDrawings.pick(bankForRoom(room), pickLevel(room), mp.usedWords);
     if (!picked) return afterWatch(room, token); // ไม่มีไฟล์ภาพ → ข้ามช่วง 2 ไม่ล่ม
     mp.usedWords.add(picked.word);
     const time = phaseTime(room);

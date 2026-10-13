@@ -1,7 +1,7 @@
 /* ==========================================================================
    ห้องรอ (WaitingRoom.jsx) — แถบบนเล็ก + กล่องใหญ่กล่องเดียว สองคอลัมน์
    ซ้าย = ตั้งค่าเกม + Mini Challenge · ขวา = รายชื่อ/ปุ่ม + แชท
-   จอ ≥ 900px อยู่หน้าเดียวไม่เลื่อน · ต่ำกว่านั้นเรียงบนลงล่างแล้วเลื่อนได้
+   ห้องรอขยายตามเนื้อหาและเลื่อนได้เมื่อสูงเกินหน้าจอ
    คลาสทั้งหมดขึ้นต้น lb- (ตรวจแล้วไม่ชนของเดิม)
    ========================================================================== */
 .category-screen { display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -289,6 +289,25 @@
   color: var(--muted);
   font-style: italic;
 }
+
+.lb-select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-ctl);
+  background: var(--white);
+  color: var(--ink);
+  font-family: var(--font-head);
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: var(--shadow-xs);
+  cursor: pointer;
+}
+
+.lb-select:disabled { cursor: default; opacity: 0.75; }
+.lb-select:focus-visible { outline: 3px solid var(--purple); outline-offset: 2px; }
 
 .lb-set__label {
   font-family: var(--font-head);
@@ -851,6 +870,14 @@
 /* ปุ่มเสียงลอยของทั้งแอปซ้ำกับปุ่มในแถบบนของหน้านี้ → ซ่อนตัวลอยเฉพาะตอนอยู่ห้องรอ */
 body:has(.screen--lb) .audio-dock {
   display: none;
+}
+
+/* The category selector adds a row. Let laptop lobbies grow and scroll instead
+   of shrinking Mini Challenge, the player list, or chat below readable size. */
+@media (min-width: 900px) {
+  .screen--lb { height: auto; min-height: 100%; }
+  .lb-box, .lb-cols { flex-shrink: 0; min-height: auto; }
+  .lb-left .lb-chal { flex-shrink: 0; min-height: auto; }
 }
 
 

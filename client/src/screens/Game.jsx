@@ -46,6 +46,7 @@ export default function Game({
   onToast,
   onEditProfile,
   onAchievements,
+  onLeaderboard,
 }) {
   const players = room.players;
   const isDrawer = game.drawerId === meId;
@@ -397,6 +398,8 @@ export default function Game({
           onBackToLobby={backToLobby}
           returnAt={game.returnAt}
           onLeave={onLeave}
+          onLeaderboard={onLeaderboard}
+          leaderboardStatus={game.leaderboardStatus?.[meId]}
         />
       )}
 

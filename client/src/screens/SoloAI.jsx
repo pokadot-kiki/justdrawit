@@ -68,7 +68,7 @@ const DIFFICULTIES = [
   ["hard", "ยาก"],
 ];
 
-export default function SoloAI({ initialName = "", boot = null, onName, onBack, profile, onEditProfile, onAchievements }) {
+export default function SoloAI({ initialName = "", boot = null, onName, onBack, profile, onEditProfile, onAchievements, onLeaderboard }) {
   // intro = กรอกชื่อ · starting = ส่ง ai_start แล้วรอด่านแรก · playing = ช่วง 1 เราวาด AI ทาย
   // watch = ช่วง 2 ดูภาพที่เล่นซ้ำแล้วพิมพ์ทาย · rest = พักระหว่างช่วง · over = จบเกม
   const [phase, setPhase] = useState("intro");
@@ -329,7 +329,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
     setLives(3);
     setFinal(null);
     setPhase("starting");
-    socket.emit("ai_start", { name: initialName, difficulty: boot.difficulty });
+    socket.emit("ai_start", { name: initialName, difficulty: boot.difficulty, avatar: profile?.avatar, avatarPhoto: profile?.avatarPhoto });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -481,7 +481,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
     setLives(3);
     setFinal(null);
     setPhase("starting");
-    socket.emit("ai_start", { name, difficulty });
+    socket.emit("ai_start", { name, difficulty, avatar: profile?.avatar, avatarPhoto: profile?.avatarPhoto });
   }
 
   // ช่วง 2: ส่งคำที่พิมพ์ให้ server ตัดสิน (ฝั่งนี้ไม่รู้คำตอบเลย) — GuessInput เรียกมาพร้อมข้อความที่ตัด trim แล้ว
@@ -839,6 +839,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
             )}
           </p>
           <div className="modal__actions">
+            <button type="button" className="btn" onClick={onLeaderboard}>ดู Leaderboard</button>
             <button type="button" className="btn btn--primary" onClick={start}>
               เล่นอีกครั้ง
             </button>

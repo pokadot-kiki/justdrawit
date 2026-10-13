@@ -8,11 +8,12 @@ const io = require(path.join(path.dirname(require.resolve("socket.io/package.jso
 const port = 3077;
 const url = `http://localhost:${port}`;
 const words = require("../data/words.json");
+const aiWords = require("../data/ai-words.json");
 const clients = [];
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "jdi-categories-"));
 const server = spawn(process.execPath, ["index.js"], {
   cwd: path.join(__dirname, ".."),
-  env: { ...process.env, PORT: String(port), SCORES_FILE: path.join(temp, "scores.json"), TEXT_CHECK: "off", REJOIN_GRACE_MS: "1000" },
+  env: { ...process.env, PORT: String(port), SCORES_FILE: path.join(temp, "scores.json"), TEXT_CHECK: "off", REJOIN_GRACE_MS: "1000", AI_MODE: "mock" },
   stdio: ["ignore", "pipe", "pipe"],
 });
 let serverLog = "";
@@ -58,23 +59,26 @@ async function scenario(mode, difficulty, category, count) {
   }
   await waitFor(() => host.last("room_update")?.players.length === count);
   assert.equal(host.last("room_update").settings.difficulty, difficulty);
-  host.socket.emit("start_game");
-  host.socket.emit("start_game");
-  await waitFor(() => group.every((client) => client.last("room_update")?.status === "category_selection"));
+  assert.equal(host.last("room_update").settings.category, null);
+  assert.equal(host.last("room_update").categoryHasWords, true);
+  assert.ok(host.last("room_update").wordCategories.some((item) => item.id === category));
+  guest.socket.emit("update_settings", { ...guest.last("room_update").settings, category });
+  await waitFor(() => guest.last("game_error")?.code === "NOT_HOST");
+  assert.equal(host.last("room_update").settings.category, null);
+  const updatesBeforeInvalid = host.events.filter((event) => event.name === "room_update").length;
+  host.socket.emit("update_settings", { ...host.last("room_update").settings, category: "ไม่มีหมวด" });
+  await waitFor(() => host.events.filter((event) => event.name === "room_update").length > updatesBeforeInvalid);
+  assert.equal(host.last("room_update").settings.category, null);
+  host.socket.emit("update_settings", { ...host.last("room_update").settings, category });
+  await waitFor(() => group.every((client) => client.last("room_update")?.settings.category === category));
   guest.socket.disconnect();
   guest = await connect(`category-${mode}-1-persistent-key`);
   group[1] = guest;
   assert.equal((await ack(guest.socket, "rejoin", { code: created.code })).ok, true);
-  await waitFor(() => guest.last("room_update")?.status === "category_selection");
-  assert.equal(group.some((client) => client.last("game_started")), false);
-  assert.equal(group.some((client) => client.last("choose_word")), false);
-  assert.equal(group.some((client) => client.last("timer")), false);
-  assert.equal((await ack(guest.socket, "select_category", { category })).error, "NOT_HOST");
-  assert.equal((await ack(host.socket, "select_category", { category: "อื่นๆ" })).error, "INVALID_CATEGORY");
-  assert.equal(host.last("room_update").status, "category_selection");
-  const result = await ack(host.socket, "select_category", { category });
-  assert.equal(result.ok, true);
-  assert.equal((await ack(host.socket, "select_category", { category })).error, "INVALID_GAME_STATE");
+  await waitFor(() => guest.last("room_update")?.settings.category === category);
+  assert.equal(guest.last("room_update").status, "lobby");
+  host.socket.emit("start_game");
+  host.socket.emit("start_game");
   await waitFor(() => group.every((client) => client.last("room_update")?.status === "playing"));
   assert.equal(group.every((client) => client.last("room_update")?.category === category), true);
   await waitFor(() => group.some((client) => client.last("choose_word")));
@@ -85,10 +89,27 @@ async function scenario(mode, difficulty, category, count) {
   console.log(`ผ่าน: ${mode} ${difficulty} ${category}`);
 }
 
+async function mpAiScenario() {
+  const host = await connect("category-mpai-host-persistent-key");
+  const guest = await connect("category-mpai-guest-persistent-key");
+  const created = await ack(host.socket, "create_room", { name: "AIHost", mode: "mpai", difficulty: "hard", rounds: 1, challenges: ["none"] });
+  assert.equal(created.ok, true);
+  assert.equal((await ack(guest.socket, "join_room", { code: created.code, name: "AIGuest" })).ok, true);
+  await waitFor(() => host.last("room_update")?.players.length === 2);
+  host.socket.emit("update_settings", { ...host.last("room_update").settings, category: "สิ่งของ" });
+  await waitFor(() => guest.last("room_update")?.settings.category === "สิ่งของ");
+  host.socket.emit("start_game");
+  const draw = await waitFor(() => host.last("mpai_draw_start"));
+  assert.ok(aiWords.hard.some((item) => item.word === draw.word && item.category === "สิ่งของ"));
+  assert.equal(guest.last("room_update").settings.category, "สิ่งของ");
+  console.log("ผ่าน: mpai hard สิ่งของ");
+}
+
 (async () => {
   await waitFor(async () => fetch(`${url}/healthz`).then((res) => res.ok).catch(() => false), 8000);
   await scenario("classic", "hard", "สัตว์", 2);
   await scenario("team", "mixed", "อาหาร", 4);
+  await mpAiScenario();
   console.log("Word categories ผ่านทั้งหมด");
 })().catch((error) => {
   console.error(error);

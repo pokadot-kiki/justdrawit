@@ -114,7 +114,7 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
   const others = room.players.filter((p) => p.id !== room.hostId);
   const allReady = others.length > 0 && others.every((p) => p.ready);
   const enoughPlayers = teamMode ? teamsReady : room.players.length >= 2;
-  const canStart = enoughPlayers && allReady && (!teamMode || teamsBalanced);
+  const canStart = enoughPlayers && allReady && (!teamMode || teamsBalanced) && room.categoryHasWords !== false;
 
   // ลิงก์เชิญ: เพื่อนเปิดแล้วหน้าแรกเติมรหัสห้องให้เอง
   async function copyLink() {
@@ -194,40 +194,48 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
 
   // กล่องย่อยของการ์ดตั้งค่า (มีเลขกำกับ) — คนที่ไม่ใช่หัวห้องกดไม่ได้ · wide = กว้างเต็มแถว
   // locked = ใช้ไม่ได้ในสถานการณ์นี้ (เช่น "จำนวนทีม" ตอนไม่ได้อยู่โหมดแข่งทีม) กดไม่ได้แม้เป็นหัวห้อง
-  function Choice({ no, title, wide = false, className = "", label, choices, value, onChange, locked = false, note }) {
+  function Choice({ no, title, wide = false, className = "", label, choices, value, onChange, locked = false, note, dropdown = false }) {
     return (
       <div className={`lb-set${wide ? " lb-set--wide" : ""}${locked ? " lb-set--locked" : ""}${className ? ` ${className}` : ""}`}>
         <span className="lb-set__label">
           <b>{no}</b> {title}
         </span>
-        <div className="lb-seg" role="group" aria-label={label}>
-          {choices.map(([v, text]) => (
-            <button
-              key={String(v)}
-              type="button"
-              className={value === v ? "seg seg--active" : "seg"}
-              aria-pressed={value === v}
-              disabled={!isHost || locked}
-              onClick={() => onChange(v)}
-            >
-              {text}
-            </button>
-          ))}
-        </div>
+        {dropdown ? (
+          <select className="lb-select" aria-label={label} value={value ?? ""} disabled={!isHost || locked} onChange={(event) => onChange(event.target.value || null)}>
+            {choices.map(([v, text]) => <option key={v ?? "all"} value={v ?? ""}>{text}</option>)}
+          </select>
+        ) : (
+          <div className="lb-seg" role="group" aria-label={label}>
+            {choices.map(([v, text]) => (
+              <button
+                key={String(v)}
+                type="button"
+                className={value === v ? "seg seg--active" : "seg"}
+                aria-pressed={value === v}
+                disabled={!isHost || locked}
+                onClick={() => onChange(v)}
+              >
+                {text}
+              </button>
+            ))}
+          </div>
+        )}
         {note && <p className="lb-set__note">{note}</p>}
       </div>
     );
   }
 
   const s = room.settings;
+  const categoryChoices = [[null, "ทุกหมวดหมู่"], ...(room.wordCategories ?? []).map(({ id, label, icon }) => [id, `${icon} ${label}`])];
   // กล่องตั้งค่าตามลำดับที่แสดง — เลขกำกับนับจากลำดับจริง (1, 2, 3, …) ไม่มีเลขแทรกอย่าง "1.5" ตอนโหมดทีมเพิ่มกล่องจำนวนทีม
   // โหมดกว้างเต็มแถว (มี 3 ตัวเลือก) · กล่องที่เหลือเรียงสองคอลัมน์ ถ้าเป็นเลขคี่ กล่องสุดท้ายกว้างเต็มแถว ไม่เหลือช่องว่าง
   const restBoxes = [
     { key: "teamCount", title: "จำนวนทีม", label: "จำนวนทีม", choices: TEAM_COUNT_CHOICES.map((n) => [n, `${n} ทีม`]), value: s.teamCount ?? TEAM_COUNT_CHOICES[0], onChange: (teamCount) => changeSetting({ teamCount }), locked: !teamMode, note: !teamMode ? "ใช้เฉพาะโหมดแข่งทีม" : null },
     { key: "drawTime", title: "เวลาต่อตา (วิ)", label: "เวลาวาดต่อตา", choices: TIME_CHOICES.map((n) => [n, n]), value: s.drawTime, onChange: (drawTime) => changeSetting({ drawTime }) },
     { key: "rounds", title: "จำนวนรอบ", label: "จำนวนรอบ", choices: ROUND_CHOICES.map((n) => [n, n]), value: s.rounds, onChange: (rounds) => changeSetting({ rounds }) },
-    { key: "difficulty", title: "ความยากของคำ", label: "ระดับความยากของคำ", choices: ROOM_DIFFICULTY_CHOICES, value: s.difficulty, onChange: (difficulty) => changeSetting({ difficulty }) },
     { key: "maxPlayers", title: "จำนวนผู้เล่นสูงสุด", label: "จำนวนผู้เล่นสูงสุด", choices: MAX_PLAYER_CHOICES.map((n) => [n, n]), value: s.maxPlayers ?? DEFAULT_MAX_PLAYERS, onChange: (maxPlayers) => changeSetting({ maxPlayers }) },
+    { key: "difficulty", title: "ความยากของคำ", label: "ระดับความยากของคำ", choices: ROOM_DIFFICULTY_CHOICES, value: s.difficulty, onChange: (difficulty) => changeSetting({ difficulty }) },
+    { key: "category", title: "หมวดหมู่คำศัพท์", label: "หมวดหมู่คำศัพท์", choices: categoryChoices, value: s.category, onChange: (category) => changeSetting({ category }), dropdown: true, note: room.categoryHasWords === false ? "ไม่มีคำศัพท์สำหรับหมวดและระดับนี้ กรุณาเปลี่ยนตัวเลือก" : null },
     { key: "visibility", title: "ประเภทห้อง", label: "ประเภทห้อง", choices: VISIBILITY_CHOICES, value: s.visibility, onChange: (visibility) => changeSetting({ visibility }) },
   ].filter(Boolean);
   if (restBoxes.length % 2 === 1) restBoxes[restBoxes.length - 1].wide = true;
@@ -242,6 +250,8 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
         : "ต้องมีผู้เล่นอย่างน้อย 2 คนจึงเริ่มได้"
       : teamMode && !teamsBalanced
         ? "ทีมยังไม่สมดุล (ต่างกันเกิน 1 คน) — กดปุ่ม \"จัดทีมให้สมดุล\" หรือย้ายคนเอง"
+        : room.categoryHasWords === false
+          ? "ไม่มีคำศัพท์ในหมวดนี้สำหรับระดับความยากที่เลือก กรุณาเปลี่ยนหมวดหรือความยาก"
         : !allReady
           ? 'รอผู้เล่นคนอื่นกด "พร้อม" ให้ครบ'
           : "ทุกคนพร้อมแล้ว เริ่มเกมได้เลย!"
@@ -290,7 +300,7 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
                 <h2 className="lb-card__title">ตั้งค่าเกม</h2>
                 {!isHost && <span className="lb-count">ดูอย่างเดียว</span>}
               </div>
-              {/* 2 คอลัมน์ 7 กล่อง: โหมด|จำนวนทีม · เวลาต่อตา|จำนวนรอบ · ความยากของคำ|จำนวนผู้เล่นสูงสุด · ประเภทห้อง (เต็มแถว)
+              {/* 2 คอลัมน์: ความยากของคำและหมวดหมู่คำศัพท์อยู่แถวเดียวกัน; ประเภทห้องเต็มแถวล่างสุด
                   "จำนวนทีม" แยกเป็นกล่องของตัวเองเสมอ (ไม่ซ้อนในกล่องโหมดอีกต่อไป) โผล่ตลอดแต่ล็อกไว้ตอนแข่งเดี่ยว กันหน้ากระโดดตอนสลับโหมด */}
               <div className="lb-settings__grid">
                 {settingBoxes.map((box, i) => (

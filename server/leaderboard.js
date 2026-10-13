@@ -2,7 +2,7 @@
 // เก็บคะแนนโหมด Solo ไว้ในไฟล์ JSON ไฟล์เดียว (ไม่ใช้ database เพื่อให้ทันเวลา)
 // ไฟล์นี้ไม่ผูกกับ socket หรือ express เลย จึง require ไปใช้ได้ทั้งจาก index.js สคริปต์ seed และเทส
 //
-// สองโหมดที่เก็บ (API ภายนอกเหมือนกันทุกตัวอักษร — saveScore/getLeaderboard/rankOf ยังเป็นฟังก์ชันปกติไม่ใช่ async):
+// วิธีเก็บสองแบบ (API saveScore/getLeaderboard/rankOf ยังเป็นฟังก์ชันปกติไม่ใช่ async):
 //   1) ไฟล์ server/data/scores.json  — ค่าเริ่มต้น ใช้ตอนเล่นในเครื่อง
 //   2) Upstash Redis (HTTP) — เปิดเมื่อตั้ง UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN ใช้ตอน deploy บน Render
 //      เพราะดิสก์ของ Render แพ็กเกจฟรีหายทุกครั้งที่รีสตาร์ท/หลับ/deploy ใหม่
@@ -34,11 +34,10 @@ function resolveMonth(month) {
   const now = currentMonthKey();
   return typeof month === "string" && month.slice(0, 4) === now.slice(0, 4) ? month : now;
 }
-// สองกระดานแยกกัน: "solo" = แข่งกับ AI · "multi" = เล่นกับเพื่อนในห้อง
-// เก็บในที่เดียวกัน (ไฟล์/Upstash ก้อนเดิม) แยกด้วยช่อง board ของแต่ละแถว · แถวเก่าที่ไม่มีช่องนี้ = solo
-const BOARDS = ["solo", "multi"];
+// กระดานใหม่แยกตามโหมดจริง; "multi" เก็บไว้ให้อ่านข้อมูลเก่าที่แยกโหมดไม่ได้
+const BOARDS = ["classic", "team", "solo", "mpai", "multi"];
 const isValidBoard = (board) => BOARDS.includes(board);
-const boardOf = (row) => (row.board === "multi" ? "multi" : "solo");
+const boardOf = (row) => BOARDS.includes(row.board) ? row.board : "solo";
 
 // ---------- โหมด Upstash Redis ----------
 let cache = null; // null = โหมดไฟล์ · array = โหมด Upstash (คะแนนทั้งหมดในหน่วยความจำ)
@@ -200,13 +199,15 @@ const ACCOUNT_ID_RE = /^[a-f0-9]{64}$/;
 // บันทึกคะแนนหนึ่งเกม — ข้อ 7 (Solo) เรียกตอนจบเกม **server เป็นคนเรียกเท่านั้น** client ส่งคะแนนเองไม่ได้
 // เวลาเล่น (playedAt) server ใส่เอง ไม่รับจากข้างนอก
 // คืนแถวที่บันทึก หรือ null ถ้าชื่อว่าง/บันทึกไม่สำเร็จ (ไม่ throw ให้เกมล่ม)
-// board: "multi" = คะแนนจากเกมห้อง (index.js เรียกตอน endGame) · ไม่ใส่ = solo
-function saveScore({ name, score, levelReached, board, accountId } = {}, playedAt = new Date()) {
+// board: classic/team/mpai/solo ตามโหมดที่จบจริง; multi เป็นข้อมูลเก่าที่แยกโหมดไม่ได้
+function saveScore({ name, score, levelReached, board, accountId, avatar, avatarPhoto, outfit, won, gameId } = {}, playedAt = new Date()) {
   const cleanedName = cleanName(name);
   if (!cleanedName) return null;
   try {
     backupIfBroken();
     const rows = loadScores();
+    if (typeof gameId === "string" && ACCOUNT_ID_RE.test(accountId) &&
+      rows.some((item) => item.accountId === accountId && item.gameId === gameId && boardOf(item) === (board || "solo"))) return null;
     const row = {
       id: rows.reduce((max, r) => Math.max(max, Number(r.id) || 0), 0) + 1,
       name: cleanedName,
@@ -215,7 +216,12 @@ function saveScore({ name, score, levelReached, board, accountId } = {}, playedA
       playedAt: formatPlayedAt(playedAt),
     };
     if (typeof accountId === "string" && ACCOUNT_ID_RE.test(accountId)) row.accountId = accountId;
-    if (board === "multi") row.board = "multi"; // solo ไม่ใส่ช่องนี้ แถวจึงหน้าตาเหมือนเดิมทุกตัวอักษร
+    if (board && isValidBoard(board)) row.board = board;
+    if (Number.isInteger(avatar) && avatar >= 0 && avatar <= 9) row.avatar = avatar;
+    if (typeof avatarPhoto === "string" && avatarPhoto.startsWith("https://")) row.avatarPhoto = avatarPhoto;
+    if (outfit && typeof outfit === "object") row.outfit = outfit;
+    if (won === true) row.won = true;
+    if (typeof gameId === "string" && gameId.length <= 100) row.gameId = gameId;
     rows.push(row);
     writeScores(rows);
     return row;
@@ -245,19 +251,20 @@ function compareRows(a, b) {
   );
 }
 
-// หนึ่งบัญชีหนึ่งแถว; คะแนนเก่าที่ยังไม่มี accountId จัดกลุ่มด้วยชื่อเดิมไปก่อน
+// หนึ่งบัญชีหนึ่งแถว; แถว Guest เก่ายังคงอยู่ในที่เก็บแต่ไม่แสดงบนกระดาน
 // เรียงตามกติกาเดียวกับ compareRows · month = "YYYY-MM" หรือ null (ตลอดกาล)
 // ถ้าใส่ month จะเลือก "เกมที่ดีที่สุดในเดือนนั้น" ไม่ใช่ของตลอดกาล
 function bestPerAccount(month = null, board = "solo") {
   const groups = new Map();
   for (const r of loadScores()) {
     if (boardOf(r) !== board) continue; // คนละกระดาน ไม่เอามาปนกัน
+    if (!ACCOUNT_ID_RE.test(r.accountId ?? "")) continue; // แถวเก่าแบบ Guest ไม่ขึ้นกระดาน
     if (month && !r.playedAt.startsWith(month + "-")) continue;
-    const key = typeof r.accountId === "string" && ACCOUNT_ID_RE.test(r.accountId)
-      ? `account:${r.accountId}`
-      : `name:${r.name}`;
-    const group = groups.get(key) || { best: null, latest: null };
+    const key = r.accountId;
+    const group = groups.get(key) || { best: null, latest: null, games: 0, wins: 0 };
     if (!group.best || compareRows(r, group.best) < 0) group.best = r;
+    group.games++;
+    if (r.won === true) group.wins++;
     if (
       !group.latest ||
       r.playedAt > group.latest.playedAt ||
@@ -266,7 +273,7 @@ function bestPerAccount(month = null, board = "solo") {
     groups.set(key, group);
   }
   return [...groups.values()]
-    .map(({ best, latest }) => ({ ...best, name: latest.name }))
+    .map(({ best, latest, games, wins }) => ({ ...best, name: latest.name, avatar: latest.avatar, avatarPhoto: latest.avatarPhoto, outfit: latest.outfit, games, wins }))
     .sort(compareRows);
 }
 
@@ -279,6 +286,7 @@ function getLeaderboard(month = null, board = "solo", viewerAccountId = null) {
     top: bestPerAccount(month, board)
       .slice(0, TOP_LIMIT)
       .map((r, i) => ({ rank: i + 1, name: r.name, score: r.score, levelReached: r.levelReached,
+        avatar: r.avatar ?? 0, avatarPhoto: r.avatarPhoto ?? null, outfit: r.outfit ?? null, games: r.games, wins: r.wins,
         ...(viewerAccountId && r.accountId === viewerAccountId ? { isMe: true } : {}) })),
   };
 }

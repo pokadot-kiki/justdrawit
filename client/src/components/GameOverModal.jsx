@@ -11,7 +11,7 @@ const MEDALS = ["medal1", "medal2", "medal3"];
 
 // จบเกม — แท่นรางวัลอันดับ 1-3 และอันดับครบทุกคนของโหมดรายคน
 // ทุกคนมีปุ่มกลับห้องรอ (back_to_lobby → server พาทุกคนกลับพร้อมกัน หรือพาเองเมื่อครบเวลา) กับกลับหน้าแรก (leave_room) · หัวห้องมีปุ่มเล่นอีกรอบเลย (start_game)
-export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLobby, returnAt = null, onLeave, teamRanking = null, winner = null, myTeam = null, meId = null, teamNames = {} }) {
+export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLobby, onLeaderboard, leaderboardStatus = null, returnAt = null, onLeave, teamRanking = null, winner = null, myTeam = null, meId = null, teamNames = {} }) {
   // โหมดทีม: ประกาศทีมที่ชนะ (เสมอ = winner เป็น null) พลุเล่นเหมือนเดิมเพราะอยู่ในกล่องเดียวกัน
   const teamMode = Boolean(teamRanking);
   const teamName = (t) => teamNames[t] || `ทีม ${t}`;
@@ -186,7 +186,11 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
         </div>
       )}
 
+      {leaderboardStatus === "guest" && <p className="modal__note">เล่นแบบ Guest: คะแนนไม่ขึ้น Leaderboard กรุณาเข้าสู่ระบบก่อนเกมถัดไป</p>}
+      {leaderboardStatus === "error" && <p className="modal__note">บันทึกคะแนนลง Leaderboard ไม่สำเร็จ</p>}
+      {leaderboardStatus === "not_participant" && <p className="modal__note">เข้าหลังเริ่มเกม จึงยังไม่บันทึกอันดับของเกมนี้</p>}
       <div className="modal__actions">
+        {onLeaderboard && <button className="btn" type="button" onClick={onLeaderboard}>ดู Leaderboard</button>}
         <button className="btn btn--primary" type="button" onClick={onBackToLobby}>
           กลับห้องรอ
         </button>

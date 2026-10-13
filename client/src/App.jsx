@@ -361,6 +361,7 @@ export default function App() {
   }
 
   const goHome = () => navigate("/");
+  const openLeaderboard = (board) => navigate(`/leaderboard?board=${encodeURIComponent(board)}`);
   // อยู่ที่ URL ของห้อง และข้อมูลห้องนั้นมาถึงแล้ว
   const roomReady = route.screen === "room" && me && room && room.code === routeCode;
   // กลับมาห้องรอหลังจบเกม (inGame จริง→เท็จ ทั้งที่ยังอยู่ในห้อง) = ล้างแชทของเกมก่อนหน้า
@@ -469,7 +470,7 @@ export default function App() {
       )}
 
       {/* Leaderboard ไม่ได้ใช้ socket เลย ขอข้อมูลผ่าน HTTP เอง */}
-      {route.screen === "leaderboard" && <Leaderboard onBack={goHome} />}
+      {route.screen === "leaderboard" && <Leaderboard onBack={goHome} initialBoard={new URLSearchParams(location.search).get("board")} />}
 
       {/* Solo ผูก socket event ของตัวเองในหน้านั้น (ไม่เกี่ยวกับห้อง) */}
       {route.screen === "solo" && (
@@ -478,6 +479,7 @@ export default function App() {
           profile={{ ...profile, outfit: economy?.equipped }}
           onEditProfile={() => setShowProfile(true)}
           onAchievements={() => setShowAchievements(true)}
+          onLeaderboard={() => openLeaderboard("solo")}
           boot={soloBoot}
           onName={(name) => setProfile((p) => ({ ...p, name }))}
           onBack={() => {
@@ -516,6 +518,7 @@ export default function App() {
           onLeave={handleLeave}
           onToast={showToast}
           onEditProfile={() => setShowProfile(true)}
+          onLeaderboard={() => openLeaderboard("mpai")}
         />
       )}
 
@@ -539,6 +542,7 @@ export default function App() {
           onToast={showToast}
           onAchievements={() => setShowAchievements(true)}
           onEditProfile={() => setShowProfile(true)}
+          onLeaderboard={() => openLeaderboard(room.settings.mode)}
         />
       )}
 
@@ -547,7 +551,7 @@ export default function App() {
 
       {showProfile && <ProfileModal profile={roomReady ? { name: me.name, avatar: me.avatar, avatarPhoto: me.avatarPhoto, outfit: me.outfit } : { ...profile, outfit: economy?.equipped }} onSave={saveProfile} onClose={() => setShowProfile(false)} />}
       {showAvatarUpload && auth.user && <AvatarUploadModal profile={{ ...profile, outfit: economy?.equipped }} onSave={uploadPhoto} onRemove={() => saveProfile({ ...profile, avatarPhoto: null })} onClose={() => setShowAvatarUpload(false)} />}
-      {showAchievements && <Achievements onClose={() => setShowAchievements(false)} />}
+      {showAchievements && <Achievements onClose={() => setShowAchievements(false)} onPlay={() => setShowAchievements(false)} onProfile={() => { setShowAchievements(false); setShowProfile(true); }} onLeaderboard={() => { setShowAchievements(false); openLeaderboard("classic"); }} />}
 
       {/* key ผูกกับ id ของ toast เพื่อให้แสดงข้อความซ้ำแล้วเล่นอนิเมชันใหม่ */}
       <Toast key={toast?.id ?? "none"} toast={toast} />

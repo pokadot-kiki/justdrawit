@@ -2,6 +2,7 @@
 // รับ { status, top, retry } จาก useLeaderboard แล้วจัดการทั้งสามสถานะ: โหลด · error · ว่าง
 import YouTag from "./YouTag";
 import { Icon } from "./Icons";
+import Avatar from "./Avatar";
 
 const MEDALS = { 1: "medal1", 2: "medal2", 3: "medal3" };
 
@@ -67,8 +68,7 @@ export default function RankTable({
                 ชื่อแบบ <b>x</b> จะขึ้นเป็นตัวอักษรตามนั้น ไม่ถูกตีความเป็น HTML
                 (ห้ามเปลี่ยนไปใช้ dangerouslySetInnerHTML ที่นี่เด็ดขาด) */}
             <td className="rank-row__name">
-              {row.name}
-              {row.isMe && <YouTag />}
+              <span className="rank-row__identity"><Avatar index={row.avatar} photoUrl={row.avatarPhoto} outfit={row.outfit} /><span className="rank-row__details"><span className="rank-row__display-name">{row.name}{row.isMe && <YouTag />}</span><small>{row.games ?? 0} เกม{row.wins > 0 ? ` · ชนะ ${row.wins}` : ""}</small></span></span>
             </td>
             {showLevel && <td className="rank-row__level">{row.levelReached}</td>}
             <td className="rank-row__score">{row.score}</td>

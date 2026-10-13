@@ -3,7 +3,7 @@ import { socket } from "../socket";
 import { errorText } from "../messages";
 import definitions from "../../../shared/achievements.json" with { type: "json" };
 
-export default function Achievements({ onClose }) {
+export default function Achievements({ onClose, onPlay, onProfile, onLeaderboard }) {
   const [state, setState] = useState(null);
   const [tab, setTab] = useState("all");
   const [busy, setBusy] = useState(false);
@@ -39,7 +39,7 @@ export default function Achievements({ onClose }) {
     <div className="ach-page" role="dialog" aria-modal="true" aria-labelledby="ach-title">
       <header className="ach-nav">
         <span className="ach-brand">✎ JUST DRAW IT</span><span className="ach-live">ARCADE LIVE</span>
-        <span className="ach-nav__links">Play　 Profile　 <b>Achievements</b>　 Leaderboard</span>
+        <nav className="ach-nav__links" aria-label="เมนูหลัก"><button type="button" onClick={onPlay}>Play</button><button type="button" onClick={onProfile}>Profile</button><button type="button" onClick={onLeaderboard}>Leaderboard</button></nav>
       </header>
       <main className="ach-shell">
         <div className="ach-head">

@@ -7,7 +7,7 @@ const os = require("os");
 const crypto = require("crypto");
 const path = require("path");
 const { Server } = require("socket.io");
-const { categoryIds, categoryWordPool } = require("./word-categories");
+const { categoryIds, categoryWordPool, availableCategories } = require("./word-categories");
 const { cleanName } = require("./clean");
 const { hasBadWord } = require("./profanity");
 const authSession = require("./auth-session");
@@ -198,11 +198,12 @@ app.use(express.static(__dirname + "/public"));
 // ใส่ month แต่รูปแบบผิด (ไม่ใช่ YYYY-MM 01-12) ยังตอบ 400 เหมือนเดิม
 // (ถ้าส่ง month มาสองครั้ง จะได้เป็น array ซึ่งก็ไม่ผ่าน isValidMonth → 400 เหมือนกัน)
 app.get("/api/leaderboard", (req, res) => {
+  res.set("Cache-Control", "no-store");
   const month = req.query.month;
   if (month !== undefined && !leaderboard.isValidMonth(month)) {
     return res.status(400).json({ error: "INVALID_MONTH" });
   }
-  // board = "solo" (แข่งกับ AI · ค่าเริ่มต้น) | "multi" (เล่นกับเพื่อน) — สองกระดานแยกกัน ไม่ปนคะแนนกัน
+  // กระดานที่หน้าเกมใช้: classic / team / solo / mpai; multi เปิดอ่านข้อมูลเก่าที่แยกโหมดไม่ได้เท่านั้น
   const board = req.query.board ?? "solo";
   if (!leaderboard.isValidBoard(board)) return res.status(400).json({ error: "INVALID_BOARD" });
   try {
@@ -328,6 +329,7 @@ function cleanTeamName(name) {
 }
 
 function roomState(room) {
+  const bank = room.settings.mode === "mpai" ? ai.soloWords(WORD_BANK) : WORD_BANK;
   const state = {
     code: room.code,
     hostId: room.hostId,
@@ -335,6 +337,8 @@ function roomState(room) {
     category: room.category ?? null,
     players: room.players,
     settings: room.settings,
+    wordCategories: availableCategories(bank),
+    categoryHasWords: categoryWordPool(bank, room.settings.difficulty, room.settings.category).length > 0,
   };
   // โหมดทีมเท่านั้นที่มีช่องนี้ (classic ต้องหน้าตาเดิมเป๊ะ) · คะแนนทีม = ผลรวมของสมาชิก
   if (room.settings.mode === "team") state.teamScores = teamScores(room);
@@ -1467,17 +1471,27 @@ function endGame(room, completed = false) {
   clearTimeout(room.returnTimer);
   room.returnAt = Date.now() + LOBBY_RETURN_MS;
   room.returnTimer = setTimeout(() => returnToLobby(room), LOBBY_RETURN_MS);
-  // บันทึกคะแนนของทุกคนลงกระดาน "เล่นกับเพื่อน" — server บันทึกเอง client ส่งคะแนนมาไม่ได้
-  // คนที่ได้ 0 ไม่บันทึก (ไม่ได้เล่นจริง) · saveScore ไม่ throw จึงไม่ทำให้จบเกมพัง
+  // บันทึกคะแนนหลังเกมจบลงกระดานของโหมดนั้น — server บันทึกเอง client ส่งคะแนนมาไม่ได้
+  // ผู้เข้าร่วมตั้งแต่เริ่มเกมบันทึกได้แม้คะแนนเป็น 0; ผู้เข้ากลางเกมไม่ถูกนับเป็นเกมเต็ม
+  ended.leaderboardStatus = {};
   for (const p of room.players) {
-    if (completed && p.score > 0 && room.scoreAccountIds.get(p.id)) {
-      leaderboard.saveVerifiedScore({
+    const accountId = room.scoreAccountIds.get(p.id);
+    if (completed && room.coinParticipants?.has(p.id) && accountId) {
+      const saved = leaderboard.saveVerifiedScore({
         name: p.name,
         score: p.score,
         levelReached: 0,
-        board: "multi",
+        board: room.settings.mode,
         accountId: room.scoreAccountIds.get(p.id),
+        avatar: p.avatar,
+        avatarPhoto: p.avatarPhoto,
+        outfit: p.outfit,
+        won: isTeamMode(room) ? ended.winner === p.team : ranking.length >= 2 && ranking[0].score > ranking[1].score && ranking[0].playerId === p.id,
+        gameId: room.coinGameId,
       });
+      ended.leaderboardStatus[p.id] = saved ? "saved" : "error";
+    } else {
+      ended.leaderboardStatus[p.id] = !completed ? "not_completed" : !accountId ? "guest" : "not_participant";
     }
   }
   io.to(room.code).emit("game_end", endedPayload(room));
@@ -1532,6 +1546,7 @@ function applySettings(room, data) {
   if ([1, 2, 3, 4, 5].includes(rounds)) room.settings.rounds = rounds;
   if ([30, 45, 60, 90].includes(drawTime)) room.settings.drawTime = drawTime;
   if (data?.difficulty === "mixed" || LEVELS.includes(data?.difficulty)) room.settings.difficulty = data.difficulty; // ระดับของ "ชุดคำ" เท่านั้น ไม่เกี่ยวกับเวลา (Solo ใช้ LEVELS ล้วน ไม่มี mixed)
+  if (data?.category === null || categoryIds.has(data?.category)) room.settings.category = data.category;
   // จำนวนทีม (2-4) กับจำนวนผู้เล่นสูงสุด (4/6/8) ต้องสอดคล้องกันเสมอ: maxPlayers >= 2 × จำนวนทีม — เช็คทุกครั้งที่ตั้งค่า
   // ใช้ "ค่าที่กำลังจะเป็น" ของอีกฝั่ง (ไม่ใช่แค่ค่าเดิม) เผื่อส่งสองช่องมาพร้อมกันในคำขอเดียว เช่น {maxPlayers:8, teamCount:4}
   const requestedMaxPlayers = Number(data?.maxPlayers);
@@ -1969,13 +1984,14 @@ function endSoloGame(socket, solo) {
   }
   forgetSolo(solo);
   socket.data.solo = null;
-  const scoreResult = { ...result, accountId: solo.accountId };
+  const scoreResult = { ...result, accountId: solo.accountId, board: "solo", avatar: solo.avatar, avatarPhoto: solo.avatarPhoto, outfit: solo.outfit, gameId: solo.coinGameId };
   const saved = leaderboard.saveVerifiedScore(scoreResult);
   socket.emit("ai_game_end", {
     totalScore: result.score,
     levelReached: result.levelReached,
     rank: saved ? leaderboard.rankOf(scoreResult) : null,
     guest: !solo.accountId,
+    saved: Boolean(saved),
   });
 }
 
@@ -2153,7 +2169,7 @@ io.on("connection", (socket) => {
       status: "lobby",
       players: [{ id: socket.data.pid, name, avatar: cleanAvatar(data.avatar), avatarPhoto: validateAvatarPhoto(data?.avatarPhoto, socket.data.user, FIREBASE_STORAGE_BUCKET).url ?? null, outfit: economy.snapshot(economyIdentity).equipped, score: 0, isHost: true, team: null, connected: true, ready: false }],
       scoreAccountIds: new Map([[socket.data.pid, socket.data.accountId]]),
-      settings: { mode: "classic", rounds: 3, drawTime: 60, difficulty: "mixed", maxPlayers: MAX_PLAYERS, visibility: "private", challenges: [...DEFAULT_CHALLENGES], teamCount: 2, teamNames: { ...TEAM_DEFAULT_NAMES } },
+      settings: { mode: "classic", rounds: 3, drawTime: 60, difficulty: "mixed", category: null, maxPlayers: MAX_PLAYERS, visibility: "private", challenges: [...DEFAULT_CHALLENGES], teamCount: 2, teamNames: { ...TEAM_DEFAULT_NAMES } },
       swapRequests: [], // คำขอสลับตัวที่ค้างอยู่ (โหมดทีม)
     };
     rooms.set(code, room);
@@ -2477,12 +2493,14 @@ io.on("connection", (socket) => {
     if (isTeamMode(room) && !isTeamBalanced(room)) {
       return socket.emit("game_error", { code: "TEAM_UNBALANCED", message: "ทีมยังไม่สมดุล (ต่างกันเกิน 1 คน) ลองกดจัดทีมให้สมดุลดูก่อน" });
     }
-    if (isMpAi(room)) return beginRoomGame(room);
+    const bank = isMpAi(room) ? ai.soloWords(WORD_BANK) : WORD_BANK;
+    if (categoryWordPool(bank, room.settings.difficulty, room.settings.category).length === 0) {
+      return socket.emit("game_error", { code: "NO_CATEGORY_WORDS", message: "ไม่มีคำศัพท์ในหมวดนี้สำหรับระดับความยากที่เลือก กรุณาเลือกหมวดอื่น" });
+    }
     clearAllSwaps(room);
     clearTimeout(room.returnTimer);
-    room.category = null;
-    room.status = "category_selection";
-    io.to(room.code).emit("room_update", roomState(room));
+    room.category = room.settings.category ?? null;
+    return beginRoomGame(room);
   });
 
   socket.on("select_category", (data, callback) => {
@@ -2766,6 +2784,7 @@ io.on("connection", (socket) => {
     dropSoloSession(socket.data.pid); // เกมเก่าที่ค้างรอรีเฟรชจาก socket ตัวก่อนหน้า (ถ้ามี)
     const solo = {
       name, difficulty: LEVELS.includes(data?.difficulty) ? data.difficulty : null, level: 1, lives: SOLO_LIVES, totalScore: 0, usedWords: new Set(), roundId: 0,
+      avatar: cleanAvatar(data?.avatar), avatarPhoto: validateAvatarPhoto(data?.avatarPhoto, socket.data.user, FIREBASE_STORAGE_BUCKET).url ?? null, outfit: economy.snapshot(economyIdentity).equipped,
       coinGameId: crypto.randomUUID(), coinRewarded: false,
       over: false, drawing: false, busy: false, roundTimer: null, nextTimer: null,
       guessing: false, drawNext: false, passed: false, strokeTimers: [],

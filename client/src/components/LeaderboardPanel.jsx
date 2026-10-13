@@ -8,10 +8,12 @@ import { Icon } from "./Icons";
 // หน้าแรกส่ง scroll เพื่อให้ตารางเลื่อนภายในการ์ด (ไม่ดันการ์ดสูงจนล้น)
 // แสดงได้แค่ "ปีปัจจุบัน" เท่านั้น (ไม่มีตัวเลือก "ตลอดกาล" แล้ว) · server เก็บคะแนนเก่าไว้
 
-// สองกระดานแยกกัน (server เก็บแยกด้วยช่อง board) — แท็บแค่เปลี่ยนว่าขอกระดานไหนจาก API
+// กระดานแยกตามโหมดจริง — แท็บขอคะแนนของโหมดนั้นจาก Server
 const BOARDS = [
-  { id: "multi", label: "เล่นกับเพื่อน", icon: "star", note: "คะแนนรวมตอนจบเกมในห้อง" },
-  { id: "solo", label: "แข่งกับ AI", icon: "robot", note: "คะแนนจากโหมด Solo แข่งกับ AI" },
+  { id: "classic", label: "Classic", icon: "star", note: "แข่งเดี่ยวในห้อง" },
+  { id: "team", label: "Team", icon: "users", note: "แข่งทีมในห้อง" },
+  { id: "solo", label: "Solo AI", icon: "robot", note: "เล่นคนเดียวกับ AI" },
+  { id: "mpai", label: "Multiplayer VS AI", icon: "robot", note: "เล่นกับเพื่อนและ AI" },
 ];
 
 // "2026-10" → "ตุลาคม" (แสดงเฉพาะเดือน ไม่ต้องแสดงปี)
@@ -26,10 +28,10 @@ function monthsThisYear() {
   return Array.from({ length: now.getMonth() + 1 }, (_, i) => monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
 }
 
-export default function LeaderboardPanel({ limit = 20, scroll = false }) {
+export default function LeaderboardPanel({ limit = 20, scroll = false, initialBoard = "classic" }) {
   const [months] = useState(monthsThisYear);
   const [month, setMonth] = useState(months[0]); // เปิดมาเห็นเดือนปัจจุบันก่อน
-  const [tab, setTab] = useState("multi");
+  const [tab, setTab] = useState(() => BOARDS.some((item) => item.id === initialBoard) ? initialBoard : "classic");
   // เปิดหน้า เปลี่ยนแท็บ หรือเปลี่ยนเดือน = ขอ API ใหม่ทุกครั้ง (ไม่เก็บคะแนนไว้ในเครื่อง)
   const board = useLeaderboard(month, tab);
   const info = BOARDS.find((b) => b.id === tab);
@@ -41,7 +43,7 @@ export default function LeaderboardPanel({ limit = 20, scroll = false }) {
       limit={limit}
       showLevel={tab === "solo"} // กระดานเล่นกับเพื่อนไม่มี "ด่าน"
       emptyIcon={info.icon}
-      emptyHint={tab === "solo" ? undefined : "ชวนเพื่อนมาเล่นให้จบหนึ่งเกม แล้วคะแนนจะขึ้นกระดานนี้เอง!"}
+      emptyHint={tab === "solo" ? undefined : "เข้าสู่ระบบแล้วเล่นให้จบหนึ่งเกม คะแนนจึงขึ้นกระดานนี้"}
       emptyText={`ยังไม่มีใครติดอันดับ${periodText}`}
     />
   );

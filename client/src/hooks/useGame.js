@@ -21,6 +21,7 @@ function emptyGame() {
     chooseTime: 10,
     summary: null, // จาก round_end (เฉลย + คะแนนที่ได้แต่ละคน)
     ranking: null, // จาก game_end
+    leaderboardStatus: null,
     returnAt: null, // เวลา (ms) ที่ server จะพากลับห้องรอเอง คิดจาก returnIn ใน game_end
     // ── โหมดทีม (events.md หัวข้อ 8) — โหมดปกติค่าเหล่านี้ไม่ถูกใช้เลย ──
     team: null, // ทีมของเรา จาก round_start
@@ -222,6 +223,7 @@ export function useGame(teamNames = {}) {
         ...emptyGame(),
         messages: g.messages,
         ranking: data.ranking,
+        leaderboardStatus: data.leaderboardStatus ?? null,
         teamRanking: data.teamRanking ?? null,
         winner: data.winner ?? null,
         returnAt: typeof data.returnIn === "number" ? Date.now() + data.returnIn * 1000 : null,
