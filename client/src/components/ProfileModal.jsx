@@ -9,7 +9,7 @@ import { profileInputError } from "../profileValidation";
 const ERROR_TEXT = {
   INVALID_NAME: "ชื่อผู้เล่นไม่ถูกต้อง",
   INVALID_AVATAR: "อวตารที่เลือกไม่ถูกต้อง",
-  NAME_TAKEN: "ชื่อนี้มีคนใช้ในห้องแล้ว",
+  NAME_TAKEN: "มีชื่อนี้แล้ว กรุณาใช้ชื่ออื่น",
   NOT_IN_ROOM: "คุณไม่ได้อยู่ในห้องนี้แล้ว",
   NOT_IN_GAME: "เกมเดี่ยวสิ้นสุดแล้ว กรุณาลองอีกครั้ง",
   CONNECT_FAILED: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองอีกครั้ง",

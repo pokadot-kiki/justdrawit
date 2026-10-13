@@ -1,7 +1,10 @@
+const { normalizeName } = require("./clean");
+
 function validateProfile(data, cleanName, cleanAvatar) {
   if (typeof data?.name !== "string") return { ok: false, error: "INVALID_NAME" };
-  const name = data.name.trim();
-  if (!name || name !== cleanName(name) || /[\u0000-\u001f\u007f<>]/u.test(name)) return { ok: false, error: "INVALID_NAME" };
+  const normalized = normalizeName(data.name);
+  const name = cleanName(normalized);
+  if (!normalized || [...normalized].length > 20 || /[\u0000-\u001f\u007f<>]/u.test(data.name)) return { ok: false, error: "INVALID_NAME" };
   if (!Number.isInteger(data.avatar) || data.avatar < 0 || cleanAvatar(data.avatar) !== data.avatar) return { ok: false, error: "INVALID_AVATAR" };
   return { ok: true, name, avatar: data.avatar };
 }

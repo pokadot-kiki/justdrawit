@@ -9,6 +9,7 @@ const path = require("path");
 const { Server } = require("socket.io");
 const { categoryIds, categoryWordPool, availableCategories } = require("./word-categories");
 const { cleanName } = require("./clean");
+const { nameTaken } = require("./name-policy");
 const { hasBadWord } = require("./profanity");
 const authSession = require("./auth-session");
 const firebaseAuth = require("./firebase-auth");
@@ -102,6 +103,22 @@ function requestUser(req) {
 
 function scoreAccountId(user) {
   return user?.sub ? crypto.createHash("sha256").update(`jdi:score-account:v1:${user.sub}`).digest("hex") : null;
+}
+
+function playerNameTaken(room, socket, name) {
+  let registeredRows = [];
+  try {
+    registeredRows = leaderboard.loadScores();
+  } catch {
+    // ถ้าแหล่งคะแนนอ่านไม่ได้ ให้ตรวจเฉพาะข้อมูลผู้เล่นในห้องที่ Server มีอยู่จริง
+  }
+  return nameTaken({
+    players: room?.players ?? [],
+    registeredRows,
+    name,
+    selfId: socket.data.pid,
+    accountId: socket.data.accountId,
+  });
 }
 
 // ── ตัวตนผู้เล่นแบบถาวร (playerId) ──
@@ -2158,6 +2175,7 @@ io.on("connection", (socket) => {
     if (!name) return callback({ ok: false, error: "INVALID_NAME" });
     if (data?.challenges !== undefined && !sanitizeChallenges(data.challenges)) return callback({ ok: false, error: "INVALID_CHALLENGES" });
     if (hasBadWord(name)) return callback({ ok: false, error: "INAPPROPRIATE_NAME" });
+    if (playerNameTaken(null, socket, name)) return callback({ ok: false, error: "NAME_TAKEN", message: "มีชื่อนี้แล้ว กรุณาใช้ชื่ออื่น" });
 
     leaveRoom(socket);
     dropSoloSession(socket.data.pid);
@@ -2197,6 +2215,7 @@ io.on("connection", (socket) => {
     if (!room) return callback({ ok: false, error: "ROOM_NOT_FOUND" });
     // เป็นสมาชิกห้องนี้อยู่แล้ว (เช่นรีเฟรชแล้วกดเข้าห้องเดิมภายในเวลารอ) = กลับเข้าที่เดิม ไม่สร้างผู้เล่นซ้ำ
     if (room.players.some((p) => p.id === socket.data.pid)) return callback(rejoinRoom(socket, room));
+    if (playerNameTaken(room, socket, name)) return callback({ ok: false, error: "NAME_TAKEN", message: "มีชื่อนี้แล้ว กรุณาใช้ชื่ออื่น" });
     if (room.players.length >= roomCapacity(room)) return callback({ ok: false, error: "ROOM_FULL" });
 
     leaveRoom(socket);
@@ -2291,6 +2310,7 @@ io.on("connection", (socket) => {
     const room = rooms.get(socket.data.roomCode);
     if (room) {
       if (!room.players.some((p) => p.id === socket.data.pid)) return callback({ ok: false, error: "NOT_IN_ROOM" });
+      if (playerNameTaken(room, socket, name)) return callback({ ok: false, error: "NAME_TAKEN", message: "มีชื่อนี้แล้ว กรุณาใช้ชื่ออื่น" });
       const avatarPhoto = photo.url === undefined ? room.players.find((p) => p.id === socket.data.pid)?.avatarPhoto ?? null : photo.url;
       applyRoomProfile(room, socket.data.pid, name, avatar, avatarPhoto);
       callback({ ok: true, name, avatar, avatarPhoto });
@@ -2300,6 +2320,7 @@ io.on("connection", (socket) => {
     }
     const solo = soloSessions.get(socket.data.pid);
     if (!solo || solo.over) return callback({ ok: false, error: "NOT_IN_GAME" });
+    if (playerNameTaken(null, socket, name)) return callback({ ok: false, error: "NAME_TAKEN", message: "มีชื่อนี้แล้ว กรุณาใช้ชื่ออื่น" });
     solo.name = name;
     callback({ ok: true, name, avatar, avatarPhoto: photo.url ?? null });
     io.to(socket.data.pid).emit("profile_updated", { playerId: socket.data.pid, name, avatar, avatarPhoto: photo.url ?? null });
@@ -2779,6 +2800,7 @@ io.on("connection", (socket) => {
     const name = cleanName(data?.name);
     if (!name) return socket.emit("game_error", { code: "INVALID_NAME", message: "กรุณาใส่ชื่อ" });
     if (hasBadWord(name)) return socket.emit("game_error", { code: "INAPPROPRIATE_NAME", message: "ชื่อนี้ใช้ไม่ได้ ลองตั้งชื่ออื่นนะ" });
+    if (playerNameTaken(null, socket, name)) return socket.emit("game_error", { code: "NAME_TAKEN", message: "มีชื่อนี้แล้ว กรุณาใช้ชื่ออื่น" });
     leaveRoom(socket); // ผู้เล่นหนึ่งคนอยู่ได้อย่างเดียว: ห้อง หรือ Solo
     stopSolo(socket);  // กดเริ่มซ้ำ = เริ่มเกมใหม่ เกมเก่าทิ้ง
     dropSoloSession(socket.data.pid); // เกมเก่าที่ค้างรอรีเฟรชจาก socket ตัวก่อนหน้า (ถ้ามี)
