@@ -6086,20 +6086,8 @@ select[class] {
 .name-row__edit span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .setup__who--edit { width: 100%; border-right: 0; border-bottom: 0; border-left: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
 
-.modal__panel--profile { max-width: 540px; max-height: calc(100dvh - 40px); overflow-x: hidden; }
-.profile-preview { display: grid; justify-items: center; gap: 4px; min-width: 0; font-family: var(--font-head); font-weight: 700; overflow-wrap: anywhere; }
-.profile-avatars { min-width: 0; margin: 14px 0; padding: 10px; border: var(--border); text-align: left; }
-.profile-avatars legend { padding: 0 5px; font-family: var(--font-head); font-weight: 700; }
-.profile-avatars__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.profile-avatars__item { display: grid; justify-items: center; gap: 3px; min-width: 0; padding: 8px 3px; border: var(--border); border-radius: var(--r-sm); background: var(--white); color: var(--ink); font: 600 13px var(--font-head); cursor: pointer; }
-.profile-avatars__item--selected { border-color: var(--blue); background: var(--tab-idle); box-shadow: inset 0 0 0 2px var(--blue); }
-.profile-avatars__item:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
-.profile-name-input { width: 100%; }
-.profile-error { margin: 8px 0 0; color: var(--red); font-weight: 700; overflow-wrap: anywhere; }
 
 @media (max-width: 620px) {
-  .modal__panel--profile { padding: 12px; }
-  .profile-avatars__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .top-icons { flex-wrap: wrap; justify-content: flex-end; }
   .top-icons .profile-trigger { max-width: min(48vw, 180px); }
 }

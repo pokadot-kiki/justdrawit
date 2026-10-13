@@ -1,0 +1,367 @@
+/* ==========================================================================
+   หน้าแต่งโปรไฟล์ (ProfileModal) — เฟส A
+   จอคอม: สองคอลัมน์  ซ้าย = พรีวิว + ชื่อ + ปุ่ม  ·  ขวา = เลือกอวตาร
+   มือถือ (≤ 720px): เรียงบนลงล่าง  พรีวิว → ชื่อ → อวตาร → ปุ่ม
+   คลาสขึ้นต้น pe__ ทั้งหมด (เช็คแล้วไม่ชนคลาสเดิม) · สี/ขอบ/เงาใช้ตัวแปรของธีมหลัก
+   ========================================================================== */
+
+.modal__panel--profile {
+  max-width: 880px;
+  max-height: calc(100dvh - 40px);
+  overflow-x: hidden;
+  padding: 18px 22px 22px;
+  text-align: left;
+}
+
+.pe {
+  min-width: 0;
+  outline: none;
+}
+
+/* ---- หัว: ริบบิ้นกลาง + ปุ่มปิดขวา ---- */
+.pe__head {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 48px;
+  margin-bottom: 14px;
+  padding: 0 52px; /* กันริบบิ้นชนปุ่มปิด */
+}
+
+/* ชื่อหน้าต่างสำหรับโปรแกรมอ่านจอ (ที่ตาเห็นคือริบบิ้น) */
+.pe__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.pe__ribbon .ribbon {
+  margin: 0;
+}
+
+.pe__close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: var(--r-ctl);
+  cursor: pointer;
+}
+
+.pe__close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- ตัวหน้า: ตาราง 2 คอลัมน์ ---- */
+.pe__body {
+  display: grid;
+  grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+  grid-template-areas:
+    "side main"
+    "actions main";
+  gap: 14px 20px;
+  align-items: start;
+}
+
+.pe__side {
+  grid-area: side;
+  min-width: 0;
+}
+
+.pe__main {
+  grid-area: main;
+  align-self: stretch;
+}
+
+.pe__actions {
+  grid-area: actions;
+  margin-top: 0;
+  align-self: end;
+}
+
+/* ---- พรีวิว ---- */
+.pe__preview {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 34px 12px 14px;
+  border: var(--border);
+  border-radius: var(--r-card);
+  background: var(--white);
+  box-shadow: var(--shadow-sm);
+}
+
+.pe__tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 2px 8px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--tab-idle);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.pe__stage {
+  display: grid;
+  place-items: center;
+  width: 176px;
+  height: 176px;
+  border: var(--border);
+  border-radius: 50%;
+  background: var(--tab-idle);
+}
+
+.pe__stage > .avatar-art {
+  width: 124px;
+  height: 124px;
+}
+
+.pe__name {
+  max-width: 100%;
+  margin: 0;
+  padding: 4px 14px;
+  border: var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--cream);
+  box-shadow: var(--shadow-xs);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 18px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.pe__name-row .name-row__dice {
+  flex: none;
+}
+
+.pe__hint {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.profile-name-input {
+  width: 100%;
+}
+
+.profile-error {
+  margin: 8px 0 0;
+  color: var(--red);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+/* ---- เลือกอวตาร ---- */
+.profile-avatars {
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: var(--border);
+  border-radius: var(--r-card);
+  background: var(--white);
+}
+
+/* ป้ายหมวด (หน้าตาเหมือนแท็บที่เลือกอยู่ — ตอนนี้มีหมวดเดียว) */
+.pe__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border: var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--yellow);
+  box-shadow: var(--shadow-xs);
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.pe__sub {
+  margin: 4px 0 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.profile-avatars__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.profile-avatars__item {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 168px;
+  padding: 22px 4px 10px;
+  border: var(--border);
+  border-radius: var(--r-ctl);
+  background: var(--cream);
+  color: var(--ink);
+  font: 700 14px var(--font-head);
+  cursor: pointer;
+}
+
+.profile-avatars__item:hover:not(:disabled) {
+  background: var(--tab-idle);
+}
+
+.profile-avatars__item--selected {
+  border-color: var(--ink);
+  background: #fffbea;
+  box-shadow: 0 0 0 3px var(--yellow), var(--shadow-xs);
+}
+
+.profile-avatars__item:focus-visible,
+.pe__close:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.profile-avatars__item > .avatar-art {
+  width: 76px;
+  height: 76px;
+}
+
+.profile-avatars__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ป้าย "เลือกอยู่" เกาะขอบบนของการ์ดที่เลือก */
+.pe__badge {
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 8px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-pill);
+  background: var(--yellow);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* ---- มือถือ / จอแคบ: คอลัมน์เดียว ---- */
+@media (max-width: 720px) {
+  .modal__panel--profile {
+    padding: 12px;
+  }
+
+  .pe__head {
+    min-height: 44px;
+    margin-bottom: 8px;
+    padding: 0 50px;
+  }
+
+  .pe__ribbon .ribbon {
+    padding: 0 22px;
+  }
+
+  .pe__ribbon .ribbon__text {
+    font-size: 18px;
+    letter-spacing: 0.02em;
+  }
+
+  .pe__body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "side"
+      "main"
+      "actions";
+    gap: 12px;
+  }
+
+  .pe__preview {
+    gap: 8px;
+    margin-bottom: 8px;
+    padding: 14px 10px 10px;
+  }
+
+  .pe__stage {
+    width: 104px;
+    height: 104px;
+  }
+
+  .pe__stage > .avatar-art {
+    width: 76px;
+    height: 76px;
+  }
+
+  .pe__name {
+    font-size: 16px;
+  }
+
+  .pe__hint {
+    margin-top: 4px;
+  }
+
+  .pe__sub {
+    margin: 2px 0 12px;
+    font-size: 13px;
+  }
+
+  .profile-avatars {
+    padding: 10px;
+  }
+
+  .profile-avatars__grid {
+    gap: 12px 8px;
+  }
+
+  .profile-avatars__item {
+    min-height: 92px;
+    padding: 16px 2px 6px;
+    gap: 4px;
+    font-size: 13px;
+  }
+
+  .profile-avatars__item > .avatar-art {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* จอเล็กมาก (320px): ลดขอบม่านกับช่องไฟ ให้การ์ด 3 ใบยังอยู่แถวเดียวได้ */
+@media (max-width: 360px) {
+  .modal:has(.modal__panel--profile) {
+    padding: 10px;
+  }
+
+  .pe__ribbon .ribbon {
+    padding: 0 16px;
+  }
+
+  .pe__ribbon .ribbon__text {
+    font-size: 16px;
+  }
+
+  .pe__badge {
+    padding: 1px 5px;
+    font-size: 10px;
+  }
+}
