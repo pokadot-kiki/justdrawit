@@ -7,7 +7,6 @@ import AvatarPicker from "../components/AvatarPicker";
 import JoinModal from "../components/JoinModal";
 import OpenRooms from "../components/OpenRooms";
 import { Icon } from "../components/Icons";
-import AvatarShopModal from "../components/AvatarShopModal";
 import { randomName } from "../playerName";
 import { useEnterRoom } from "../hooks/useEnterRoom";
 
@@ -24,14 +23,10 @@ export default function Lobby({
   onEntered,
   onError,
   onOpenSetup,
-  loggedIn = false,
   economy,
-  onBuyItem,
-  onEquipItem,
 }) {
   // เปิดจากลิงก์เชิญ (?room=12345) → กล่องใส่รหัสขึ้นเองพร้อมรหัสที่เติมไว้แล้ว
   const [joining, setJoining] = useState(Boolean(inviteCode));
-  const [showShop, setShowShop] = useState(false);
   const { busy, enter } = useEnterRoom({ connected, onEntered, onError });
 
   const name = profile.name;
@@ -56,22 +51,8 @@ export default function Lobby({
           <Critter name="star" className="crit crit--side-left" />
           <Ribbon tone="red">PLAY</Ribbon>
 
-          <div style={{ position: "relative", display: "inline-block" }}>
-            <AvatarPicker value={profile.avatar} onChange={(avatar) => onProfile({ ...profile, avatar })} onEdit={onEditProfile} equipped={economy?.equipped} />
-            {/* ร้านค้าของตกแต่ง: เฉพาะคนล็อกอิน (ผูกกับบัญชีจริง) — Guest ไม่เห็นปุ่มนี้เลย */}
-            {loggedIn && (
-              <button
-                type="button"
-                className="icon-btn avatar-shop-edit"
-                style={{ position: "absolute", right: 36, bottom: -4, width: 28, height: 28, borderRadius: "50%" }}
-                onClick={() => setShowShop(true)}
-                aria-label="เปิดร้านค้าของตกแต่ง"
-                title="ร้านค้าของตกแต่ง"
-              >
-                <Icon name="pencil" size={14} />
-              </button>
-            )}
-          </div>
+          {/* กดอวตารเปิดหน้าแก้ไขโปรไฟล์ (เลือกอวตาร/เปลี่ยนชื่อ/ร้านค้าของตกแต่ง รวมอยู่หน้าเดียวแล้ว — ดู ProfileModal.jsx) */}
+          <AvatarPicker value={profile.avatar} onChange={(avatar) => onProfile({ ...profile, avatar })} onEdit={onEditProfile} equipped={economy?.equipped} />
 
           <label className="field__label" htmlFor="player-name">
             CHOOSE YOUR NAME
@@ -123,15 +104,6 @@ export default function Lobby({
       </div>
 
       {joining && <JoinModal initialCode={inviteCode ?? ""} busy={busy} onSubmit={join} onClose={() => setJoining(false)} />}
-      {loggedIn && showShop && (
-        <AvatarShopModal
-          avatarIndex={profile.avatar}
-          economy={economy}
-          onBuy={onBuyItem}
-          onEquip={onEquipItem}
-          onClose={() => setShowShop(false)}
-        />
-      )}
     </div>
   );
 }

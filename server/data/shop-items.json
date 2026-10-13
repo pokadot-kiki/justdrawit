@@ -8,11 +8,21 @@
   { "id": "frame_sakura", "category": "frame", "name": "วงดอกซากุระ", "price": 150, "rarity": "special" },
   { "id": "frame_rainbow", "category": "frame", "name": "กรอบสายรุ้ง", "price": 250, "rarity": "rare" },
   { "id": "frame_stars", "category": "frame", "name": "ดาวกะพริบ", "price": 350, "rarity": "special" },
+  { "id": "frame_heart", "category": "frame", "name": "กรอบหัวใจ", "price": 200, "rarity": "special" },
 
   { "id": "hat_wizard", "category": "hat", "name": "หมวกพ่อมด", "price": 300, "rarity": "special" },
   { "id": "hat_crown", "category": "hat", "name": "มงกุฎทอง", "price": 2000, "rarity": "legendary" },
+  { "id": "hat_cap", "category": "hat", "name": "หมวกแก๊ปแดง", "price": 180, "rarity": "default" },
+  { "id": "hat_bunny", "category": "hat", "name": "หูกระต่าย", "price": 220, "rarity": "special" },
 
   { "id": "glasses_pixel", "category": "glasses", "name": "แว่นดำพิกเซล", "price": 200, "rarity": "rare" },
+  { "id": "glasses_round", "category": "glasses", "name": "แว่นกลม", "price": 150, "rarity": "default" },
 
-  { "id": "neck_bowtie", "category": "neck", "name": "โบว์แดง", "price": 150, "rarity": "default" }
+  { "id": "neck_bowtie", "category": "neck", "name": "โบว์แดง", "price": 150, "rarity": "default" },
+  { "id": "neck_scarf", "category": "neck", "name": "ผ้าพันคอ", "price": 150, "rarity": "default" },
+  { "id": "neck_tie", "category": "neck", "name": "เนกไท", "price": 180, "rarity": "default" },
+
+  { "id": "bg_sky", "category": "bg", "name": "ท้องฟ้ามีเมฆ", "price": 150, "rarity": "default" },
+  { "id": "bg_dots", "category": "bg", "name": "ม่วงลายจุด", "price": 150, "rarity": "default" },
+  { "id": "bg_grass", "category": "bg", "name": "ทุ่งหญ้า", "price": 150, "rarity": "default" }
 ]

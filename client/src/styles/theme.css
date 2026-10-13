@@ -6086,7 +6086,7 @@ select[class] {
 .name-row__edit span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .setup__who--edit { width: 100%; border-right: 0; border-bottom: 0; border-left: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
 
-.modal__panel--profile { max-width: 540px; max-height: calc(100dvh - 40px); overflow-x: hidden; }
+.modal__panel--profile { max-width: 580px; max-height: calc(100dvh - 40px); overflow-x: hidden; }
 .profile-preview { display: grid; justify-items: center; gap: 4px; min-width: 0; font-family: var(--font-head); font-weight: 700; overflow-wrap: anywhere; }
 .profile-avatars { min-width: 0; margin: 14px 0; padding: 10px; border: var(--border); text-align: left; }
 .profile-avatars legend { padding: 0 5px; font-family: var(--font-head); font-weight: 700; }
@@ -6096,6 +6096,23 @@ select[class] {
 .profile-avatars__item:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
 .profile-name-input { width: 100%; }
 .profile-error { margin: 8px 0 0; color: var(--red); font-weight: 700; overflow-wrap: anywhere; }
+
+/* แท็บ "เลือกอวตาร" / "ร้านค้าของตกแต่ง" ในหน้าแก้ไขโปรไฟล์ — รวมสองหน้าต่างเดิมเป็นหน้าเดียว */
+.profile-tabs { display: flex; gap: 8px; margin: 14px 0 0; }
+.profile-tabs__btn { flex: 1; min-height: 40px; padding: 6px 10px; border: var(--border); border-radius: var(--r-sm); background: var(--white); color: var(--ink); font: 700 13px var(--font-head); cursor: pointer; }
+.profile-tabs__btn--active { background: var(--yellow); box-shadow: inset 0 0 0 2px var(--ink); }
+.profile-shop { min-width: 0; margin: 10px 0 0; padding: 10px; border: var(--border); text-align: left; }
+.profile-shop__coins { display: flex; align-items: center; gap: 6px; justify-content: center; margin: 0 0 8px; font: 700 15px var(--font-head); }
+.profile-shop__section { margin-bottom: 12px; }
+.profile-shop__heading { margin: 0 0 6px; font: 700 13px var(--font-head); }
+.profile-shop__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.profile-shop__item { display: grid; justify-items: center; gap: 4px; min-width: 0; padding: 6px; border: var(--border); border-radius: var(--r-sm); background: var(--white); cursor: pointer; text-align: center; }
+.profile-shop__item--owned { background: var(--cream); }
+.profile-shop__item--equipped { border-color: var(--green); box-shadow: inset 0 0 0 2px var(--green); }
+.profile-shop__item-name { display: flex; align-items: center; justify-content: center; gap: 3px; margin: 0; font: 600 11px var(--font-head); }
+.profile-shop__badge, .profile-shop__buy { min-height: 28px; padding: 2px 8px; font-size: 11px; white-space: nowrap; }
+.profile-shop__badge { background: var(--green); color: var(--white); }
+.profile-shop__buy--price { display: inline-flex; align-items: center; gap: 3px; background: var(--yellow); }
 
 @media (max-width: 620px) {
   .modal__panel--profile { padding: 12px; }

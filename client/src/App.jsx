@@ -377,10 +377,7 @@ export default function App() {
           // หน้า Lobby ส่ง "รหัส error" มา ที่นี่แปลงเป็นข้อความไทยก่อนโชว์
           onError={(code) => showToast(errorText(code))}
           onOpenSetup={() => navigate("/setup")}
-          loggedIn={Boolean(auth.user)}
           economy={economy}
-          onBuyItem={buyItem}
-          onEquipItem={equipItem}
         />
       )}
 
@@ -472,7 +469,17 @@ export default function App() {
       {/* หลุดจาก server ระหว่างอยู่ในห้อง: บอกให้รู้ว่ากำลังต่อใหม่ (ต่อติดแล้ว rejoin เองโดยอัตโนมัติ) */}
       {roomReady && !connected && <div className="reconnect-note">การเชื่อมต่อหลุด กำลังต่อใหม่...</div>}
 
-      {showProfile && <ProfileModal profile={roomReady ? { name: me.name, avatar: me.avatar } : profile} onSave={saveProfile} onClose={() => setShowProfile(false)} />}
+      {showProfile && (
+        <ProfileModal
+          profile={roomReady ? { name: me.name, avatar: me.avatar } : profile}
+          onSave={saveProfile}
+          onClose={() => setShowProfile(false)}
+          loggedIn={Boolean(auth.user)}
+          economy={economy}
+          onBuyItem={buyItem}
+          onEquipItem={equipItem}
+        />
+      )}
 
       {/* key ผูกกับ id ของ toast เพื่อให้แสดงข้อความซ้ำแล้วเล่นอนิเมชันใหม่ */}
       <Toast key={toast?.id ?? "none"} toast={toast} />
