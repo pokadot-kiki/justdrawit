@@ -5,6 +5,7 @@ import { AvatarImage } from "./Avatar";
 import { AVATARS } from "../avatars";
 import { NAME_MAX_LEN } from "../playerName";
 import { profileInputError } from "../profileValidation";
+import { PHOTO_UPLOAD_ENABLED } from "../featureFlags";
 
 const ERROR_TEXT = {
   INVALID_NAME: "ชื่อผู้เล่นไม่ถูกต้อง",
@@ -22,7 +23,7 @@ const ERROR_TEXT = {
 export default function ProfileModal({ profile, onSave, onClose }) {
   const [name, setName] = useState(profile.name);
   const [avatar, setAvatar] = useState(profile.avatar);
-  const [avatarPhoto, setAvatarPhoto] = useState(profile.avatarPhoto ?? null);
+  const [avatarPhoto, setAvatarPhoto] = useState(PHOTO_UPLOAD_ENABLED ? profile.avatarPhoto ?? null : null); // ปิดอัปโหลดรูป = เลือกได้แค่อวตารพิกเซล
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const nameRef = useRef(null);

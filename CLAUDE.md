@@ -1540,6 +1540,12 @@ server แยกฟังก์ชัน `applySettings(room, data)` ใช้�
 - ทดสอบ: Chrome จริงผ่าน CDP (ปิดเสียง · server ทดสอบพอร์ต 3091) 14/14 — โลโก้บรรทัดเดียวและอยู่ในกรอบการ์ดที่ 1440×900 / 390×844 / 320×640 · ไม่ล้นแนวนอน · ไม่มีปุ่ม Google/เส้นคั่น · ข้อความใหม่ · หน้าแรกโลโก้ยังสองบรรทัด · ไม่มี exception · `npm run build` ผ่าน · `npm test` ผ่าน (smoke 987 · mpai 64 · ไม่มีข้อตก · รันด้วย `TEST_PORT=3071`)
 - ยังไม่ได้ทดสอบการล็อกอินด้วยอีเมลจริง (เครื่องนี้ไม่ได้ตั้งค่า `VITE_FIREBASE_*` หน้าจึงขึ้นข้อความ "ยังไม่ได้ตั้งค่า Firebase" และปุ่มกดไม่ได้)
 
+### เสร็จแล้ว (ซ่อนอัปโหลดรูปโปรไฟล์ไว้ก่อน — branch `hide-photo-upload` จาก `origin/main` · แตะแค่ client + เอกสาร ไม่ลบโค้ด)
+- สวิตช์เดียว `PHOTO_UPLOAD_ENABLED = false` ใน `client/src/featureFlags.js` · เหตุผล: ต้องเปิด Firebase Storage (อาจต้องแพ็กเกจ Blaze) และยังไม่มีระบบตรวจรูปไม่เหมาะสม
+- ตอนปิด: ไม่มีปุ่มกล้องหน้าแรก (`canUploadPhoto`) · ไม่ render `AvatarUploadModal` · ไม่โหลด/ลบรูปใน Storage (`App.jsx` ไม่เรียก `storageReady` เลย จึงไม่มี error เรื่อง Storage) · `ProfileModal`/`AvatarDressingRoom` เริ่มด้วย `avatarPhoto = null` เลือกได้แค่อวตารพิกเซล · `AvatarImage` ไม่ใช้ `photoUrl` → คนที่เคยตั้งรูปไว้แสดงเป็นอวตารพิกเซลทุกที่
+- **วิธีเปิด:** ตั้ง Firebase Storage + Storage Rules + `VITE_FIREBASE_STORAGE_BUCKET` แล้วเปลี่ยนค่าคงที่เป็น `true` (รายละเอียด `design/profile-editor/PLAN.md`)
+- ทดสอบ: `npm run build` ผ่าน · ดูด้วยตาที่หน้าแรก+หน้าแต่งโปรไฟล์ (ล็อกอินด้วยโหมดเทสของ server) ไม่มีปุ่มกล้อง/ส่วนอัปโหลด · ไม่ได้รัน `npm test` (ไม่แตะ server)
+
 ### ยังไม่ได้ทำ (ตามลำดับใน PROMPTS.md)
 - (ไม่มีแล้ว — ข้อ 8 เสร็จ)
 

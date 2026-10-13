@@ -2,8 +2,11 @@ import { useEffect, useState } from "react";
 import { AVATARS } from "../avatars";
 import { AvatarArt } from "./Icons";
 import AvatarAccessories from "./AvatarAccessories";
+import { PHOTO_UPLOAD_ENABLED } from "../featureFlags";
 
-export function AvatarImage({ index, photoUrl = null, outfit = null, size = 30 }) {
+export function AvatarImage({ index, photoUrl: rawPhotoUrl = null, outfit = null, size = 30 }) {
+  // ปิดอัปโหลดรูปอยู่ = ไม่แสดงรูปที่เคยตั้งไว้ ใช้อวตารพิกเซลแทน (ทุกที่ที่โชว์อวตารผ่านตัวนี้)
+  const photoUrl = PHOTO_UPLOAD_ENABLED ? rawPhotoUrl : null;
   const [failedUrl, setFailedUrl] = useState(null);
   useEffect(() => setFailedUrl(null), [photoUrl]);
   const safe = Number.isInteger(index) && index >= 0 && index < AVATARS.length ? index : 0;

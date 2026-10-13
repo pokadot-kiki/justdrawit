@@ -27,6 +27,7 @@ import Achievements from "./screens/Achievements";
 const Login = lazy(() => import("./screens/Login"));
 import AudioDock from "./components/AudioDock";
 import AuthButton from "./components/AuthButton";
+import { PHOTO_UPLOAD_ENABLED } from "./featureFlags";
 import { roomCodeFromSearch } from "./invite";
 import Toast from "./components/Toast";
 
@@ -104,7 +105,8 @@ export default function App() {
 
   // รูปอยู่ใน Firebase Storage ตาม UID เท่านั้น ไม่เก็บ URL หรือไฟล์ใน localStorage
   useEffect(() => {
-    if (!auth.user?.uid || !firebaseAuth) {
+    // ปิดอัปโหลดรูปอยู่: ไม่ติดต่อ Firebase Storage เลย (ไม่มี error ของ Storage โผล่)
+    if (!PHOTO_UPLOAD_ENABLED || !auth.user?.uid || !firebaseAuth) {
       setProfile((previous) => previous.avatarPhoto ? { ...previous, avatarPhoto: null } : previous);
       return undefined;
     }
@@ -236,7 +238,7 @@ export default function App() {
   async function saveProfile(next) {
     if ((route.screen === "room" || route.screen === "solo") && !socket.connected) return { ok: false, error: "CONNECT_FAILED" };
     const avatarPhoto = next.avatarPhoto === undefined ? profile.avatarPhoto : next.avatarPhoto;
-    if (avatarPhoto === null && profile.avatarPhoto && auth.user?.uid) {
+    if (PHOTO_UPLOAD_ENABLED && avatarPhoto === null && profile.avatarPhoto && auth.user?.uid) {
       if (firebaseAuth?.currentUser?.uid !== auth.user.uid) return { ok: false, error: "AUTH_REQUIRED" };
       try {
         await storageReady();
@@ -434,7 +436,7 @@ export default function App() {
           profile={profile}
           onProfile={setProfile}
           onSelectAvatar={selectPresetAvatar}
-          canUploadPhoto={Boolean(auth.user)}
+          canUploadPhoto={PHOTO_UPLOAD_ENABLED && Boolean(auth.user)}
           onUploadPhoto={() => setShowAvatarUpload(true)}
           onEditProfile={() => setShowProfile(true)}
           inviteCode={inviteCode}
@@ -550,7 +552,7 @@ export default function App() {
       {roomReady && !connected && <div className="reconnect-note">การเชื่อมต่อหลุด กำลังต่อใหม่...</div>}
 
       {showProfile && <ProfileModal profile={roomReady ? { name: me.name, avatar: me.avatar, avatarPhoto: me.avatarPhoto, outfit: me.outfit } : { ...profile, outfit: economy?.equipped }} onSave={saveProfile} onClose={() => setShowProfile(false)} />}
-      {showAvatarUpload && auth.user && <AvatarUploadModal profile={{ ...profile, outfit: economy?.equipped }} onSave={uploadPhoto} onRemove={() => saveProfile({ ...profile, avatarPhoto: null })} onClose={() => setShowAvatarUpload(false)} />}
+      {PHOTO_UPLOAD_ENABLED && showAvatarUpload && auth.user && <AvatarUploadModal profile={{ ...profile, outfit: economy?.equipped }} onSave={uploadPhoto} onRemove={() => saveProfile({ ...profile, avatarPhoto: null })} onClose={() => setShowAvatarUpload(false)} />}
       {showAchievements && <Achievements onClose={() => setShowAchievements(false)} onPlay={() => setShowAchievements(false)} onProfile={() => { setShowAchievements(false); setShowProfile(true); }} onLeaderboard={() => { setShowAchievements(false); openLeaderboard("classic"); }} />}
 
       {/* key ผูกกับ id ของ toast เพื่อให้แสดงข้อความซ้ำแล้วเล่นอนิเมชันใหม่ */}

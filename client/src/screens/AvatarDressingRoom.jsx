@@ -4,6 +4,7 @@ import { AVATARS } from "../avatars";
 import { AvatarImage } from "../components/Avatar";
 import { CosmeticArt } from "../components/AvatarAccessories";
 import { economyError, SLOT_NAMES } from "../economyUi";
+import { PHOTO_UPLOAD_ENABLED } from "../featureFlags";
 
 const EMPTY_OUTFIT = { hat: null, frame: null, base: null };
 const TABS = [["hat", "หมวก (Hats)"], ["frame", "กรอบ (Frames)"], ["base", "ฐานรอง (Bases)"], ["skin", "สีขน/สกิน"]];
@@ -13,7 +14,7 @@ export default function AvatarDressingRoom({ economy, profile, onSave, onBack, o
   const [slot, setSlot] = useState("hat");
   const [draft, setDraft] = useState(() => economy?.equipped ?? EMPTY_OUTFIT);
   const [draftAvatar, setDraftAvatar] = useState(profile.avatar);
-  const [draftPhoto, setDraftPhoto] = useState(profile.avatarPhoto);
+  const [draftPhoto, setDraftPhoto] = useState(PHOTO_UPLOAD_ENABLED ? profile.avatarPhoto : null); // ปิดอัปโหลดรูป = ใช้อวตารพิกเซล
   const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
