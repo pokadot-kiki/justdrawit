@@ -8,7 +8,6 @@ import JoinModal from "../components/JoinModal";
 import OpenRooms from "../components/OpenRooms";
 import { Icon } from "../components/Icons";
 import AvatarShopModal from "../components/AvatarShopModal";
-import { getCoins, getUserAuth, SHOP_ENABLED } from "../prefs";
 import { randomName } from "../playerName";
 import { useEnterRoom } from "../hooks/useEnterRoom";
 
@@ -25,13 +24,16 @@ export default function Lobby({
   onEntered,
   onError,
   onOpenSetup,
+  loggedIn = false,
+  economy,
+  onBuyItem,
+  onEquipItem,
 }) {
   // เปิดจากลิงก์เชิญ (?room=12345) → กล่องใส่รหัสขึ้นเองพร้อมรหัสที่เติมไว้แล้ว
   const [joining, setJoining] = useState(Boolean(inviteCode));
   const [showShop, setShowShop] = useState(false);
   const { busy, enter } = useEnterRoom({ connected, onEntered, onError });
-  const auth = getUserAuth();
-  const coins = getCoins();
+  const frameId = economy?.equipped?.frame; // รอบนี้แสดงแค่กรอบ (ยังไม่ซ้อนหมวก/แว่น)
 
   const name = profile.name;
 
@@ -55,21 +57,22 @@ export default function Lobby({
           <Critter name="star" className="crit crit--side-left" />
           <Ribbon tone="red">PLAY</Ribbon>
 
-          <AvatarPicker value={profile.avatar} onChange={(avatar) => onProfile({ ...profile, avatar })} onEdit={onEditProfile} />
-
-          {/* ร้านค้าอวตาร + ตัวนับเหรียญ: ปิดไว้ก่อน (ดูเหตุผลที่ SHOP_ENABLED ใน prefs.js) ไม่ได้ลบโค้ด */}
-          {SHOP_ENABLED && (
-            <div style={{ textAlign: "center", margin: "-6px 0 10px 0" }}>
+          <div className={`avatar-frame-wrap${frameId ? ` avatar-frame--${frameId}` : ""}`} style={{ position: "relative", display: "inline-block" }}>
+            <AvatarPicker value={profile.avatar} onChange={(avatar) => onProfile({ ...profile, avatar })} onEdit={onEditProfile} />
+            {/* ร้านค้าของตกแต่ง: เฉพาะคนล็อกอิน (ผูกกับบัญชีจริง) — Guest ไม่เห็นปุ่มนี้เลย */}
+            {loggedIn && (
               <button
                 type="button"
-                className="btn"
-                style={{ fontSize: "12px", padding: "4px 12px", background: "#fef08a", color: "#854d0e", border: "1px solid #eab308", fontWeight: "bold" }}
+                className="icon-btn avatar-shop-edit"
+                style={{ position: "absolute", right: 36, bottom: -4, width: 28, height: 28, borderRadius: "50%" }}
                 onClick={() => setShowShop(true)}
+                aria-label="เปิดร้านค้าของตกแต่ง"
+                title="ร้านค้าของตกแต่ง"
               >
-                ร้านค้าอวตาร ({auth ? `${coins} เหรียญ` : "Guest"})
+                <Icon name="pencil" size={14} />
               </button>
-            </div>
-          )}
+            )}
+          </div>
 
           <label className="field__label" htmlFor="player-name">
             CHOOSE YOUR NAME
@@ -121,10 +124,12 @@ export default function Lobby({
       </div>
 
       {joining && <JoinModal initialCode={inviteCode ?? ""} busy={busy} onSubmit={join} onClose={() => setJoining(false)} />}
-      {SHOP_ENABLED && showShop && (
+      {loggedIn && showShop && (
         <AvatarShopModal
+          economy={economy}
+          onBuy={onBuyItem}
+          onEquip={onEquipItem}
           onClose={() => setShowShop(false)}
-          onSelectAvatar={(idx) => onProfile({ ...profile, avatar: idx })}
         />
       )}
     </div>

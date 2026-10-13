@@ -12,6 +12,7 @@ const { hasBadWord } = require("./profanity");
 const authSession = require("./auth-session");
 const firebaseAuth = require("./firebase-auth");
 const leaderboard = require("./leaderboard");
+const wallet = require("./wallet"); // coin + ของตกแต่งโปรไฟล์ (แยกที่เก็บจาก leaderboard เด็ดขาด — ดู design/profile-editor/PLAN.md)
 const ai = require("./ai");
 const aiDrawings = require("./ai-drawings");
 const teamGallery = require("./team-gallery");
@@ -118,6 +119,9 @@ io.use((socket, next) => {
   // user === null = เล่นแบบ Guest (ไม่ได้ล็อกอิน หรือไม่ได้ตั้งค่า Firebase บน server เลย) — ไม่ปฏิเสธการเชื่อมต่อ
   socket.data.user = user;
   socket.data.accountId = user ? crypto.createHash("sha256").update(`jdi:score-account:v1:${user.sub}`).digest("hex") : null;
+  // แฮชแยกต่างหากจาก accountId ของคะแนน (namespace คนละตัว) — ระบบเศรษฐกิจ (coin/ของตกแต่ง) แยกที่เก็บจาก Leaderboard เด็ดขาด
+  // Guest (user===null) ไม่มี walletAccountId เลย จึงไม่มีกระเป๋าเงินให้ผูกได้ตั้งแต่ชั้นนี้ (ดู design/profile-editor/PLAN.md)
+  socket.data.walletAccountId = user ? crypto.createHash("sha256").update(`jdi:wallet-account:v1:${user.sub}`).digest("hex") : null;
   socket.data.persistent = persistent;
   socket.data.pid = persistent
     ? crypto.createHash("sha256").update(user ? `${user.sub}:${key}` : key).digest("hex").slice(0, 20)
@@ -315,6 +319,8 @@ const TEAM_BALANCE_MAX_DIFF = 1; // ทีมใหญ่สุดกับเ�
 const SWAP_EXPIRE_MS = Number(process.env.SWAP_EXPIRE_MS) || 20000; // คำขอสลับตัวหมดอายุใน 20 วิ (env แค่ให้เทสย่อเวลาได้)
 const SWAP_MAX = 5;              // ขอสลับตัวได้ไม่เกิน 5 ครั้ง/10 วิ (กันกดรัว)
 const SWAP_WINDOW_MS = 10000;
+const ECONOMY_MAX = 10;          // buy_item/equip_item/set_avatar_base รวมกันไม่เกิน 10 ครั้ง/10 วิ (กันกดรัว ไม่ใช่กันปั๊ม coin — ดู hasEnoughRealAccounts)
+const ECONOMY_WINDOW_MS = 10000;
 
 const isTeamMode = (room) => room.settings.mode === "team";
 const teamRoom = (room, t) => `${room.code}:${t}`;
@@ -347,6 +353,30 @@ function teamCounts(room) {
   const out = {};
   for (const t of roomTeams(room)) out[t] = teamCount(room, t);
   return out;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// เศรษฐกิจ (coin + ของตกแต่งโปรไฟล์) — แผนเต็ม design/profile-editor/PLAN.md
+// ══════════════════════════════════════════════════════════════════════
+
+// กันปั๊ม coin: ห้องปกติ/ทีมต้องมี "บัญชีจริงไม่ซ้ำกัน" อย่างน้อย 2 บัญชี (ไม่ใช่แค่ 2 คน) ถึงจะแจก coin จากทายถูก/จบเกม
+// นับจาก walletAccountId (ไม่ใช่ playerId) กันคนเดียวเปิดหลายแท็บ/หลายกุญแจทายกันเองในห้องเดียว
+// Guest (walletAccountId เป็น null) ไม่ถูกนับเป็นบัญชี · ห้องที่เป็น Guest ล้วนจึงไม่มีใครได้ coin เลย (ไม่มีใครมีกระเป๋าเงินอยู่แล้ว)
+// ข้อจำกัดที่ยอมรับ (บันทึกใน PLAN.md แล้ว): คนเดียวที่มีหลายบัญชี Google จริงยังผ่านด่านนี้ได้ ติดแค่ dailyCap ต่อบัญชีจำกัดความเสียหาย
+function hasEnoughRealAccounts(room) {
+  const ids = new Set();
+  for (const p of room.players) {
+    const id = room.walletAccountIds?.get(p.id);
+    if (id) ids.add(id);
+  }
+  return ids.size >= 2;
+}
+
+// แจก coin ให้ผู้เล่นหนึ่งคนในห้อง (เงียบๆ ถ้าไม่มีกระเป๋าเงินหรือห้องไม่ผ่านด่านกันปั๊ม) — เรียกเฉพาะจุดที่เกมตัดสินแล้วว่า "ได้ coin" จริง
+function grantRoomCoins(room, playerId, amount) {
+  if (!hasEnoughRealAccounts(room)) return;
+  const walletId = room.walletAccountIds?.get(playerId);
+  if (walletId) wallet.grantCoins(walletId, amount);
 }
 
 // ทีมใหญ่สุดกับเล็กสุดห่างกันไม่เกิน TEAM_BALANCE_MAX_DIFF คนไหม
@@ -595,6 +625,7 @@ function handleTeamGuess(socket, room, player, text) {
   }
   if (normalize(text) !== normalize(room.word)) return void io.to(lane.code).emit("chat_message", msg); // ทายผิด เห็นแค่ในทีม
 
+  const isFirstGuesserInLane = lane.guessedIds.size === 0; // ก่อนเพิ่มตัวเองลงไป — คนแรกของทีมที่ทายคำนี้ถูก (คนละความหมายกับ lane.rank ที่เป็นเรื่องทีมไหนถูกก่อน)
   lane.guessedIds.add(socket.data.pid);
   if (!lane.solved) {
     lane.solved = true;
@@ -605,10 +636,14 @@ function handleTeamGuess(socket, room, player, text) {
   const gained = 50 + room.timeLeft * 5 + (lane.rank === 1 ? FIRST_TEAM_BONUS : 0);
   player.score += gained;
   room.roundGains[socket.data.pid] = gained;
+  // coin: ผู้ทาย (+โบนัสถ้าเป็นคนแรกของ "ทีมตัวเอง" ที่ทายถูก — ไม่เกี่ยวกับ FIRST_TEAM_BONUS ของคะแนนที่เป็นเรื่องทีมไหนถูกก่อน)
+  const rules = wallet.getRules();
+  grantRoomCoins(room, socket.data.pid, (rules.guessCorrect || 0) + (isFirstGuesserInLane ? (rules.firstGuessBonus || 0) : 0));
   const drawer = room.players.find((p) => p.id === lane.drawerId);
   if (drawer) {
     drawer.score += 50;
     room.roundGains[drawer.id] = (room.roundGains[drawer.id] || 0) + 50;
+    grantRoomCoins(room, drawer.id, rules.drawerPerGuesser || 0);
   }
   socket.emit("chat_message", { ...msg, correct: true });
   socket.to(lane.code).emit("chat_message", { ...msg, text: "******", correct: true });
@@ -1376,6 +1411,12 @@ function endGame(room) {
       });
     }
   }
+  // coin: โบนัสจบเกม — เฉพาะห้องปกติ/ทีม (ยังไม่ทำให้โหมด Multiplayer vs AI ในรอบนี้ ดู PLAN.md สถานะความคืบหน้า)
+  // "ยังอยู่ในห้องตอนจบ" ได้ฟรีจากการวนแค่ room.players (คนที่ออกไปแล้วไม่อยู่ในนี้อีกต่อไป — เงื่อนไขเดียวกับ saveScore ด้านบน)
+  if (!room.mp) {
+    const finishGame = wallet.getRules().finishGame || 0;
+    for (const p of room.players) grantRoomCoins(room, p.id, finishGame);
+  }
   io.to(room.code).emit("game_end", endedPayload(room));
   io.to(room.code).emit("room_update", roomState(room));
 }
@@ -1552,6 +1593,7 @@ function removePlayer(room, pid) {
   io.in(pid).socketsLeave([code, ...TEAM_CODES.map((t) => `${code}:${t}`)]);
   room.players = room.players.filter((p) => p.id !== pid);
   room.scoreAccountIds?.delete(pid);
+  room.walletAccountIds?.delete(pid);
 
   if (room.players.length === 0) {
     for (const t of room.dropTimers?.values() ?? []) clearTimeout(t);
@@ -1742,6 +1784,8 @@ function endSoloRound(socket, solo, correct) {
     const timeLeft = solo.time - (Date.now() - solo.startedAt) / 1000;
     gained = ai.scoreFor(timeLeft, solo.time);
     solo.totalScore += gained;
+    // coin: Solo ได้ coin จากจุดเดียวเท่านั้นคือตรงนี้ (AI ทายภาพที่เราวาดถูก) — ไม่มีทางอื่นได้ coin ในโหมดนี้เลย (PLAN.md ข้อ 2)
+    if (solo.walletAccountId) wallet.grantCoins(solo.walletAccountId, wallet.getRules().soloAiGuessCorrect || 0);
   } else {
     solo.lives--;
   }
@@ -1917,6 +1961,12 @@ io.on("connection", (socket) => {
   // ห้องส่วนตัวชื่อเดียวกับ playerId — io.to(playerId) จึงส่งถึงคนนั้นได้ไม่ว่า socket จะเปลี่ยนไปกี่ครั้ง
   socket.join(socket.data.pid);
 
+  // เศรษฐกิจ (coin): Guest (walletAccountId เป็น null) ข้ามทั้งสองบรรทัดนี้ไปเงียบๆ ไม่มีกระเป๋าเงินให้ทำอะไรเลย
+  if (socket.data.walletAccountId) {
+    wallet.grantDailyLoginBonus(socket.data.walletAccountId); // ล็อกอินเล่นวันนี้ครั้งแรก = ได้โบนัส (ให้ครั้งเดียวต่อวันต่อบัญชีเอง)
+    socket.emit("economy_state", wallet.economyState(socket.data.walletAccountId));
+  }
+
   // ── ตัวดักข้อผิดพลาด (กัน server ล่มทั้งตัวเพราะ handler เดียวโยน error) ──
   // ครอบ "ทุก handler ของ socket นี้" ไว้ใน try/catch ที่เดียว โดยห่อ socket.on
   // ถ้า handler ใดโยน error (เช่นได้ข้อมูลผิดรูปแบบที่ไม่ได้เช็ค) จะ log ให้เห็นชัดแทนที่จะทำให้โปรเซสดับ
@@ -1961,6 +2011,7 @@ io.on("connection", (socket) => {
       status: "lobby",
       players: [{ id: socket.data.pid, name, avatar: cleanAvatar(data.avatar), score: 0, isHost: true, team: null, connected: true, ready: false }],
       scoreAccountIds: new Map([[socket.data.pid, socket.data.accountId]]),
+      walletAccountIds: new Map([[socket.data.pid, socket.data.walletAccountId]]),
       settings: { mode: "classic", rounds: 3, drawTime: 60, difficulty: "mixed", maxPlayers: MAX_PLAYERS, visibility: "private", challenges: [...DEFAULT_CHALLENGES], teamCount: 2, teamNames: { ...TEAM_DEFAULT_NAMES } },
       swapRequests: [], // คำขอสลับตัวที่ค้างอยู่ (โหมดทีม)
     };
@@ -1997,6 +2048,7 @@ io.on("connection", (socket) => {
     if (isTeamMode(room) && !joiner.team) return callback({ ok: false, error: "ROOM_FULL" });
     room.players.push(joiner);
     room.scoreAccountIds.set(socket.data.pid, socket.data.accountId);
+    room.walletAccountIds.set(socket.data.pid, socket.data.walletAccountId);
     socket.join(code);
     socket.data.roomCode = code;
     syncTeamRoom(room, joiner);
@@ -2048,6 +2100,30 @@ io.on("connection", (socket) => {
     io.to(socket.data.pid).emit("profile_updated", { playerId: socket.data.pid, name, avatar });
   });
 
+  // ── เศรษฐกิจ (coin + ของตกแต่งโปรไฟล์) — รอบ A ของ design/profile-editor/PLAN.md ──
+  // Guest (walletAccountId เป็น null) โดนปัดด้วย ECONOMY_GUEST ที่ wallet.js เองทุกฟังก์ชัน ไม่ต้องเช็คซ้ำที่นี่
+  socket.on("buy_item", (data, callback) => {
+    if (typeof callback !== "function") return;
+    if (!rateOk(socket, "economy", ECONOMY_MAX, ECONOMY_WINDOW_MS)) return callback({ ok: false, error: "TOO_MANY_ATTEMPTS" });
+    const result = wallet.buyItem(socket.data.walletAccountId, String(data?.itemId ?? ""));
+    callback(result);
+  });
+
+  socket.on("equip_item", (data, callback) => {
+    if (typeof callback !== "function") return;
+    if (!rateOk(socket, "economy", ECONOMY_MAX, ECONOMY_WINDOW_MS)) return callback({ ok: false, error: "TOO_MANY_ATTEMPTS" });
+    const category = String(data?.category ?? "");
+    const itemId = data?.itemId === null ? null : String(data?.itemId ?? "");
+    const result = wallet.equipItem(socket.data.walletAccountId, category, itemId);
+    callback(result);
+  });
+
+  socket.on("set_avatar_base", (data, callback) => {
+    if (typeof callback !== "function") return;
+    if (!rateOk(socket, "economy", ECONOMY_MAX, ECONOMY_WINDOW_MS)) return callback({ ok: false, error: "TOO_MANY_ATTEMPTS" });
+    const result = wallet.setAvatarBase(socket.data.walletAccountId, String(data?.kind ?? ""), Number(data?.index));
+    callback(result);
+  });
 
     socket.on("update_settings", (data) => {
     const room = rooms.get(socket.data.roomCode);
@@ -2303,15 +2379,20 @@ io.on("connection", (socket) => {
 
     // ทายถูก
     if (normalize(text) === normalize(room.word)) {
+      const isFirstGuesser = room.guessedIds.size === 0; // ก่อนเพิ่มตัวเองลงไป — ว่างอยู่ = เราคือคนแรกของตานี้
       room.guessedIds.add(socket.data.pid);
       const gained = 50 + room.timeLeft * 5;
       player.score += gained;
       room.roundGains[socket.data.pid] = gained;
+      // coin: ผู้ทาย (+โบนัสถ้าทายถูกเป็นคนแรกของตา) — ตัวเลขชั่วคราวจาก economy-rules.json (PLAN.md ข้อ 5)
+      const rules = wallet.getRules();
+      grantRoomCoins(room, socket.data.pid, (rules.guessCorrect || 0) + (isFirstGuesser ? (rules.firstGuessBonus || 0) : 0));
 
       const drawer = room.players.find((p) => p.id === room.drawerId);
       if (drawer) {
         drawer.score += 50;
         room.roundGains[drawer.id] = (room.roundGains[drawer.id] || 0) + 50;
+        grantRoomCoins(room, drawer.id, rules.drawerPerGuesser || 0);
       }
 
       // ช่องโกง 3 (ไอเดียเรา): คนทายเห็นคำตัวเอง คนอื่นเห็นเป็น ******
@@ -2488,7 +2569,7 @@ io.on("connection", (socket) => {
       name, difficulty: LEVELS.includes(data?.difficulty) ? data.difficulty : null, level: 1, lives: SOLO_LIVES, totalScore: 0, usedWords: new Set(), roundId: 0,
       over: false, drawing: false, busy: false, roundTimer: null, nextTimer: null,
       guessing: false, drawNext: false, passed: false, strokeTimers: [],
-      pid: socket.data.pid, accountId: socket.data.accountId, replies: [], sentStrokes: [], hintSent: false,
+      pid: socket.data.pid, accountId: socket.data.accountId, walletAccountId: socket.data.walletAccountId, replies: [], sentStrokes: [], hintSent: false,
     };
     solo.port = makeSoloPort(solo);
     socket.data.solo = solo;
@@ -2540,7 +2621,7 @@ io.on("connection", (socket) => {
 const PORT = Number(process.env.PORT) || 3000; // เทสเปิด server ตัวที่สองบนพอร์ตอื่นได้
 // โหลดคลังคำ/โมเดลของ Solo ให้เสร็จก่อนเปิดรับคน (ไม่ throw โหลดไม่ได้ก็ใช้สมองอื่น)
 // leaderboard.init() = โหลดคะแนนจาก Upstash ถ้าตั้ง env ไว้ (ไม่ตั้ง = ใช้ไฟล์ ไม่ทำอะไร) · ไม่ throw
-Promise.all([ai.init(), leaderboard.init()]).then(() => {
+Promise.all([ai.init(), leaderboard.init(), wallet.init()]).then(() => {
   aiDrawings.load();
   // ไม่ระบุ host = รับทุกการเชื่อมต่อ (เครื่องอื่นในวง Wi-Fi เดียวกันเข้าได้)
   // HOST=0.0.0.0 ไว้ให้ตอน deploy บน Render (ต้องฟังที่ 0.0.0.0 ตามที่ Render ต้องการ)
@@ -2581,10 +2662,10 @@ process.on("unhandledRejection", (reason) => {
   console.error("❌ unhandledRejection (server ยังทำงานต่อ):", reason?.stack || reason?.message || reason);
 });
 
-// ถูกสั่งปิด (deploy ใหม่/รีสตาร์ทบน Render ส่ง SIGTERM): เขียนคะแนนที่ค้างลง Upstash ให้เสร็จก่อนค่อยดับ จะได้ไม่เสียคะแนนล่าสุด
+// ถูกสั่งปิด (deploy ใหม่/รีสตาร์ทบน Render ส่ง SIGTERM): เขียนคะแนน+กระเป๋าเงินที่ค้างลง Upstash ให้เสร็จก่อนค่อยดับ จะได้ไม่เสียของล่าสุด
 for (const sig of ["SIGTERM", "SIGINT"]) {
   process.on(sig, async () => {
-    await leaderboard.flush();
+    await Promise.all([leaderboard.flush(), wallet.flush()]);
     process.exit(0);
   });
 }

@@ -1,0 +1,10 @@
+{
+  "_note": "ตัวเลขทั้งหมดในไฟล์นี้เป็นค่าชั่วคราว รอสูตรจริงจากอาจารย์ — แก้ที่นี่ที่เดียวพอ ไม่ต้องแก้โค้ด (ดู design/profile-editor/PLAN.md หัวข้อ 5)",
+  "guessCorrect": 10,
+  "firstGuessBonus": 5,
+  "drawerPerGuesser": 3,
+  "finishGame": 5,
+  "dailyLogin": 20,
+  "dailyCap": 200,
+  "soloAiGuessCorrect": 2
+}

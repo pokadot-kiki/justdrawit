@@ -943,6 +943,54 @@ AI พัง/ช้าเกินเพดาน (10 วิ) ตอนทาย
   - มีแกลเลอรีแล้ว: `gallery` (หน้าตาเดียวกับ `mpai_gallery`) · ช่วง `watch_end`: `watchEnd`
   - ช่วง `watch`/`watch_end`: `watch: { category, time, hintAt, hint, strokes, serverNow, solvedIds, myPoints, chat }` — ก่อนเฉลย **ไม่มีคำตอบ** · `chat` มีเฉพาะข้อความรอบปัจจุบันที่ผู้เล่นคนนั้นมีสิทธิ์เห็น
 
+## 11. เศรษฐกิจ (coin + ของตกแต่งโปรไฟล์)
+เจ้าของ server: คนที่ 1 · แผนเต็มอยู่ที่ `design/profile-editor/PLAN.md` — นี่คือ "รอบ A" (รากฐาน server เท่านั้น ยังไม่มี UI)
+
+**บัญชี**: ผูกกับ `socket.data.walletAccountId` (แฮช namespace เศรษฐกิจของ Firebase UID — **คนละตัวกับ** `accountId` ที่ใช้กับ Leaderboard)
+**Guest ไม่มี `walletAccountId` เลย (เป็น `null`) จึงไม่มีกระเป๋าเงิน** — ทุก event ด้านล่างตอบ `{ ok:false, error:"ECONOMY_GUEST" }` ถ้าเรียกตอนไม่ได้ล็อกอิน
+เก็บแยกจาก Leaderboard เด็ดขาด (ไฟล์/คีย์ Upstash คนละตัว ดู `server/wallet.js`)
+
+**ของตกแต่งมี 5 หมวด**: `frame` `hat` `glasses` `neck` `bg` — แต่ละหมวดมีของฟรี (ราคา 0) อย่างน้อย 1 ชิ้นเสมอ (`server/data/shop-items.json`)
+**ตัวเลข coin/ราคาทั้งหมดเป็นค่าชั่วคราว** รอสูตรจริงจากอาจารย์ (`server/economy-rules.json` — แก้ไฟล์นี้ไม่ต้องแก้โค้ด)
+
+### `economy_state` S → ผู้เล่นคนเดียว (ห้องส่วนตัวชื่อ `playerId`)
+ส่งทันทีหลังเชื่อมต่อสำเร็จถ้ามี `walletAccountId` (Guest ไม่ได้รับ event นี้เลย)
+```js
+{
+  coins: 1250,
+  owned: ["frame_default", "hat_wizard", ...],      // id ไอเทมที่มีสิทธิ์ใช้ (ของฟรีอยู่ในนี้ตั้งแต่สร้างบัญชี)
+  equipped: { frame: "frame_default", hat: "hat_wizard", glasses: null, neck: null, bg: null },
+  avatarBase: { kind: "pixel", index: 0 },           // หรือ { kind: "photo", url } — "photo" ยังไม่รองรับ (รอรอบ D)
+  catalog: [{ id, category, name, price, rarity }, ...],
+}
+```
+
+### `buy_item` C → S (ack)
+`{ itemId: "hat_wizard" }` → server เช็คราคา/ยอดเงินเอง **client บอกจำนวน coin เองไม่ได้**
+สำเร็จ/มีอยู่แล้ว: `{ ok:true, coins, owned }` · พลาด: `{ ok:false, error }` (`ITEM_NOT_FOUND` `INSUFFICIENT_COINS` `ECONOMY_GUEST`)
+
+### `equip_item` C → S (ack)
+`{ category: "hat", itemId: "hat_wizard" }` (`itemId: null` = ถอด) → ต้องเป็นของที่ `owned` อยู่แล้วเท่านั้น
+สำเร็จ: `{ ok:true, equipped }` · พลาด: `{ ok:false, error }` (`ITEM_NOT_FOUND` `ITEM_NOT_OWNED` `ECONOMY_GUEST`)
+
+### `set_avatar_base` C → S (ack)
+`{ kind: "pixel", index: 3 }` — `kind` รับได้แค่ `"pixel"` ในรอบนี้ (`"photo"` รอรอบ D)
+สำเร็จ: `{ ok:true, avatarBase }` · พลาด: `{ ok:false, error }`
+
+ทั้งสามอีเวนต์ข้างบนจำกัดความถี่รวมกันไม่เกิน 10 ครั้ง/10 วิ (`TOO_MANY_ATTEMPTS`) กันกดรัว ไม่ใช่กลไกกันปั๊ม coin (ดูข้างล่าง)
+
+### วิธีได้ coin (server ตัดสินเองทั้งหมด client ขอเองไม่ได้)
+ห้องปกติ/ทีม — **ต้องมีบัญชีจริงไม่ซ้ำกันในห้อง ≥ 2 บัญชี** (`walletAccountId` ไม่ใช่แค่จำนวนคน) ไม่งั้นไม่แจก coin เลย กันเปิดหลายแท็บทายกันเอง:
+- ทายถูก: ผู้ทาย +`guessCorrect` (คนแรกของตา +`firstGuessBonus` เพิ่ม) · คนวาด +`drawerPerGuesser` ต่อผู้ทายถูกหนึ่งคน
+- จบเกม (ยังอยู่ในห้องตอนจบ): ทุกคน +`finishGame` — **ยกเว้นห้องโหมด Multiplayer vs AI** (`settings.mode:"mpai"`) ยังไม่ได้ทำในรอบนี้
+
+Solo แข่งกับ AI — **ได้ coin จากจุดเดียวเท่านั้น**: ช่วง 1 ("เราวาด AI ทาย") ตอน AI ทายภาพเราถูก +`soloAiGuessCorrect` (ประมาณครึ่งหนึ่งของห้องปกติ)
+ไม่มีทางได้ coin ทางอื่นในโหมดนี้ (ช่วง 2 "AI วาด เราทาย" ไม่ให้ coin เลย)
+
+ทุกช่องทางบวก coin ผ่าน `dailyCap` ต่อบัญชีต่อวันเสมอ (ชนแล้วไม่แจกเพิ่ม ไม่ error ไม่บล็อกการเล่น) + โบนัสล็อกอินเล่นวันนี้ครั้งแรก +`dailyLogin` (ให้ตอนต่อ socket สำเร็จ นับรวมใน cap เดียวกัน)
+
+**ข้อจำกัดที่รู้อยู่** (ไม่ได้แก้ในรอบนี้ — บันทึกไว้ใน PLAN.md): คนที่มีหลายบัญชี Google จริงยังเปิดห้องเดียวกัน 2 บัญชีทายกันเองเพื่อปั๊ม coin ได้ (ผ่านด่าน "≥2 บัญชีจริง" เพราะนับแค่จำนวนบัญชี ไม่ใช่ตัวตนจริง) ติดแค่ `dailyCap` จำกัดความเสียหาย
+
 ## 9. Error
 
 ### `game_error` S → client คนเดียว
@@ -973,6 +1021,10 @@ AI พัง/ช้าเกินเพดาน (10 วิ) ตอนทาย
 | `SAME_TEAM` | `request_swap` เลือกคนในทีมตัวเอง (ต้องเป็นทีมอื่น) |
 | `ALREADY_PENDING` | `request_swap` ตอนตัวเองหรือเป้าหมายมีคำขอสลับตัวค้างอยู่แล้ว |
 | `NO_PENDING_REQUEST` | `respond_swap` ตอนไม่มีคำขอที่ส่งถึงตัวเอง (อาจหมดอายุไปแล้ว) |
+| `ECONOMY_GUEST` | `buy_item`/`equip_item`/`set_avatar_base` ตอนไม่ได้ล็อกอิน (Guest ไม่มีกระเป๋าเงิน) |
+| `ITEM_NOT_FOUND` | `buy_item`/`equip_item`/`set_avatar_base` ส่ง id ที่ไม่มีในแคตตาล็อก หรือหมวดไม่ตรงกับ `category` |
+| `ITEM_NOT_OWNED` | `equip_item` ส่งของที่ยังไม่ได้ซื้อ/ปลด |
+| `INSUFFICIENT_COINS` | `buy_item` เมื่อ coin ไม่พอราคา |
 
 ---
 
@@ -1047,3 +1099,4 @@ AI พัง/ช้าเกินเพดาน (10 วิ) ตอนทาย
 | 10 ต.ค. | Codex | **Mini Challenge ทุกตาเมื่อเปิด** — ใช้ชนิดจาก `shared/challengeRules.json`; ถ้ามีแบบพิเศษเปิด `none` ไม่เข้ากองสุ่มและไม่มีการข้ามตา; ไม่มีแบบพิเศษใช้ Standard; รายการว่างส่ง `INVALID_CHALLENGES` พร้อมข้อความไทย |
 | 10 ต.ค. | Codex | **รูปแบบวาดสี่แบบ** — ตามคำชี้แจงล่าสุด Standard เปิด/ปิดได้อิสระและเข้ากองสุ่มเท่ากับสามกติกาพิเศษ; ทุกตาสุ่มหนึ่งแบบจากที่เปิด ไม่มี gate โอกาสหรือการเลี่ยงแบบเดิม; ปิดหมดถูกปฏิเสธ |
 | 12 ต.ค. | Claude | **รวม `main` เข้า `feature/justdrawit-improvements`** — สองฝั่งเขียนกติกาทีมและ Mini Challenge ต่างกัน ผู้ใช้ตัดสินแล้ว: **โหมดทีมใช้กติกาของ main** (2–4 ทีม รหัส A–D · ทีมละ ≥ 2 คน ห่างกันไม่เกิน 1 คน · ความจุห้อง = `maxPlayers` · คะแนนทีม = ค่าเฉลี่ย · ชื่อทีมอยู่ใน `settings.teamNames` พร้อมตัวกรอง) จึง**ยกเลิก** ทีม E, `TEAM_FULL`, `TEAM_INCOMPLETE`, `TEAM_SETTINGS_INVALID`, `RoomState.teamNames` และ `NOT_READY` เฉพาะโหมดทีม ของแถว 6 ต.ค./10 ต.ค. ฝั่ง feature · **เก็บของ feature**: `round_end.gallery` + `team_gallery_close` และ `game_end.teamRanking` ที่มี `name`/`members` (ค่า `score` เป็นค่าเฉลี่ย · `winner` เป็น `null` เมื่อคะแนนสูงสุดเสมอกัน) · **Mini Challenge ใช้กติกาของ feature** (ทุกตาสุ่มหนึ่งแบบจากที่เปิด โอกาสเท่ากันรวม Standard · รายการว่าง = `INVALID_CHALLENGES`) จึงยกเลิกจังหวะ "ตาแรกไม่มี · ~1/3 · ไม่ติดกัน" ของแถว 5 ต.ค. · โหมด `mpai`, โปรไฟล์, Firebase login (ไม่บังคับ), กันโกงเขียนตัวหนังสือ คงเดิมทั้งหมด |
+| 13 ต.ค. | Claude | **เศรษฐกิจโปรไฟล์ รอบ A (รากฐาน server)** — event ใหม่ `economy_state` S→self, `buy_item`/`equip_item`/`set_avatar_base` C→S (ack) · error ใหม่ `ECONOMY_GUEST` `ITEM_NOT_FOUND` `ITEM_NOT_OWNED` `INSUFFICIENT_COINS` · Guest ไม่มีกระเป๋าเงิน (ไม่มี `walletAccountId`) · เก็บแยกจาก Leaderboard เด็ดขาด (`server/wallet.js`) · ตัวเลข coin/ราคาเป็นค่าชั่วคราวรอสูตรจริง (`server/economy-rules.json`) · **`Player`/`room_update` ยังไม่มีช่อง `profile` ในรอบนี้** (รอรอบ B ที่มีฝั่งแสดงผลจริงค่อยเพิ่ม กันเดาผิดตอนยังทดสอบ end-to-end ไม่ได้) — แผนเต็ม `design/profile-editor/PLAN.md` |

@@ -1,0 +1,18 @@
+[
+  { "id": "frame_default", "category": "frame", "name": "กรอบธรรมดา", "price": 0, "rarity": "default" },
+  { "id": "hat_default", "category": "hat", "name": "ไม่ใส่หมวก", "price": 0, "rarity": "default" },
+  { "id": "glasses_default", "category": "glasses", "name": "ไม่ใส่แว่น", "price": 0, "rarity": "default" },
+  { "id": "neck_default", "category": "neck", "name": "ไม่ใส่ของที่คอ", "price": 0, "rarity": "default" },
+  { "id": "bg_default", "category": "bg", "name": "พื้นหลังธรรมดา", "price": 0, "rarity": "default" },
+
+  { "id": "frame_sakura", "category": "frame", "name": "วงดอกซากุระ", "price": 150, "rarity": "special" },
+  { "id": "frame_rainbow", "category": "frame", "name": "กรอบสายรุ้ง", "price": 250, "rarity": "rare" },
+  { "id": "frame_stars", "category": "frame", "name": "ดาวกะพริบ", "price": 350, "rarity": "special" },
+
+  { "id": "hat_wizard", "category": "hat", "name": "หมวกพ่อมด", "price": 300, "rarity": "special" },
+  { "id": "hat_crown", "category": "hat", "name": "มงกุฎทอง", "price": 2000, "rarity": "legendary" },
+
+  { "id": "glasses_pixel", "category": "glasses", "name": "แว่นดำพิกเซล", "price": 200, "rarity": "rare" },
+
+  { "id": "neck_bowtie", "category": "neck", "name": "โบว์แดง", "price": 150, "rarity": "default" }
+]

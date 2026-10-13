@@ -26,6 +26,9 @@ const os = require("os");
 const SCORES_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "jdi-scores-"));
 const SCORES_FILE = path.join(SCORES_DIR, "scores.json");
 process.env.SCORES_FILE = SCORES_FILE;
+// เศรษฐกิจโปรไฟล์ (coin): ไฟล์กระเป๋าเงินชั่วคราวแยกจาก server/data/wallet.json ของจริงเช่นกัน — ต้องตั้งก่อน require("../wallet")
+const WALLET_FILE = path.join(SCORES_DIR, "wallet.json");
+process.env.WALLET_FILE = WALLET_FILE;
 // ช่วง "ดูภาพแล้วทาย" ของ Solo: ปกติชี้ไปไฟล์ที่ไม่มี เพื่อให้ข้อ 21-25 ไม่ขึ้นกับว่าเครื่องนี้ดาวน์โหลดภาพไว้หรือยัง
 // (server ทุกตัวที่เทสสตาร์ทสืบทอดค่านี้) · ข้อ 26 ตั้งค่าเฉพาะของมันเอง
 const NO_DRAWINGS_FILE = path.join(os.tmpdir(), "jdi-no-drawings.json");
@@ -4598,11 +4601,213 @@ async function main() {
         guestSocket.emit("create_room", { name: "Guest", avatar: 0 }, resolve);
       });
       check("Guest สร้างห้องได้ปกติไม่ต้องล็อกอิน", created?.ok, true);
+
+      // เศรษฐกิจ: Guest (ไม่มี walletAccountId) ไม่ได้รับ economy_state เลย และทุก event เศรษฐกิจตอบ ECONOMY_GUEST
+      const gotEconomyState = await new Promise((resolve) => {
+        guestSocket.once("economy_state", () => resolve(true));
+        setTimeout(() => resolve(false), 600);
+      });
+      check("Guest ไม่ได้รับ economy_state", gotEconomyState, false);
+      const buyAsGuest = await new Promise((resolve) => guestSocket.emit("buy_item", { itemId: "hat_wizard" }, resolve));
+      check("Guest buy_item → ECONOMY_GUEST", buyAsGuest, { ok: false, error: "ECONOMY_GUEST" });
+      const equipAsGuest = await new Promise((resolve) => guestSocket.emit("equip_item", { category: "hat", itemId: null }, resolve));
+      check("Guest equip_item → ECONOMY_GUEST", equipAsGuest, { ok: false, error: "ECONOMY_GUEST" });
+      const avatarAsGuest = await new Promise((resolve) => guestSocket.emit("set_avatar_base", { kind: "pixel", index: 2 }, resolve));
+      check("Guest set_avatar_base → ECONOMY_GUEST", avatarAsGuest, { ok: false, error: "ECONOMY_GUEST" });
+
       guestSocket.close();
     } finally {
       authServer.kill();
       await wait(300);
     }
+  });
+
+  await runPart("47. เศรษฐกิจโปรไฟล์ รอบ A (coin + ของตกแต่ง) — ดูแผนเต็ม design/profile-editor/PLAN.md", async () => {
+    const crypto = require("crypto");
+    const wallet = require("../wallet");
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    await wallet.init(); // อ่านแคตตาล็อก/กติกาจริงจากไฟล์ (ไม่ใช่ของปลอม) + ผูก WALLET_FILE ชั่วคราวที่ตั้งไว้ด้านบนของไฟล์นี้แล้ว
+    const TINY_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const rules = wallet.getRules();
+
+    // walletAccountId ของ socket ที่เพิ่งต่อ (bypass mode, ไม่ได้ส่ง playerKey): sub = "test-" + socket.id
+    // แฮชซ้ำสูตรเดียวกับ server/index.js io.use เป๊ะ เพื่ออ่านกระเป๋าเงินตรงจาก wallet.js ได้ (ไฟล์เดียวกับที่ server เขียน)
+    const walletIdFor = (socket) =>
+      crypto.createHash("sha256").update(`jdi:wallet-account:v1:test-${socket.id}`).digest("hex");
+
+    // ---------- ส่วนที่ 1: ฟังก์ชันของ wallet.js ตรงๆ (ไม่ผ่าน socket) ----------
+    check("economy-rules.json: _note ไม่หลุดมาใน getRules()", "_note" in rules, false);
+    checkOk("economy-rules.json: ตัวเลขทุกตัวเป็นจำนวนเต็มไม่ติดลบ",
+      ["guessCorrect", "firstGuessBonus", "drawerPerGuesser", "finishGame", "dailyLogin", "dailyCap", "soloAiGuessCorrect"]
+        .every((k) => Number.isInteger(rules[k]) && rules[k] >= 0));
+
+    for (const cat of wallet.CATEGORIES) {
+      checkOk(`shop-items.json: หมวด "${cat}" มีของฟรี (price:0) อย่างน้อย 1 ชิ้น`,
+        wallet.getCatalog().some((i) => i.category === cat && i.price === 0));
+    }
+
+    const fresh = wallet.readWallet("unit-test-fresh-" + Date.now());
+    check("บัญชีใหม่: coin เริ่มที่ 0", fresh.coins, 0);
+    check("บัญชีใหม่: avatarBase เริ่มที่พิกเซล index 0", fresh.avatarBase, { kind: "pixel", index: 0 });
+    checkOk("บัญชีใหม่: มีของฟรีครบทุกหมวดอยู่ใน owned ตั้งแต่สร้าง",
+      wallet.CATEGORIES.every((cat) => fresh.owned.some((id) => wallet.getCatalog().find((i) => i.id === id)?.category === cat)));
+    checkOk("บัญชีใหม่: equipped ของฟรีทุกหมวดถูกใส่ไว้ให้อัตโนมัติ",
+      wallet.CATEGORIES.every((cat) => fresh.equipped[cat] && wallet.getCatalog().find((i) => i.id === fresh.equipped[cat])?.price === 0));
+
+    const capId = "unit-test-dailycap-" + Date.now();
+    check("grantCoins ครั้งแรก", wallet.grantCoins(capId, 50), { granted: 50, coins: 50 });
+    check("grantCoins ชนเพดาน dailyCap บางส่วน (ขอ 9999 ได้แค่ที่เหลือ)", wallet.grantCoins(capId, 9999), { granted: rules.dailyCap - 50, coins: rules.dailyCap });
+    check("grantCoins หลังชน dailyCap เต็มแล้ว → granted 0 ไม่ error", wallet.grantCoins(capId, 10), { granted: 0, coins: rules.dailyCap });
+
+    const loginId = "unit-test-dailylogin-" + Date.now();
+    check("grantDailyLoginBonus ครั้งแรกของวัน", wallet.grantDailyLoginBonus(loginId), { granted: rules.dailyLogin });
+    check("grantDailyLoginBonus ครั้งที่สองวันเดียวกัน → 0 (ได้ไปแล้ว)", wallet.grantDailyLoginBonus(loginId), { granted: 0 });
+
+    // ---------- ส่วนที่ 2: ผ่าน socket จริง (server หลักของเทสชุดนี้ บายพาสล็อกอินให้ทุก socket เป็น "บัญชี" อัตโนมัติ) ----------
+    const drawer = track(await connect());
+    const guesser = track(await connect());
+    const idDrawer = walletIdFor(drawer.socket);
+    const idGuesser = walletIdFor(guesser.socket);
+
+    const es = await drawer.wait("economy_state", null, 3000); // S→self เฉยๆ ไม่ใช่ ack — track() ดักไว้ให้แล้วตั้งแต่ connect
+    // ทุก socket ที่ต่อใหม่ในเทสชุดนี้คือ "บัญชี" ที่ไม่เคยล็อกอินมาก่อนวันนี้เลย จึงได้โบนัสล็อกอินรายวันไปแล้วก่อน economy_state มาถึง
+    check("economy_state ส่งมาเองหลังต่อสำเร็จ: ได้โบนัสล็อกอินรายวันครั้งแรกไปแล้ว", es.coins, rules.dailyLogin);
+    checkOk("economy_state: มี catalog อย่างน้อยเท่าจำนวนที่อ่านจากไฟล์", es.catalog.length >= wallet.getCatalog().length);
+    checkOk("economy_state: owned มีของฟรีครบทุกหมวด",
+      wallet.CATEGORIES.every((cat) => es.owned.some((id) => es.catalog.find((i) => i.id === id)?.category === cat)));
+
+    const created = await emitAck(drawer.socket, "create_room", { name: "WalletHost", avatar: 0 });
+    await emitAck(guesser.socket, "join_room", { code: created.code, name: "WalletGuess", avatar: 1 });
+    clearAll(drawer, guesser);
+    drawer.socket.emit("start_game");
+    const cw = await drawer.wait("choose_word", null, 5000);
+    drawer.socket.emit("word_chosen", { word: cw.options[0] });
+    const myWord = (await drawer.wait("your_word")).word;
+    // server หลักของเทสชุดนี้ตั้ง CHALLENGE_INTRO_MS=0 เสมอ (ดู startServer() ด้านบนของไฟล์) จึงไม่มีป้ายใหญ่/intro_end เลยไม่ว่าชนิด challenge ใด ทายได้ทันที
+    guesser.socket.emit("guess", { text: myWord });
+    await guesser.wait("correct_guess", null, 3000);
+    await wait(150); // เผื่อเวลาให้ server เขียนไฟล์กระเป๋าเงินเสร็จ (เขียนแบบ sync อยู่แล้ว แต่กันการอ่านชนจังหวะ)
+
+    check("ทายถูก: ผู้ทาย (คนแรกของตา) ได้โบนัสล็อกอิน + guessCorrect + firstGuessBonus",
+      wallet.readWallet(idGuesser).coins, rules.dailyLogin + rules.guessCorrect + rules.firstGuessBonus);
+    check("ทายถูก: คนวาดได้โบนัสล็อกอิน + drawerPerGuesser ต่อผู้ทายถูกหนึ่งคน",
+      wallet.readWallet(idDrawer).coins, rules.dailyLogin + rules.drawerPerGuesser);
+
+    drawer.socket.close();
+    guesser.socket.close();
+
+    // ---------- ส่วนที่ 3: กันปั๊ม — ห้องที่มีแค่ "บัญชีจริง" เดียว (อีกคนเป็น Guest) ไม่แจก coin ให้ใครเลย ----------
+    // บน server หลักของเทสชุดนี้ (bypass เปิดอยู่) ทุก socket ที่ต่อเข้ามาเป็น "บัญชีจริง" เสมอ ไม่มีทาง Guest จริง
+    // ต้องสตาร์ท server แยกที่ปิด bypass แล้วใช้ session เซ็นเองจำลอง "ล็อกอินจริง 1 คน + Guest 1 คน" ในห้องเดียวกัน
+    const farmSecret = "test-economy-farm-secret-at-least-32-bytes";
+    const farmUrl = `http://localhost:${ALT_PORT}`;
+    const farmServer = spawn(process.execPath, ["index.js"], {
+      cwd: SERVER_DIR,
+      stdio: "ignore",
+      env: { ...process.env, NODE_ENV: "production", JDI_TEST_AUTH_BYPASS: "0", PORT: ALT_PORT, AI_MODE: "mock", FIREBASE_API_KEY: "test-key", AUTH_SESSION_SECRET: farmSecret },
+    });
+    try {
+      let farmReady = false;
+      for (let i = 0; i < 80; i++) {
+        if (await fetch(`${farmUrl}/healthz`).then((r) => r.ok).catch(() => false)) { farmReady = true; break; }
+        await wait(100);
+      }
+      checkOk("server กันปั๊ม (ไม่บายพาส) สตาร์ทติด", farmReady);
+      if (farmReady) {
+        const token = authSession.signSession({ sub: "farm-test-uid", email: "farm@example.com", name: "RealPlayer" }, farmSecret);
+        const realSocket = io(farmUrl, { transports: ["websocket"], extraHeaders: { Cookie: `jdi_session=${token}` } });
+        const guestSocket = io(farmUrl, { transports: ["websocket"] }); // ไม่มี cookie เลย = Guest จริง
+        await Promise.all([
+          new Promise((resolve, reject) => { realSocket.on("connect", resolve); realSocket.on("connect_error", reject); }),
+          new Promise((resolve, reject) => { guestSocket.on("connect", resolve); guestSocket.on("connect_error", reject); }),
+        ]);
+        const idReal = crypto.createHash("sha256").update("jdi:wallet-account:v1:farm-test-uid").digest("hex");
+        await wait(300); // เผื่อเวลาให้ server (คนละโปรเซส) เขียนโบนัสล็อกอินรายวันแรกเข้าให้ realSocket เสร็จก่อนอ่านไฟล์
+        const beforeCoins = wallet.readWallet(idReal).coins;
+
+        const createdF = await new Promise((resolve) => realSocket.emit("create_room", { name: "RealPlayer", avatar: 0 }, resolve));
+        await new Promise((resolve) => guestSocket.emit("join_room", { code: createdF.code, name: "GuestPal", avatar: 1 }, resolve));
+        const cwF = await new Promise((resolve) => { realSocket.once("choose_word", resolve); realSocket.emit("start_game"); });
+        const wordPromiseF = new Promise((resolve) => realSocket.once("your_word", (d) => resolve(d.word))); // ผูก listener ก่อน emit กันพลาดจังหวะ
+        const introEndF = new Promise((resolve) => realSocket.once("intro_end", resolve)); // ผูกไว้ก่อนด้วยเหตุผลเดียวกัน
+        realSocket.emit("word_chosen", { word: cwF.options[0] });
+        const wordF = await wordPromiseF;
+        // มีป้ายใหญ่เฉพาะตาที่ challenge.type ไม่ใช่ "none" — ตาที่ไม่มีป้ายจะไม่มี intro_end ส่งมาเลย ต้องเช็คก่อนรอ
+        if (cwF.challenge?.type !== "none") {
+          await Promise.race([introEndF, new Promise((_, reject) => setTimeout(() => reject(new Error("ไม่ได้รับ intro_end ภายใน 10000 ms")), 10000))]);
+        }
+        const gotCorrect = await new Promise((resolve) => {
+          guestSocket.once("correct_guess", () => resolve(true));
+          setTimeout(() => resolve(false), 3000);
+          guestSocket.emit("guess", { text: wordF });
+        });
+        checkOk("ห้อง RealPlayer(วาด) + Guest(ทาย): ทายถูกจริงก่อนเช็ค coin", gotCorrect);
+        await wait(150);
+        check("ห้องมีบัญชีจริงแค่ 1 (อีกคนเป็น Guest) → วาด/ทายถูกแล้วไม่ได้ coin เลยแม้เป็นบัญชีจริง",
+          wallet.readWallet(idReal).coins, beforeCoins);
+
+        realSocket.close();
+        guestSocket.close();
+      }
+    } finally {
+      farmServer.kill();
+      await wait(300);
+    }
+
+    // ---------- ส่วนที่ 4: ซื้อ/ใส่ของ — ตรวจสิทธิ์ครบ (ราคา ของซ้ำ ของไม่มี ของยังไม่ได้ซื้อ) ----------
+    const buyer = track(await connect());
+    const idBuyer = walletIdFor(buyer.socket);
+    await buyer.wait("economy_state", null, 3000); // ยืนยันว่า server เขียนแถวกระเป๋าเงิน (โบนัสล็อกอินรายวัน) เสร็จก่อนเทสจะไปแก้ไฟล์ทับเอง
+    // ตั้ง coin ตรงๆ ในไฟล์ชั่วคราว (ไม่ผ่าน client เพราะ client ส่งจำนวน coin เองไม่ได้) — ใช้ตั้งค่าตรงๆ ไม่ใช่ grantCoins
+    // เพราะ grantCoins ถูกจำกัดด้วย dailyCap (200) เหมือนกันหมดไม่ว่าใครเรียก ถ้าใช้ grantCoins จะได้ไม่ครบ 1000 ตามที่ตั้งใจเทส
+    {
+      const rows = wallet.loadWallets();
+      const idx = rows.findIndex((r) => r.accountId === idBuyer);
+      rows[idx].coins = 1000;
+      wallet.writeWallets(rows);
+    }
+
+    const buy1 = await emitAck(buyer.socket, "buy_item", { itemId: "hat_wizard" });
+    checkOk("ซื้อของที่ราคาพอ → ok", buy1.ok);
+    check("ซื้อแล้วหักเงินจริง (1000 - 300)", buy1.coins, 1000 - 300);
+    checkOk("ซื้อแล้ว owned มีของชิ้นนี้จริง", buy1.owned.includes("hat_wizard"));
+    const buy2 = await emitAck(buyer.socket, "buy_item", { itemId: "hat_wizard" });
+    check("ซื้อของที่มีอยู่แล้วซ้ำ → ok ไม่หักเงินซ้ำ", buy2.coins, 1000 - 300);
+    const buyMissing = await emitAck(buyer.socket, "buy_item", { itemId: "not_a_real_item_xyz" });
+    check("ซื้อของที่ไม่มีในแคตตาล็อก → ITEM_NOT_FOUND", buyMissing, { ok: false, error: "ITEM_NOT_FOUND" });
+
+    const poor = track(await connect());
+    const buyPoor = await emitAck(poor.socket, "buy_item", { itemId: "hat_wizard" });
+    check("บัญชีเงินไม่พอ → INSUFFICIENT_COINS", buyPoor, { ok: false, error: "INSUFFICIENT_COINS" });
+
+    const equipNotOwned = await emitAck(poor.socket, "equip_item", { category: "hat", itemId: "hat_wizard" });
+    check("ใส่ของที่ยังไม่ได้ซื้อ → ITEM_NOT_OWNED", equipNotOwned, { ok: false, error: "ITEM_NOT_OWNED" });
+    const equipFree = await emitAck(poor.socket, "equip_item", { category: "hat", itemId: "hat_default" });
+    checkOk("ใส่ของฟรีที่มีอยู่แล้วได้ปกติ", equipFree.ok && equipFree.equipped.hat === "hat_default");
+    const equipOff = await emitAck(poor.socket, "equip_item", { category: "hat", itemId: null });
+    checkOk("ถอดของออก (itemId:null) ได้ปกติ", equipOff.ok && equipOff.equipped.hat === null);
+    const equipBadCategory = await emitAck(poor.socket, "equip_item", { category: "hat", itemId: "frame_sakura" });
+    check("ใส่ของผิดหมวด (ของกรอบใส่ช่องหมวก) → ITEM_NOT_FOUND", equipBadCategory, { ok: false, error: "ITEM_NOT_FOUND" });
+
+    const avatarOk = await emitAck(poor.socket, "set_avatar_base", { kind: "pixel", index: 4 });
+    check("เลือกอวตารพิกเซล index ที่ถูกต้อง", avatarOk, { ok: true, avatarBase: { kind: "pixel", index: 4 } });
+    const avatarPhoto = await emitAck(poor.socket, "set_avatar_base", { kind: "photo", index: 0 });
+    check("ยังไม่รองรับ kind:photo ในรอบนี้ → ITEM_NOT_FOUND", avatarPhoto, { ok: false, error: "ITEM_NOT_FOUND" });
+
+    buyer.socket.close();
+    poor.socket.close();
+
+    // ---------- ส่วนที่ 5: Solo — ได้ coin จากจุดเดียวคือ AI ทายภาพเราถูกช่วง 1 เท่านั้น ----------
+    const solo = track(await connect());
+    const idSolo = walletIdFor(solo.socket);
+    solo.socket.emit("ai_start", { name: "WalletSolo" });
+    await solo.wait("ai_round_start");
+    solo.socket.emit("ai_snapshot", { image: TINY_PNG }); // AI_MOCK_CHANCE=1 ของ server เทสชุดนี้ → ทายถูกแน่นอนในครั้งแรก
+    const re = await solo.wait("ai_round_end", null, 4000);
+    check("Solo: AI ทายถูกจริงในเทสนี้ (เงื่อนไขก่อนเช็ค coin)", re.correct, true);
+    await wait(150);
+    check("Solo: ได้โบนัสล็อกอิน + soloAiGuessCorrect ตอน AI ทายภาพเราถูก", wallet.readWallet(idSolo).coins, rules.dailyLogin + rules.soloAiGuessCorrect);
+    solo.socket.close();
   });
 }
 
