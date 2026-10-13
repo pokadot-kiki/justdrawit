@@ -3586,6 +3586,11 @@ select[class] {
   box-shadow: var(--shadow-sm);
 }
 
+/* กรอบของตกแต่ง (รอบ A ของร้านค้า) — แสดงแค่กรอบรอบอวตารหน้าแรก ยังไม่ซ้อนหมวก/แว่น (รอรอบ B) */
+.avatar-frame--frame_sakura .avatar-picker__stage { box-shadow: 0 0 0 5px #f6a6cc, var(--shadow-sm); }
+.avatar-frame--frame_rainbow .avatar-picker__stage { box-shadow: 0 0 0 3px #1e6fe8, 0 0 0 6px #e85c9e, var(--shadow-sm); }
+.avatar-frame--frame_stars .avatar-picker__stage { box-shadow: 0 0 0 5px #ffc81e, 0 0 12px 4px #ffe27a, var(--shadow-sm); }
+
 .avatar-picker__arrow {
   display: grid;
   place-items: center;

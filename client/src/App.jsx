@@ -56,6 +56,8 @@ export default function App() {
   // ชื่อ + อวตารที่เลือกในหน้าแรก อยู่ที่นี่เพื่อให้ติดไปหน้า SET UP / Solo ได้ ไม่ต้องกรอกซ้ำ
   const [profile, setProfile] = useState(() => ({ name: initialName(getUserAuth()?.username), avatar: loadAvatar(AVATARS.length, getUserAuth()?.username) }));
   const [showProfile, setShowProfile] = useState(false);
+  // ร้านค้าของตกแต่ง (coin): server ส่ง economy_state เองทันทีหลังต่อสำเร็จถ้าล็อกอินอยู่ (null = ยังไม่ได้ของ/เป็น Guest)
+  const [economy, setEconomy] = useState(null);
   // ค่าเริ่ม Solo ที่ส่งมาจากหน้า SET UP (เลือกโหมด "แข่งกับ AI") → SoloAI เริ่มเกมทันทีด้วยความยากนี้
   // null = เข้า /solo ตรง ๆ (เช่นรีเฟรช) จะเห็นหน้ากรอกชื่อตามปกติ
   const [soloBoot, setSoloBoot] = useState(null);
@@ -121,7 +123,7 @@ export default function App() {
 
   useEffect(() => {
     const onConnect = () => setConnected(true);
-    const onDisconnect = () => setConnected(false);
+    const onDisconnect = () => { setConnected(false); setEconomy(null); };
     // server ส่ง room_update ทุกครั้งที่มีคนเข้าออก แก้ตั้งค่า หรือคะแนนเปลี่ยน
     // หน้าจอแค่เอาค่าที่ได้ไปแสดง ไม่ต้องคำนวณเอง
     const onRoomUpdate = (next) => {
@@ -140,6 +142,7 @@ export default function App() {
     // server พาทุกคนกลับห้องรอหลังจบเกม (ห้องเดิม หัวห้องเดิม) → สลับไปหน้าห้องรอ
     const onLobbyReturn = () => setInGame(false);
     const onGameError = (err) => showToast(errorText(err?.code));
+    const onEconomyState = (state) => setEconomy(state);
     // ถูกหัวห้องเตะออก — กลับหน้าแรกพร้อมข้อความ · ออกจาก URL ห้องแล้ว effect จะไม่ rejoin กลับเอง
     const onKicked = () => {
       showToast("คุณถูกหัวห้องเชิญออกจากห้อง");
@@ -155,6 +158,7 @@ export default function App() {
     socket.on("lobby_return", onLobbyReturn);
     socket.on("game_error", onGameError);
     socket.on("kicked", onKicked);
+    socket.on("economy_state", onEconomyState);
 
     // สำคัญมาก: socket อาจต่อติดไปแล้วก่อนที่ effect นี้จะได้ทำงาน (เกิดจริงตอน dev
     // เพราะ StrictMode ถอด listener ออกแล้วใส่ใหม่) ถ้าพลาด event "connect" ไปแล้ว
@@ -170,6 +174,7 @@ export default function App() {
       socket.off("lobby_return", onLobbyReturn);
       socket.off("game_error", onGameError);
       socket.off("kicked", onKicked);
+      socket.off("economy_state", onEconomyState);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -203,6 +208,28 @@ export default function App() {
           setMe(meRef.current);
         }
         resolve({ ok: true });
+      });
+    });
+  }
+
+  // ซื้อ/ใส่ของตกแต่ง — server ตัดสินราคา/ยอดเงิน/ของซ้ำเองทั้งหมด (เราแค่ขอ) อัปเดต economy ในเครื่องจากผลที่ server ตอบกลับมาจริง
+  function buyItem(itemId) {
+    if (!socket.connected) return Promise.resolve({ ok: false, error: "CONNECT_FAILED" });
+    return new Promise((resolve) => {
+      socket.timeout(6000).emit("buy_item", { itemId }, (err, result) => {
+        if (err) return resolve({ ok: false, error: "CONNECT_FAILED" });
+        if (result?.ok) setEconomy((prev) => (prev ? { ...prev, coins: result.coins, owned: result.owned } : prev));
+        resolve(result ?? { ok: false, error: "SERVER_ERROR" });
+      });
+    });
+  }
+  function equipItem(category, itemId) {
+    if (!socket.connected) return Promise.resolve({ ok: false, error: "CONNECT_FAILED" });
+    return new Promise((resolve) => {
+      socket.timeout(6000).emit("equip_item", { category, itemId }, (err, result) => {
+        if (err) return resolve({ ok: false, error: "CONNECT_FAILED" });
+        if (result?.ok) setEconomy((prev) => (prev ? { ...prev, equipped: result.equipped } : prev));
+        resolve(result ?? { ok: false, error: "SERVER_ERROR" });
       });
     });
   }
@@ -350,6 +377,10 @@ export default function App() {
           // หน้า Lobby ส่ง "รหัส error" มา ที่นี่แปลงเป็นข้อความไทยก่อนโชว์
           onError={(code) => showToast(errorText(code))}
           onOpenSetup={() => navigate("/setup")}
+          loggedIn={Boolean(auth.user)}
+          economy={economy}
+          onBuyItem={buyItem}
+          onEquipItem={equipItem}
         />
       )}
 
