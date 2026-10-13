@@ -35,7 +35,7 @@ const OP_START = new Set(["stroke_start", "fill", "draw_shape", "clear_canvas"])
  * ช่วง 2 ดู AI วาด แล้วทายในแชทร่วมของห้อง (Chat + useGame เดิม) → เฉลย → รอบถัดไป/จบเกม
  * สถานะเกมมาจาก useMpAi (ผูกที่ App) — หน้านี้แค่แสดงผล ส่งภาพ และส่งข้อความ server ตัดสินทั้งหมด
  */
-export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game, startGame, backToLobby, onLeave, onToast, onEditProfile }) {
+export default function MpAiGame({ room, meId, mp, sendSnapshot, acceptChaosState, sendGuess, game, startGame, backToLobby, onLeave, onToast, onEditProfile }) {
   const canvasRef = useRef(null);
   const [tool, setTool] = useState(TOOLS.PEN);
   const [color, setColor] = useState(PAINT_COLORS[0].hex); // เริ่มที่สีดำ (ตัวแรกในพาเลต)
@@ -43,6 +43,9 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
   const [hist, setHist] = useState({ undo: false, redo: false });
   const [showInfo, setShowInfo] = useState(false);
   const [showExit, setShowExit] = useState(false);
+  const [shieldBusy, setShieldBusy] = useState(false);
+  const [shieldMessage, setShieldMessage] = useState("");
+  const shieldBusyRef = useRef(false);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 250);
@@ -70,6 +73,29 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
   const canDraw = drawPhase && !myDone && !mp.intro && !mp.penLocked && selfEffect?.id !== "ice_canvas" && (mp.timeLeft ?? 1) > 0;
   const canClearLocked = noLift && drawPhase && !myDone && !mp.intro && mp.penLocked && !historyBlocked && (mp.timeLeft ?? 1) > 0;
   const solvedMe = mp.watch?.myPoints != null;
+
+  useEffect(() => {
+    const onBlocked = () => setShieldMessage("🛡️ โล่ป้องกันสกิลสำเร็จ");
+    socket.on("chaos_shield_blocked", onBlocked);
+    return () => socket.off("chaos_shield_blocked", onBlocked);
+  }, []);
+  useEffect(() => setShieldMessage(""), [mp.round]);
+
+  function activateShield() {
+    if (shieldBusyRef.current || mp.phase !== "draw" || myDone || mp.chaos?.shieldUsed || !mp.chaos || (mp.timeLeft ?? 0) <= 0) return;
+    shieldBusyRef.current = true;
+    setShieldBusy(true);
+    socket.timeout(5000).emit("chaos_activate_shield", (error, result) => {
+      shieldBusyRef.current = false;
+      setShieldBusy(false);
+      if (error || !result?.ok) {
+        setShieldMessage(error ? "เปิดโล่ไม่สำเร็จ กรุณาลองอีกครั้ง" : result?.error === "SHIELD_TOO_LATE" ? "ถูกโจมตีแล้วในตานี้ เปิดโล่ย้อนหลังไม่ได้" : "เปิดโล่ไม่ได้ในขณะนี้");
+        return;
+      }
+      acceptChaosState(result.state);
+      setShieldMessage("🛡️ เปิดโล่แล้ว ป้องกันได้จนจบตานี้");
+    });
+  }
 
   function setThink(on) {
     thinkingRef.current = on;
@@ -192,6 +218,13 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
           <span className="topbar__name">{phaseLabel}</span>
         </div>
         <div className="topbar__meta">
+          <ChaosBar chaos={mp.chaos} syncError={mp.chaosError} onConfirmedState={acceptChaosState} players={players} meId={meId} phase={mp.phase} doneIds={mp.doneIds} now={now} intro={mp.intro} challenge={challenge} />
+          {drawPhase && <div className="mp-ai-shield">
+            <button type="button" className="btn mp-ai-shield__button" onClick={activateShield} disabled={shieldBusy || myDone || !mp.chaos || mp.chaos.shieldUsed || (mp.timeLeft ?? 0) <= 0}>
+              {mp.chaos?.shield ? "🛡️ เปิดโล่แล้ว" : mp.chaos?.shieldUsed ? "🛡️ ใช้โล่แล้ว" : "🛡️ เปิดโล่ป้องกัน"}
+            </button>
+            {shieldMessage && <span className="mp-ai-shield__status" role="status">{shieldMessage}</span>}
+          </div>}
           <span className="topbar__round">
             รอบ {mp.round ?? "-"}/{mp.totalRounds ?? room.settings.rounds}
           </span>
@@ -276,7 +309,6 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
           )}
 
           <TimeBar timeLeft={live ? mp.timeLeft : null} total={mp.time} />
-          <ChaosBar chaos={mp.chaos} players={players} meId={meId} phase={mp.phase} doneIds={mp.doneIds} now={now} intro={mp.intro} />
         </section>
 
         <aside className="game__side">

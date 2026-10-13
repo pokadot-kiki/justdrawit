@@ -3,27 +3,38 @@ const MAX_ENERGY = 100;
 const DRAW_ACTIONS_PER_REWARD = 2;
 const DRAW_REWARD = 10;
 const DRAW_REWARD_CAP = 40;
-const CORRECT_REWARD = 15;
+const CORRECT_REWARD = 10;
 const ATTACK_REQUEST_GAP_MS = 500;
 const ITEMS = Object.freeze(require("../shared/chaos-items.json"));
+const debug = (step, state) => {
+  if (process.env.CHAOS_DEBUG === "1") console.info(`[CHAOS] ${step}`, { round: state.round, energy: [...state.energy.values()], usedAttacks: state.usedAttacks.size });
+};
 
 function create(players) {
-  return {
-    energy: new Map(players.map((player) => [player.id, 0])),
-    cooldowns: new Map(), effects: new Map(), shields: new Map(),
-    actions: new Map(), drawEarned: new Map(), attempts: new Map(), round: 0,
+  const state = {
+    energy: new Map(players.map((player) => [player.id, MAX_ENERGY])),
+    cooldowns: new Map(), effects: new Map(), shields: new Set(), usedShields: new Set(), hitPlayers: new Set(),
+    actions: new Map(), drawEarned: new Map(), attempts: new Map(), usedAttacks: new Set(), correctAwards: new Set(), round: 0,
   };
+  debug("create", state);
+  return state;
 }
 
 function phaseStart(state, players, round) {
+  state.shields.clear(); // An activated shield lasts only for its current draw phase.
   state.effects.clear();
   state.actions.clear();
   state.drawEarned.clear();
   if (state.round !== round) {
-    state.shields = new Map(players.map((player) => [player.id, 1]));
+    state.hitPlayers.clear();
+    state.usedAttacks.clear();
+    state.correctAwards.clear();
+    state.cooldowns.clear();
+    state.attempts.clear();
     state.round = round;
   }
-  for (const player of players) if (!state.energy.has(player.id)) state.energy.set(player.id, 0);
+  for (const player of players) if (!state.energy.has(player.id)) state.energy.set(player.id, MAX_ENERGY);
+  debug("phaseStart", state);
 }
 
 function active(state, targetId) {
@@ -38,9 +49,12 @@ function active(state, targetId) {
 
 function snapshot(state, playerId) {
   const now = Date.now();
+  debug("snapshot", state);
   return {
     energy: state.energy.get(playerId) ?? 0, maxEnergy: MAX_ENERGY,
-    items: ITEMS, shield: state.shields.get(playerId) ?? 0,
+    attackUsed: state.usedAttacks.has(playerId),
+    items: ITEMS, shield: state.shields.has(playerId) ? 1 : 0, shieldUsed: state.usedShields.has(playerId),
+    targetEffects: Object.fromEntries([...state.effects.keys()].filter((id) => id !== "ai").map((id) => [id, active(state, id)]).filter(([, effect]) => effect)),
     cooldowns: Object.fromEntries(ITEMS.map((item) => [item.id, state.cooldowns.get(`${playerId}:${item.id}`) ?? 0])),
     selfEffect: active(state, playerId), aiEffect: active(state, "ai"), serverNow: now,
   };
@@ -53,6 +67,12 @@ function grant(state, playerId, amount) {
   return state.energy.get(playerId) !== old;
 }
 
+function grantCorrect(state, playerId) {
+  if (!state.energy.has(playerId) || state.correctAwards.has(playerId)) return false;
+  state.correctAwards.add(playerId);
+  return grant(state, playerId, CORRECT_REWARD);
+}
+
 function drawingAction(state, playerId) {
   const n = (state.actions.get(playerId) ?? 0) + 1;
   state.actions.set(playerId, n);
@@ -61,28 +81,42 @@ function drawingAction(state, playerId) {
   return grant(state, playerId, DRAW_REWARD);
 }
 
+function activateShield(state, playerId, { phase, doneIds }) {
+  if (phase !== "draw") return { ok: false, error: "INVALID_PHASE" };
+  if (!state.energy.has(playerId)) return { ok: false, error: "INVALID_TARGET" };
+  if (state.usedShields.has(playerId)) return { ok: false, error: "SHIELD_USED" };
+  if (doneIds.has(playerId) || state.hitPlayers.has(playerId) || active(state, playerId)) return { ok: false, error: "SHIELD_TOO_LATE" };
+  state.usedShields.add(playerId);
+  state.shields.add(playerId);
+  return { ok: true };
+}
+
+function expireShields(state) {
+  state.shields.clear();
+}
+
 function attack(state, { attackerId, targetId, itemId, phase, players, doneIds, challenge }) {
   const item = ITEMS.find((entry) => entry.id === itemId);
   if (!item) return { ok: false, error: "INVALID_ITEM" };
   if (!state.energy.has(attackerId) || targetId === attackerId) return { ok: false, error: "INVALID_TARGET" };
-  const aiTarget = targetId === "ai";
-  if (phase !== "draw" && phase !== "watch") return { ok: false, error: "INVALID_PHASE" };
-  if (!aiTarget && (phase !== "draw" || !players.some((p) => p.id === targetId && p.connected !== false) || doneIds.has(targetId))) return { ok: false, error: "INVALID_TARGET" };
-  if (itemId === "rainbow_chaos" && !aiTarget && challenge?.type === "colour_fix") return { ok: false, error: "CHALLENGE_CONFLICT" };
+  if (phase !== "draw") return { ok: false, error: "INVALID_PHASE" };
+  if (state.usedAttacks.has(attackerId)) return { ok: false, error: "ATTACK_USED" };
+  if (!players.some((p) => p.id === targetId && p.connected !== false) || doneIds.has(targetId)) return { ok: false, error: "INVALID_TARGET" };
+  if (itemId === "rainbow_chaos" && challenge?.type === "colour_fix") return { ok: false, error: "CHALLENGE_CONFLICT" };
   const now = Date.now();
   if (active(state, targetId)) return { ok: false, error: "TARGET_BUSY" };
   if ((state.cooldowns.get(`${attackerId}:${itemId}`) ?? 0) > now) return { ok: false, error: "COOLDOWN" };
   if ((state.energy.get(attackerId) ?? 0) < item.price) return { ok: false, error: "NO_ENERGY" };
   if (now - (state.attempts.get(attackerId) ?? 0) < ATTACK_REQUEST_GAP_MS) return { ok: false, error: "TOO_FAST" };
   state.attempts.set(attackerId, now);
-  if (!aiTarget && (state.shields.get(targetId) ?? 0) > 0) {
-    state.shields.set(targetId, 0);
-    return { ok: false, error: "SHIELDED", shieldUsed: true };
-  }
+  if (state.shields.delete(targetId)) return { ok: false, error: "SHIELDED", shieldUsed: true };
   const effect = { id: item.id, targetId, until: now + item.durationMs };
   state.energy.set(attackerId, state.energy.get(attackerId) - item.price);
+  state.usedAttacks.add(attackerId);
   state.cooldowns.set(`${attackerId}:${itemId}`, now + item.cooldownMs);
   state.effects.set(targetId, effect);
+  state.hitPlayers.add(targetId);
+  debug("attack", state);
   return { ok: true, effect };
 }
 
@@ -98,4 +132,4 @@ function color(effect, original) {
   return effect?.id === "rainbow_chaos" ? RAINBOW[Math.floor(Date.now() / 350) % RAINBOW.length] : original;
 }
 
-module.exports = { ITEMS, MAX_ENERGY, CORRECT_REWARD, create, phaseStart, active, snapshot, grant, drawingAction, attack, point, color };
+module.exports = { ITEMS, MAX_ENERGY, CORRECT_REWARD, create, phaseStart, active, snapshot, grant, grantCorrect, drawingAction, activateShield, expireShields, attack, point, color };

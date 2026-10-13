@@ -48,6 +48,10 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
     if (room.mp?.chaos) io.to(pid).emit("chaos_state", chaos.snapshot(room.mp.chaos, pid));
   }
 
+  function chaosState(room, pid) {
+    return room.mp?.chaos ? chaos.snapshot(room.mp.chaos, pid) : null;
+  }
+
   function activeEffect(room, targetId) {
     return chaos.active(room?.mp?.chaos, targetId);
   }
@@ -60,7 +64,10 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
     const mp = room?.mp;
     if (!mp || mp.intro || room.status !== "playing" || !room.players.some((player) => player.id === attackerId && player.connected !== false)) return { ok: false, error: "NOT_IN_GAME" };
     const result = chaos.attack(mp.chaos, { attackerId, targetId, itemId, phase: mp.phase, players: room.players, doneIds: mp.done ?? new Map(), challenge: mp.challenge });
-    if (result.shieldUsed) emitChaos(room, targetId);
+    if (result.shieldUsed) {
+      emitChaos(room, targetId);
+      io.to(targetId).emit("chaos_shield_blocked", { attackerId, itemId });
+    }
     if (!result.ok) return result;
     if (itemId === "ice_canvas" && targetId !== "ai") {
       const board = mp.boards.get(targetId);
@@ -70,10 +77,19 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
         if (penLocked) io.to(targetId).emit("mpai_pen_locked", {});
       }
     }
-    emitChaos(room, attackerId);
+    for (const player of room.players) emitChaos(room, player.id);
     if (targetId === "ai") io.to(room.code).emit("chaos_ai_effect", { effect: result.effect, serverNow: Date.now() });
     else io.to(targetId).emit("chaos_self_effect", { effect: result.effect, serverNow: Date.now() });
     return { ok: true, effect: result.effect, state: chaos.snapshot(mp.chaos, attackerId) };
+  }
+
+  function activateShield(room, playerId) {
+    const mp = room?.mp;
+    if (!mp || room.status !== "playing" || !room.players.some((player) => player.id === playerId && player.connected !== false)) return { ok: false, error: "NOT_IN_GAME" };
+    const result = chaos.activateShield(mp.chaos, playerId, { phase: mp.phase, doneIds: mp.done ?? new Map() });
+    if (!result.ok) return result;
+    emitChaos(room, playerId);
+    return { ok: true, state: chaos.snapshot(mp.chaos, playerId) };
   }
 
   function entryOf(room, player) {
@@ -285,6 +301,8 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
   function recordGuess(room, e, image, out) {
     const mp = room.mp;
     const pid = e.playerId;
+    const previous = mp.done.get(pid);
+    if (previous) return { guess: previous.guess, correct: true, points: previous.points };
     mp.seen.set(pid, image);
     mp.failed.delete(pid);
     if (!mp.preds.has(pid)) mp.preds.set(pid, []);
@@ -294,7 +312,7 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
     mp.done.set(pid, { image, guess: out.guess, confidence: Math.round(out.confidence * 100) / 100, points });
     e.drawPoints += points;
     syncScore(room, e);
-    if (chaos.grant(mp.chaos, pid, chaos.CORRECT_REWARD)) emitChaos(room, pid);
+    if (chaos.grantCorrect(mp.chaos, pid)) emitChaos(room, pid);
     return { guess: out.guess, correct: true, points };
   }
 
@@ -415,6 +433,8 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
     if (!mp || mp.phase !== "draw" || !alive(room, mp.token)) return;
     const token = nextToken(room);
     mp.phase = "eval";
+    chaos.expireShields(mp.chaos);
+    for (const player of room.players) emitChaos(room, player.id);
     // Rebuild every final drawing after the phase closes; late actions cannot alter this version.
     for (const [pid, board] of mp.boards) {
       if (board.canvasOps.length === 0) {
@@ -552,7 +572,6 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
       const e = entryOf(room, player);
       e.guessPoints += points;
       syncScore(room, e);
-      if (chaos.grant(mp.chaos, player.id, chaos.CORRECT_REWARD)) emitChaos(room, player.id);
       publish("correct_guess", { playerId: player.id, name: player.name, system: true, kind: "correct", text: `${player.name} ทายถูก` });
       io.to(room.code).emit("mpai_correct", { playerId: player.id, name: player.name, points });
       io.to(room.code).emit("room_update", roomState(room));
@@ -658,8 +677,7 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
   function addPlayer(room, player) {
     if (room.mp) {
       entryOf(room, player);
-      if (!room.mp.chaos.energy.has(player.id)) room.mp.chaos.energy.set(player.id, 0);
-      if (!room.mp.chaos.shields.has(player.id)) room.mp.chaos.shields.set(player.id, 1);
+      if (!room.mp.chaos.energy.has(player.id)) room.mp.chaos.energy.set(player.id, chaos.MAX_ENERGY);
       if (room.mp.phase === "draw" && !room.mp.boards.has(player.id)) room.mp.boards.set(player.id, createPrivateBoard(player.id, room.mp.challenge));
       room.mp.watch?.offlineGrace.delete(player.id);
     }
@@ -702,6 +720,6 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
     return base;
   }
 
-  return { startGame, addPlayer, actionRoom, clearPlayerDrawing, handleSnapshot, handleGuess, onPlayerOffline, onPlayerLeft, checkProgress, stop, snapshot, ranking,
+  return { startGame, addPlayer, actionRoom, clearPlayerDrawing, handleSnapshot, handleGuess, onPlayerOffline, onPlayerLeft, checkProgress, stop, snapshot, chaosState, activateShield, ranking,
     attack, activeEffect, onDrawAction };
 };

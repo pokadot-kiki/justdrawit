@@ -5,6 +5,37 @@
 
 /* การ์ดเลือกโหมดในหน้า SET UP อยู่ใน setup.css (กล่อง "แข่งกับ AI") */
 
+.mp-ai-shield { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+.mp-ai-shield__button { padding: 5px 9px; min-height: 36px; white-space: nowrap; font-size: 13px; }
+.mp-ai-shield__status { max-width: 200px; color: #245936; font-size: 11px; font-weight: 700; text-align: center; line-height: 1.2; }
+@media (max-width: 700px) { .mp-ai-shield__status { max-width: 140px; } }
+
+.mp-ai-skills { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+.mp-ai-skills__trigger { min-height: 36px; padding: 5px 10px; white-space: nowrap; background: #ffe7a1; font-size: 13px; }
+.mp-ai-skills__trigger span { font-family: var(--font-pixel); font-size: 11px; }
+.mp-ai-skills__feedback { max-width: 190px; color: #245936; font-size: 11px; font-weight: 700; line-height: 1.2; text-align: center; }
+
+.modal__panel.chaos-modal { max-width: min(680px, calc(100vw - 32px)); padding: 18px; }
+.chaos-modal__energy { display: grid; gap: 7px; margin: 10px 0 16px; padding: 10px 12px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: #ffe7a1; text-align: left; }
+.chaos-modal__energy strong { font-family: var(--font-pixel); font-size: 16px; }
+.chaos-modal__energy small { font-size: 12px; line-height: 1.4; }
+.chaos-modal .chaos-bar__items { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; overflow: visible; }
+.chaos-modal .chaos-item-wrap { min-width: 0; }
+.chaos-modal .chaos-item { min-height: 150px; padding: 9px; gap: 5px; }
+.chaos-modal .chaos-item strong { min-height: 0; font-size: 14px; }
+.chaos-modal .chaos-item__ability { font-size: 12px; }
+.chaos-modal .chaos-item__status { font-size: 11px; }
+.chaos-modal .chaos-art { width: 42px; height: 42px; }
+.chaos-modal .chaos-targets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.chaos-modal .chaos-targets .btn { min-width: 0; overflow-wrap: anywhere; }
+.chaos-modal__hint { margin: 8px 0; font-size: 14px; }
+.chaos-modal__message { margin: 10px 0 0; font-weight: 700; }
+@media (max-width: 560px) {
+  .modal__panel.chaos-modal { padding: 12px; }
+  .chaos-modal .chaos-bar__items { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .chaos-modal .chaos-item { min-height: 142px; padding: 7px; }
+}
+
 /* ม่านบนกระดาน: AI กำลังดูภาพ / ส่งภาพแล้วรอเพื่อน */
 .mp-ai__eval {
   position: absolute;
@@ -375,6 +406,7 @@
 .chaos-item__status--disabled { background: #ece3d0; color: #684e32; }
 .chaos-art { display: block; width: 36px; height: 36px; flex: none; }
 .chaos-bar__message { grid-column: 1 / -1; margin: 0; font-size: 11px; font-weight: 700; }
+.chaos-ai-effect { margin: 5px 0; padding: 5px 7px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: #fff0b9; color: var(--ink); font-size: 11px; font-weight: 800; }
 .chaos-targets { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
 
 .chaos-overlay { position: absolute; inset: 0; z-index: 4; overflow: hidden; pointer-events: none; }
@@ -390,13 +422,6 @@
 .chaos-overlay__flies i:nth-child(4) { left: 28%; top: 73%; animation-delay: -1s; }
 .chaos-overlay__flies i:nth-child(5) { left: 81%; top: 80%; animation-delay: -.5s; }
 @keyframes chaos-fly { to { transform: translate(24px, -18px); } }
-
-@media (min-width: 1001px) {
-  .game.mp-ai:not(.mp-ai--gallery) { grid-template-rows: auto auto auto auto; align-content: start; }
-  .game.mp-ai:not(.mp-ai--gallery) .chaos-bar { grid-column: 2; grid-row: 4; }
-  .game.mp-ai:not(.mp-ai--gallery) .game__players,
-  .game.mp-ai:not(.mp-ai--gallery) .game__side { grid-row: 1 / 5; }
-}
 
 @media (max-width: 699px) {
   .mp-ai .chaos-bar { grid-template-columns: 105px minmax(0, 1fr); gap: 4px; padding: 4px; }

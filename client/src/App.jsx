@@ -154,7 +154,7 @@ export default function App() {
     bindCanvas,
   } = useGame(room?.settings?.teamNames);
   // โหมด Multiplayer vs AI: ผูก event ไว้ที่ App เหมือน useGame (event แรกมาก่อนหน้าจอเกมจะเกิด)
-  const { mp, sendSnapshot: mpSnapshot } = useMpAi(me?.playerId);
+  const { mp, sendSnapshot: mpSnapshot, acceptChaosState } = useMpAi(me?.playerId);
 
   function showToast(text) {
     setToast({ text, id: Date.now() });
@@ -507,6 +507,7 @@ export default function App() {
           room={room}
           meId={me.playerId}
           mp={mp}
+          acceptChaosState={acceptChaosState}
           sendSnapshot={mpSnapshot}
           sendGuess={sendGuess}
           game={game}

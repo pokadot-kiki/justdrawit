@@ -96,36 +96,90 @@ test("all 16 Achievement definitions unlock from server state only once", () => 
   assert.equal(unfinished.progress["แบกเพื่อนตึงๆ"] || 0, 0);
 });
 
-test("CHAOS validates energy, target, phase, shield, cooldown and expiration", () => {
+test("CHAOS applies one player-target attack once and validates energy, phase, and expiration", () => {
   const players = ["a", "b"].map((id) => ({ id, connected: true }));
   const state = chaos.create(players);
   chaos.phaseStart(state, players, 1);
   const request = (targetId, itemId = "pixel_fly", phase = "draw") => chaos.attack(state, {
     attackerId: "a", targetId, itemId, phase, players, doneIds: new Map(), challenge: { type: "none" },
   });
+  assert.equal(state.energy.get("a"), 100);
+  state.energy.set("a", 0);
   assert.equal(request("b").error, "NO_ENERGY");
+  state.energy.set("a", 100);
   assert.equal(request("a").error, "INVALID_TARGET");
   assert.equal(request("missing").error, "INVALID_TARGET");
   assert.equal(request("ai", "pixel_fly", "over").error, "INVALID_PHASE");
+  assert.equal(request("ai").error, "INVALID_TARGET");
   for (let i = 0; i < 8; i++) chaos.drawingAction(state, "a");
-  assert.equal(state.energy.get("a"), 40);
-  assert.equal(request("b").error, "SHIELDED");
-  assert.equal(state.energy.get("a"), 40);
-  assert.equal(request("b").error, "TOO_FAST");
-  state.attempts.set("a", Date.now() - 1000);
+  assert.equal(state.energy.get("a"), 100);
   assert.equal(request("b").ok, true);
-  assert.equal(state.energy.get("a"), 15);
-  assert.equal(request("b").error, "TARGET_BUSY");
+  assert.equal(state.energy.get("a"), 75);
+  assert.equal(state.effects.get("b").id, "pixel_fly");
+  assert.equal(state.usedAttacks.has("a"), true);
+  assert.equal(request("b").error, "ATTACK_USED");
+  assert.equal(state.energy.get("a"), 75);
   state.effects.get("b").until = Date.now() - 1;
   assert.equal(chaos.active(state, "b"), null);
-  assert.equal(request("b").error, "COOLDOWN");
+  assert.equal(request("b").error, "ATTACK_USED");
+  chaos.phaseStart(state, players, 1); // ช่วง AI วาดยังเป็นรอบเดียวกัน
+  assert.equal(request("ai", "blackout", "watch").error, "INVALID_PHASE");
+  assert.equal(chaos.grantCorrect(state, "a"), true);
+  assert.equal(state.energy.get("a"), 85);
+  assert.equal(chaos.grantCorrect(state, "a"), false);
+  assert.equal(state.energy.get("a"), 85);
   chaos.phaseStart(state, players, 2);
-  assert.equal(state.shields.get("b"), 1);
   assert.equal(state.effects.size, 0);
+  assert.equal(state.energy.get("a"), 85);
+  assert.equal(state.usedAttacks.has("a"), false);
+  assert.equal(request("b", "blackout").ok, true);
+  assert.equal(state.energy.get("a"), 45);
+  assert.equal(chaos.grantCorrect(state, "a"), true);
+  assert.equal(state.energy.get("a"), 55);
+  assert.equal(chaos.snapshot(state, "a").energy, 55); // Reconnect keeps server energy.
+  assert.equal(chaos.create(players).energy.get("a"), 100); // Only a new game resets energy.
+  assert.equal(economy.REWARDS.completedRoomGame, 10);
   assert.deepEqual(chaos.ITEMS.map(({ id, price }) => [id, price]), [
     ["cursed_doodle", 30], ["blackout", 40], ["pixel_fly", 25],
     ["shaky_hand", 35], ["ice_canvas", 50], ["rainbow_chaos", 35],
   ]);
   assert.deepEqual(chaos.point({ id: "cursed_doodle" }, .2, .4), { x: .8, y: .4 });
   assert.notEqual(chaos.color({ id: "rainbow_chaos" }, "#000000"), "#000000");
+});
+
+test("Shield activates once per game, blocks one real effect, expires with the draw turn, and survives reconnect", () => {
+  const players = ["a", "b"].map((id) => ({ id, connected: true }));
+  const state = chaos.create(players);
+  const context = { phase: "draw", doneIds: new Map() };
+  const attack = () => chaos.attack(state, { attackerId: "a", targetId: "b", itemId: "pixel_fly", phase: "draw", players, doneIds: new Map(), challenge: { type: "none" } });
+  chaos.phaseStart(state, players, 1);
+  assert.equal(chaos.snapshot(state, "b").shieldUsed, false);
+  assert.equal(chaos.activateShield(state, "b", context).ok, true);
+  assert.equal(chaos.snapshot(state, "b").shield, 1); // Same server snapshot on reconnect.
+  assert.equal(chaos.activateShield(state, "b", context).error, "SHIELD_USED");
+  assert.equal(attack().error, "SHIELDED");
+  assert.equal(state.energy.get("a"), 100);
+  assert.equal(state.effects.has("b"), false);
+  assert.equal(chaos.snapshot(state, "b").shield, 0);
+  assert.equal(chaos.snapshot(state, "b").shieldUsed, true);
+  chaos.phaseStart(state, players, 2);
+  assert.equal(chaos.activateShield(state, "b", context).error, "SHIELD_USED");
+  assert.equal(attack().ok, true);
+  assert.equal(attack().error, "ATTACK_USED");
+  assert.equal(chaos.activateShield(state, "b", context).error, "SHIELD_USED");
+
+  const saved = chaos.create(players);
+  chaos.phaseStart(saved, players, 1);
+  assert.equal(chaos.activateShield(saved, "b", context).ok, true);
+  chaos.expireShields(saved);
+  assert.equal(chaos.snapshot(saved, "b").shield, 0);
+  assert.equal(chaos.snapshot(saved, "b").shieldUsed, true);
+  assert.equal(chaos.attack(saved, { attackerId: "a", targetId: "b", itemId: "pixel_fly", phase: "draw", players, doneIds: new Map(), challenge: { type: "none" } }).ok, true);
+  chaos.phaseStart(saved, players, 2);
+  assert.equal(chaos.activateShield(saved, "b", context).error, "SHIELD_USED");
+
+  const late = chaos.create(players);
+  chaos.phaseStart(late, players, 1);
+  assert.equal(chaos.attack(late, { attackerId: "a", targetId: "b", itemId: "pixel_fly", phase: "draw", players, doneIds: new Map(), challenge: { type: "none" } }).ok, true);
+  assert.equal(chaos.activateShield(late, "b", context).error, "SHIELD_TOO_LATE");
 });

@@ -1416,7 +1416,7 @@ function endGame(room, completed = false) {
   mpAi.stop(room); // Multiplayer vs AI: หยุดตัวจับเวลาของช่วงที่ค้างอยู่ (ไม่มี room.mp = ไม่ทำอะไร)
   room.status = "ended";
   room.phase = null;
-  if (completed && !room.mp && !room.coinRewardsGranted) {
+  if (completed && !room.coinRewardsGranted) {
     room.coinRewardsGranted = true;
     for (const player of room.players) {
       if (!room.coinParticipants?.has(player.id)) continue;
@@ -2816,6 +2816,22 @@ io.on("connection", (socket) => {
     callback(mpAi.attack(room, socket.data.pid, itemId, targetId));
   });
 
+  socket.on("chaos_activate_shield", (callback) => {
+    if (typeof callback !== "function") return;
+    const room = rooms.get(socket.data.roomCode);
+    if (!room || !isMpAi(room)) return callback({ ok: false, error: "NOT_IN_GAME" });
+    callback(mpAi.activateShield(room, socket.data.pid));
+  });
+
+  socket.on("mpai_chaos_state", (callback) => {
+    if (typeof callback !== "function") return;
+    const room = rooms.get(socket.data.roomCode);
+    if (!room || room.status !== "playing" || !isMpAi(room) || !room.players.some((player) => player.id === socket.data.pid)) {
+      return callback({ ok: false, error: "NOT_IN_GAME" });
+    }
+    callback({ ok: true, state: mpAi.chaosState(room, socket.data.pid) });
+  });
+
   socket.on("leave_room", () => {
     stopSolo(socket); // ออกจาก Solo กลางเกม = ไม่บันทึกคะแนน
     leaveRoom(socket);
@@ -2831,6 +2847,7 @@ io.on("connection", (socket) => {
 const PORT = Number(process.env.PORT) || 3000; // เทสเปิด server ตัวที่สองบนพอร์ตอื่นได้
 server.on("error", (err) => {
   console.error(`❌ เปิดพอร์ต Server ไม่สำเร็จ (${err.code || "ERROR"}): ${err.message}`);
+  if (err.code === "EADDRINUSE") console.error(`พอร์ต ${PORT} ถูกใช้อยู่ ตรวจ PID และโฟลเดอร์ด้วย lsof -nP -iTCP:${PORT} -sTCP:LISTEN แล้วหยุดเฉพาะ Server ที่ต้องการแทนที่`);
   process.exitCode = 1;
 });
 // โหลดคลังคำ/โมเดลของ Solo ให้เสร็จก่อนเปิดรับคน (ไม่ throw โหลดไม่ได้ก็ใช้สมองอื่น)
@@ -2842,6 +2859,7 @@ Promise.all([ai.init(), leaderboard.init()]).then(() => {
   const listenArgs = process.env.HOST ? [PORT, process.env.HOST] : [PORT];
   server.listen(...listenArgs, () => {
     console.log(`server พร้อมแล้ว ที่ http://localhost:${PORT}`);
+    console.log(`โปรเจกต์: ${path.resolve(__dirname, "..")} · PID ${process.pid}`);
     // ล็อกอินเป็นทางเลือก ไม่ตั้งค่าก็เล่นได้ปกติทุกโหมด (ปุ่ม "เข้าสู่ระบบ" ฝั่งหน้าเว็บจะซ่อนไปเอง) — แค่แจ้งเฉยๆ ไม่ใช่ข้อผิดพลาด
     if (!AUTH_CONFIGURED && !TEST_AUTH_BYPASS) {
       console.log(`เข้าสู่ระบบ (Firebase): ปิดอยู่ — ตั้งค่า ${AUTH_MISSING.join(", ")} เพื่อเปิด (ไม่ตั้งก็เล่นได้ปกติแบบ Guest)`);

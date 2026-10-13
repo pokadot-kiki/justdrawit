@@ -35,7 +35,8 @@ function musicPlaylist() {
 // ให้ client คุยกับ server ผ่าน origin เดียวกัน (เบราว์เซอร์เห็นเป็น localhost:5173 ทั้งคู่)
 // ข้อดีคือข้อ 8 ตอนรวมเป็นพอร์ตเดียว โค้ดฝั่ง client ไม่ต้องแก้อะไรเลย
 // PROXY_PORT / DEV_PORT: ไว้ให้เทสรัน server กับ vite คนละพอร์ตจากของจริง (ไม่ตั้ง = 3000 / 5173 ตามเดิม)
-const SERVER = `http://localhost:${process.env.PROXY_PORT || 3000}`;
+// ใช้ IPv4 ตรงกับ Server ของโปรเจกต์นี้; localhost อาจเลือก ::1 และไปหา Server อีกตัวที่จับพอร์ตเดียวกัน
+const SERVER = `http://127.0.0.1:${process.env.PROXY_PORT || 3000}`;
 export default defineConfig({
   plugins: [react(), musicPlaylist()],
   server: {

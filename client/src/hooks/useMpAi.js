@@ -26,6 +26,7 @@ function emptyMp() {
     watch: null, // { category, time, hintAt, hint, strokes, solvedIds, myPoints }
     watchEnd: null, // { round, word, results }
     chaos: null, // Server-owned Attack Energy, cooldowns and active effects.
+    chaosError: null,
   };
 }
 
@@ -35,8 +36,12 @@ const localEffect = (effect, serverNow) => effect ? { ...effect, until: localUnt
 const localChaos = (state) => state ? { ...state,
   selfEffect: localEffect(state.selfEffect, state.serverNow),
   aiEffect: localEffect(state.aiEffect, state.serverNow),
+  targetEffects: Object.fromEntries(Object.entries(state.targetEffects ?? {}).map(([id, effect]) => [id, localEffect(effect, state.serverNow)])),
   cooldowns: Object.fromEntries(Object.entries(state.cooldowns ?? {}).map(([id, until]) => [id, localUntil(until, state.serverNow)])),
 } : null;
+const traceChaos = (source, state) => {
+  if (import.meta.env.DEV) console.debug(`[CHAOS] ${source}`, { energy: state?.energy, attackUsed: state?.attackUsed });
+};
 
 /**
  * ผูก event ของ Multiplayer vs AI ไว้ที่ App (ไม่ใช่ที่หน้าจอเกม) ด้วยเหตุผลเดียวกับ useGame:
@@ -120,13 +125,17 @@ export function useMpAi(meId) {
       );
     const onWatchEnd = (we) => patch({ phase: "watch_end", watchEnd: we });
     const onTimer = ({ timeLeft }) => patch({ timeLeft });
-    const onChaosState = (state) => patch((m) => ({ chaos: localChaos(state) ?? m.chaos }));
+    const onChaosState = (state) => {
+      traceChaos("chaos_state", state);
+      patch((m) => ({ chaos: localChaos(state) ?? m.chaos, chaosError: null }));
+    };
     const onChaosSelfEffect = ({ effect, serverNow }) => patch((m) => ({ chaos: m.chaos ? { ...m.chaos, selfEffect: localEffect(effect, serverNow) } : m.chaos }));
     const onChaosAiEffect = ({ effect, serverNow }) => patch((m) => ({ chaos: m.chaos ? { ...m.chaos, aiEffect: localEffect(effect, serverNow) } : m.chaos }));
     const onGameEnd = () => patch({ phase: "over" });
     // เข้ากลางเกม/รีเฟรช: server ส่งภาพรวมทั้งหมดมาทีเดียว
     const onState = (s) => {
       if (!s) return;
+      traceChaos("mpai_state", s.chaos);
       setMp({
         ...emptyMp(),
         phase: s.phase,
@@ -145,6 +154,7 @@ export function useMpAi(meId) {
         myPoints: s.myPoints ?? null,
         gallery: s.gallery ?? null,
         chaos: localChaos(s.chaos),
+        chaosError: null,
         watch: s.watch ? { ...s.watch, clockOffset: Date.now() - s.watch.serverNow } : null,
         watchEnd: s.watchEnd ?? null,
       });
@@ -183,10 +193,41 @@ export function useMpAi(meId) {
     };
   }, [meId]);
 
+  // Event ตอนเริ่มรอบอาจพลาดหลัง Hot Reload หรือ reconnect; ขอเฉพาะสถานะ CHAOS ของตนเองซ้ำได้
+  // โดย Server ยังเป็นเจ้าของ Energy, cooldown และสิทธิ์การโจมตีทั้งหมด
+  useEffect(() => {
+    if (!meId || mp.chaos || (mp.phase !== "draw" && mp.phase !== "watch")) return undefined;
+    let cancelled = false;
+    const request = () => {
+      if (!socket.connected) {
+        setMp((m) => ({ ...m, chaosError: "ขาดการเชื่อมต่อ Server" }));
+        return;
+      }
+      socket.timeout(4000).emit("mpai_chaos_state", (error, result) => {
+        if (cancelled) return;
+        if (error || !result?.ok || !result.state) {
+          setMp((m) => m.chaos ? m : { ...m, chaosError: error ? "Server ยังไม่ส่งข้อมูล CHAOS ATTACK กรุณารีสตาร์ต Server" : "Server ยังไม่พร้อมให้ใช้ CHAOS ATTACK" });
+          return;
+        }
+        traceChaos("mpai_chaos_state", result.state);
+        setMp((m) => (m.phase === "draw" || m.phase === "watch") ? { ...m, chaos: localChaos(result.state), chaosError: null } : m);
+      });
+    };
+    const timer = setTimeout(request, mp.chaosError ? 5000 : 250);
+    socket.on("connect", request);
+    return () => { cancelled = true; clearTimeout(timer); socket.off("connect", request); };
+  }, [meId, mp.phase, mp.chaos, mp.chaosError]);
+
   // ขอให้ server สร้างภาพจาก action ที่ตรวจแล้ว — server คุมจังหวะ/ทีละภาพและส่งคำทายส่วนตัว
   function sendSnapshot() {
     socket.emit("mpai_snapshot");
   }
 
-  return { mp, sendSnapshot };
+  function acceptChaosState(state) {
+    if (!state) return;
+    traceChaos("attack_ack", state);
+    setMp((m) => ({ ...m, chaos: localChaos(state), chaosError: null }));
+  }
+
+  return { mp, sendSnapshot, acceptChaosState };
 }

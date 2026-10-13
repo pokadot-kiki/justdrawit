@@ -17,8 +17,9 @@ const ERROR_TEXT = {
   INVALID_PHASE: "ช่วงนี้ยังโจมตีไม่ได้", NOT_IN_GAME: "เกมยังไม่พร้อมให้โจมตี",
   CHALLENGE_CONFLICT: "สีรุ้งป่วนใช้กับ Colour Fix ไม่ได้", TARGET_BUSY: "เป้าหมายกำลังติดเอฟเฟกต์อยู่",
   COOLDOWN: "ไอเทมยังอยู่ในช่วงพัก", NO_ENERGY: "พลังโจมตีไม่เพียงพอ",
+  ATTACK_USED: "ใช้การโจมตีแล้วในตานี้",
   TOO_FAST: "กรุณารอสักครู่ก่อนโจมตีอีกครั้ง",
-  SHIELDED: "โล่ของเป้าหมายป้องกันการโจมตีครั้งนี้ พลังไม่ถูกหัก",
+  SHIELDED: "โล่ของเป้าหมายป้องกันสกิลครั้งนี้ พลังไม่ถูกหัก",
 };
 
 function AttackArt({ id }) {
@@ -42,7 +43,14 @@ export function ChaosOverlay({ effect }) {
   </div>;
 }
 
-export default function ChaosBar({ chaos, players, meId, phase, doneIds, now, intro }) {
+export function ChaosEffectBadge({ effect, now }) {
+  if (!effect) return null;
+  const item = items.find((entry) => entry.id === effect.id);
+  return <div className="chaos-ai-effect" role="status">ϟ AI ถูกโจมตี: {item?.name ?? "CHAOS ATTACK"} · เหลือ {Math.max(0, Math.ceil((effect.until - now) / 1000))} วิ</div>;
+}
+
+export default function ChaosBar({ chaos, syncError, onConfirmedState, players, meId, phase, doneIds, now, intro, challenge }) {
+  const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -51,12 +59,13 @@ export default function ChaosBar({ chaos, players, meId, phase, doneIds, now, in
   const previousEnergy = useRef(null);
   const energy = chaos?.energy ?? 0;
   const maximum = chaos?.maxEnergy ?? 100;
-  const aiBusy = (chaos?.aiEffect?.until ?? 0) > now;
-  const targets = phase === "draw"
-    ? [...players.filter((p) => p.id !== meId && p.connected !== false && !doneIds.includes(p.id)).map((p) => ({ id: p.id, name: p.name })), ...(!aiBusy ? [{ id: "ai", name: "AI ผู้ทาย" }] : [])]
-    : phase === "watch" && !aiBusy ? [{ id: "ai", name: "AI ผู้วาด" }] : [];
-  const activePhase = phase === "draw" || phase === "watch";
-  const canAttack = !!chaos && !intro && activePhase && targets.length > 0;
+  const currentRules = typeof chaos?.attackUsed === "boolean";
+  const eligiblePlayers = phase === "draw"
+    ? players.filter((p) => p.id !== meId && p.connected !== false && !doneIds.includes(p.id) && !(chaos?.targetEffects?.[p.id]?.until > now)).map((p) => ({ id: p.id, name: p.name }))
+    : [];
+  const targets = selected?.id === "rainbow_chaos" && challenge?.type === "colour_fix" ? [] : eligiblePlayers;
+  const activePhase = phase === "draw";
+  const canAttack = currentRules && !chaos.attackUsed && !intro && activePhase && eligiblePlayers.length > 0;
 
   useEffect(() => {
     if (!chaos) { previousEnergy.current = null; return; }
@@ -68,6 +77,9 @@ export default function ChaosBar({ chaos, players, meId, phase, doneIds, now, in
     const timer = setTimeout(() => setEnergyNotice(""), 3200);
     return () => clearTimeout(timer);
   }, [energyNotice]);
+  useEffect(() => {
+    if (phase !== "draw") { setOpen(false); setSelected(null); }
+  }, [phase]);
 
   function useItem(targetId) {
     if (!selected || !canAttack || !targets.some((target) => target.id === targetId) || busyRef.current) return;
@@ -80,21 +92,42 @@ export default function ChaosBar({ chaos, players, meId, phase, doneIds, now, in
       if (error) setMessage("เชื่อมต่อ Server ไม่สำเร็จ กรุณาลองอีกครั้ง");
       else if (!result?.ok) setMessage(ERROR_TEXT[result?.error] ?? "โจมตีไม่สำเร็จ");
       else {
+        onConfirmedState?.(result.state);
         setEnergyNotice(`−${selected.price} Energy`);
-        setMessage(`โจมตี ${targetId === "ai" ? "AI" : targets.find((t) => t.id === targetId)?.name ?? "ผู้เล่น"} ด้วย ${selected.name} สำเร็จ`);
+        setMessage(`โจมตี ${targets.find((t) => t.id === targetId)?.name ?? "ผู้เล่น"} ด้วย ${selected.name} สำเร็จ`);
+        setOpen(false);
       }
     });
   }
 
-  return <section className="chaos-bar" aria-label="CHAOS ATTACK">
-    <div className="chaos-bar__energy"><strong>ϟ CHAOS ATTACK</strong><span>พลังโจมตี: <b>{energy} / {maximum}</b></span><div className="chaos-bar__meter" role="progressbar" aria-valuenow={energy} aria-valuemax={maximum}><i style={{ width: `${Math.min(100, energy / maximum * 100)}%` }} /></div><small>วาดครบ 2 ครั้งได้ +10 (สูงสุด 40 ต่อรอบ) · ทายถูกได้ +15</small><small>{chaos ? chaos.shield ? "🛡 โล่พร้อมป้องกัน 1 ครั้ง" : "โล่ใช้ไปแล้วในรอบนี้" : "รอสถานะจาก Server"}</small>{energyNotice && <span className="chaos-bar__notice" role="status">{energyNotice}</span>}</div>
-    <div className="chaos-bar__items">{items.map((item) => {
-      const left = Math.max(0, Math.ceil(((chaos?.cooldowns?.[item.id] ?? 0) - now) / 1000));
-      const status = !activePhase ? "รอช่วงโจมตี" : intro ? "รอเริ่มรอบ" : !chaos ? "รอข้อมูล Server" : !targets.length ? "ยังไม่มีเป้าหมายโจมตี" : left ? `Cooldown ${left} วิ` : energy < item.price ? "พลังงานไม่เพียงพอ" : busy ? "กำลังยืนยัน" : selected?.id === item.id ? "กำลังเลือก" : "พร้อมใช้";
-      const disabled = !canAttack || Boolean(left) || energy < item.price || busy;
-      return <div key={item.id} className="chaos-item-wrap" title={`${item.name} · ${item.price} Energy\n${ABILITY[item.id].detail}\n${status}`} tabIndex={disabled ? 0 : -1} aria-label={disabled ? `${item.name}: ${status}. ${ABILITY[item.id].detail}` : undefined}><button type="button" className={`chaos-item${selected?.id === item.id ? " chaos-item--selected" : ""}`} disabled={disabled} aria-label={`${item.name} ${item.price} Energy: ${ABILITY[item.id].detail}. ${status}`} onClick={() => { setSelected(item); setMessage(""); }}><AttackArt id={item.id} /><strong>{item.name}</strong><span className="chaos-item__price">ϟ {item.price} Energy</span><span className="chaos-item__ability">{ABILITY[item.id].short}</span><em className={disabled ? "chaos-item__status chaos-item__status--disabled" : "chaos-item__status"}>{status}</em></button></div>;
-    })}</div>
-    {message && <p className="chaos-bar__message" role="status">{message}</p>}
-    {selected && <Modal labelledBy="chaos-target-title" onClose={busy ? undefined : () => setSelected(null)}><h2 className="modal__title" id="chaos-target-title">{selected.name} · เลือกเป้าหมาย</h2><div className="chaos-targets">{targets.map((target) => <button type="button" className="btn" key={target.id} disabled={busy} onClick={() => useItem(target.id)}>{target.name}</button>)}</div><div className="modal__actions"><button type="button" className="btn" disabled={busy} onClick={() => setSelected(null)}>ยกเลิก</button></div></Modal>}
-  </section>;
+  const closePanel = () => { setSelected(null); setOpen(false); };
+  return <div className="mp-ai-skills">
+    <button type="button" className="btn mp-ai-skills__trigger" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open}>
+      ⚡ สกิล <span>{energy}/{maximum}</span>
+    </button>
+    {message && <span className="mp-ai-skills__feedback" role="status">{message}</span>}
+    {energyNotice && <span className="mp-ai-skills__feedback" role="status">{energyNotice}</span>}
+    {open && <Modal labelledBy="chaos-panel-title" panelClassName="chaos-modal" onClose={busy ? undefined : closePanel}>
+      <h2 className="modal__title" id="chaos-panel-title">{selected ? `${selected.name} · เลือกผู้เล่น` : "⚡ เลือกสกิล"}</h2>
+      <div className="chaos-modal__energy">
+        <strong>Energy {energy}/{maximum}</strong>
+        <div className="chaos-bar__meter" role="progressbar" aria-valuenow={energy} aria-valuemax={maximum}><i style={{ width: `${Math.min(100, energy / maximum * 100)}%` }} /></div>
+        <small>ใช้สกิลได้ 1 ครั้งต่อตา · AI ทายภาพคุณถูก +10 Energy</small>
+      </div>
+      {selected ? <>
+        <p className="chaos-modal__hint">เลือกผู้เล่นหนึ่งครั้งเพื่อใช้สกิลทันที</p>
+        <div className="chaos-targets">{targets.map((target) => <button type="button" className="btn" key={target.id} disabled={busy} onClick={() => useItem(target.id)}>{target.name}</button>)}</div>
+        {!targets.length && <p role="status">ไม่มีผู้เล่นที่ใช้เป็นเป้าหมายได้ในตอนนี้</p>}
+        <button type="button" className="btn" disabled={busy} onClick={() => setSelected(null)}>กลับไปเลือกสกิล</button>
+      </> : <div className="chaos-bar__items">{items.map((item) => {
+        const left = Math.max(0, Math.ceil(((chaos?.cooldowns?.[item.id] ?? 0) - now) / 1000));
+        const challengeConflict = item.id === "rainbow_chaos" && challenge?.type === "colour_fix";
+        const status = !activePhase ? "รอช่วงโจมตี" : intro ? "รอเริ่มรอบ" : !chaos ? syncError ? "Server ยังไม่พร้อม" : "รอข้อมูล Server" : !currentRules ? "กรุณารีสตาร์ต Server" : chaos.attackUsed ? "ใช้สกิลแล้วในตานี้" : challengeConflict ? "ใช้กับ Colour Fix ไม่ได้" : !eligiblePlayers.length ? "ไม่มีเป้าหมาย" : left ? `Cooldown ${left} วิ` : energy < item.price ? "พลังงานไม่เพียงพอ" : busy ? "กำลังยืนยัน" : "พร้อมใช้";
+        const disabled = !canAttack || challengeConflict || Boolean(left) || energy < item.price || busy;
+        return <div key={item.id} className="chaos-item-wrap" title={ABILITY[item.id].detail}><button type="button" className="chaos-item" disabled={disabled} aria-label={`${item.name} ${item.price} Energy: ${ABILITY[item.id].detail}. ${status}`} onClick={() => { setSelected(item); setMessage(""); }}><AttackArt id={item.id} /><strong>{item.name}</strong><span className="chaos-item__price">ϟ {item.price} Energy</span><span className="chaos-item__ability">{ABILITY[item.id].short}</span><em className={disabled ? "chaos-item__status chaos-item__status--disabled" : "chaos-item__status"}>{status}</em></button></div>;
+      })}</div>}
+      {message && <p className="chaos-modal__message" role="status">{message}</p>}
+      <div className="modal__actions"><button type="button" className="btn" disabled={busy} onClick={closePanel}>ปิด</button></div>
+    </Modal>}
+  </div>;
 }
