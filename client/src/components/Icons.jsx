@@ -163,6 +163,89 @@ const AVATAR_ART = [
 // ── ไอคอนทั่วไป ──
 // size = ขนาดตารางจริง · mirror = เขียนแค่ครึ่งซ้าย
 const ART = {
+  // ── ไอคอนของตกแต่งในร้านค้า (รอบ A/B) สไตล์เดียวกับอวตารสัตว์ ──
+  frame_default: [
+    "kkkkkkk",
+    "k.....k",
+    "k.....k",
+    "k.....k",
+    "kkkkkkk",
+  ],
+  frame_sakura: [
+    "..kkk..",
+    ".kpPpk.",
+    "kpPwPpk",
+    "kpPwPpk",
+    "kpPpPpk",
+    ".kpPpk.",
+    "..kkk..",
+  ],
+  frame_rainbow: [
+    "kkkkkkkkk",
+    "krrrrrrrk",
+    "koooooook",
+    "kyyyyyyyk",
+    "kgggggggk",
+    "kbbbbbbbk",
+    "kuuuuuuuk",
+    "kkkkkkkkk",
+  ],
+  frame_stars: [
+    "....k....",
+    "...kyk...",
+    "..kyyyk..",
+    "kkkyyykkk",
+    "kyyyyyyyk",
+    "..kyyyk..",
+    "...kyk...",
+    "....k....",
+  ],
+  hat_wizard: [
+    "....k....",
+    "...kuk...",
+    "...kuk...",
+    "..kuuuk..",
+    ".kuYuuuk.",
+    "kuuuuuuuk",
+    "kkkkkkkkk",
+  ],
+  glasses_pixel: [
+    "kkkkk.kkkkk",
+    "kaaak.kaaak",
+    "kaaakkkaaak",
+    "kaaak.kaaak",
+    "kkkkk.kkkkk",
+  ],
+  neck_bowtie: [
+    "kk...kk",
+    "krk.krk",
+    "krrkrrk",
+    "krk.krk",
+    "kk...kk",
+  ],
+  bg_default: [
+    "kkkkkkk",
+    "kccccck",
+    "kccccck",
+    "kccccck",
+    "kkkkkkk",
+  ],
+  deco_none: [
+    ".......",
+    ".......",
+    ".kkkkk.",
+    ".......",
+    ".......",
+  ],
+  coin: [
+    "..kkk..",
+    ".kyYyk.",
+    "kyYyYyk",
+    "kyYkYyk",
+    "kyYyYyk",
+    ".kyYyk.",
+    "..kkk..",
+  ],
   arrowL: [
     ".....kk.",
     "....kkk.",
@@ -793,5 +876,33 @@ export const AVATAR_NAMES = AVATAR_ART.map((a) => a.name);
 export function AvatarArt({ index = 0, size = 40, label }) {
   const safe = Number.isInteger(index) && index >= 0 && index < AVATAR_COUNT ? index : 0;
   return <Pix rows={AVATAR_ART[safe].rows} mirror size={size} className="avatar-art" label={label} />;
+}
+
+// ── อวตารซ้อนชั้นของตกแต่ง (รอบ A/B ร้านค้า) ──
+// itemId ของแต่ละหมวดใน equipped ตรงกับ server/data/shop-items.json เป๊ะ · ไม่มี/เป็น default = ไม่วาดชั้นนั้นเพิ่ม
+const HAT_ICON = { hat_wizard: "hat_wizard", hat_crown: "crown" };
+const GLASSES_ICON = { glasses_pixel: "glasses_pixel" };
+const NECK_ICON = { neck_bowtie: "neck_bowtie" };
+const FRAME_RING = {
+  frame_sakura: "0 0 0 4px #f6a6cc",
+  frame_rainbow: "0 0 0 2px #1e6fe8, 0 0 0 4px #e85c9e",
+  frame_stars: "0 0 0 4px #ffc81e, 0 0 10px 3px #ffe27a",
+};
+
+// index = อวตารสัตว์ 0-5 · equipped = { frame, hat, glasses, neck, bg } จาก economy_state (null = ยังไม่ล็อกอิน/ยังไม่มีของ → เหมือนเดิมทุกตัวอักษร)
+export function AvatarArtLayered({ index = 0, equipped, size = 40, label }) {
+  const eq = equipped || {};
+  const ring = FRAME_RING[eq.frame];
+  return (
+    <span
+      className="avatar-layers"
+      style={{ position: "relative", display: "inline-grid", placeItems: "center", width: size, height: size, borderRadius: "50%", boxShadow: ring }}
+    >
+      <AvatarArt index={index} size={size} label={label} />
+      {NECK_ICON[eq.neck] && <Icon name={NECK_ICON[eq.neck]} size={Math.round(size * 0.4)} className="avatar-layers__item avatar-layers__neck" />}
+      {GLASSES_ICON[eq.glasses] && <Icon name={GLASSES_ICON[eq.glasses]} size={Math.round(size * 0.5)} className="avatar-layers__item avatar-layers__glasses" />}
+      {HAT_ICON[eq.hat] && <Icon name={HAT_ICON[eq.hat]} size={Math.round(size * 0.58)} className="avatar-layers__item avatar-layers__hat" />}
+    </span>
+  );
 }
 

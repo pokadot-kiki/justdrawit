@@ -3586,10 +3586,15 @@ select[class] {
   box-shadow: var(--shadow-sm);
 }
 
-/* กรอบของตกแต่ง (รอบ A ของร้านค้า) — แสดงแค่กรอบรอบอวตารหน้าแรก ยังไม่ซ้อนหมวก/แว่น (รอรอบ B) */
-.avatar-frame--frame_sakura .avatar-picker__stage { box-shadow: 0 0 0 5px #f6a6cc, var(--shadow-sm); }
-.avatar-frame--frame_rainbow .avatar-picker__stage { box-shadow: 0 0 0 3px #1e6fe8, 0 0 0 6px #e85c9e, var(--shadow-sm); }
-.avatar-frame--frame_stars .avatar-picker__stage { box-shadow: 0 0 0 5px #ffc81e, 0 0 12px 4px #ffe27a, var(--shadow-sm); }
+/* อวตารซ้อนชั้นของตกแต่ง (รอบ shop-art) — AvatarArtLayered ใน Icons.jsx ใส่กรอบเป็น inline box-shadow เอง
+   ที่นี่คุมแค่ตำแหน่งชั้นหมวก/แว่น/ของคอที่ลอยทับอวตารสัตว์ (pointer-events:none กันบังคลิก) */
+.avatar-layers__item {
+  position: absolute;
+  pointer-events: none;
+}
+.avatar-layers__hat { top: -22%; left: 50%; transform: translateX(-50%); }
+.avatar-layers__glasses { top: 32%; left: 50%; transform: translateX(-50%); }
+.avatar-layers__neck { bottom: -6%; left: 50%; transform: translateX(-50%); }
 
 .avatar-picker__arrow {
   display: grid;

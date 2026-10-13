@@ -24,7 +24,7 @@ const TEAM_MIN = TEAM_MIN_PLAYERS; // โหมดทีมต้องมีท
 const TEAM_NAME_MAX = 16;
 const TEAM_BALANCE_MAX_DIFF = 1; // ทีมใหญ่สุดกับเล็กสุดห่างกันได้ไม่เกินเท่านี้คน (server เช็คซ้ำเสมอ)
 
-export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, onEditProfile, onToast }) {
+export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, onEditProfile, onToast, equipped }) {
   const [linkCopied, setLinkCopied] = useState(false);
   // กล่องกติกาโชว์เองครั้งแรกที่เข้าห้อง (จำไว้ในเบราว์เซอร์) ครั้งต่อไปกดดูเองได้จากปุ่ม ℹ️ ในหน้าเกม
   const [showRules, setShowRules] = useState(() => !rulesSeen());
@@ -144,7 +144,7 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
         key={player.id}
         className={`lb-player${isMe ? " lb-player--me" : ""}${player.connected === false ? " lb-player--away" : ""}`}
       >
-        <Avatar index={player.avatar} />
+        <Avatar index={player.avatar} equipped={isMe ? equipped : null} />
         <span className="lb-player__info">
           <span className="lb-player__name">
             {player.name}

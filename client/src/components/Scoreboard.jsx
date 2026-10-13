@@ -31,6 +31,7 @@ export default function Scoreboard({
   teamScores = null,
   teamNames = {},
   myTeam = null,
+  equipped, // ของตกแต่งของ "เราเอง" จาก economy_state — คนอื่นยังไม่มีให้ server ส่งมา (รอรอบ B)
 }) {
   const byScore = (list) => [...list].sort((a, b) => b.score - a.score);
   const drawerSet = new Set([drawerId, ...(drawerIds ? Object.values(drawerIds) : [])].filter(Boolean));
@@ -79,7 +80,7 @@ export default function Scoreboard({
           <li className={classes.join(" ")} key={p.id}>
             {/* แถวทุกแถวเรียงเหมือนกันเป๊ะ: อวตาร (ติ๊กทายถูกทับมุมอวตาร) · ชื่อ + ป้าย · คะแนนใหญ่ชิดขวา */}
             <span className="score-row__avatar">
-              <Avatar index={p.avatar} large />
+              <Avatar index={p.avatar} large equipped={p.id === meId ? equipped : null} />
               {hasGuessed && (
                 <span className="score-row__check" title="ทายถูกแล้ว">
                   <Icon name="check" size={12} label="ทายถูกแล้ว" />

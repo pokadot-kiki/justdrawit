@@ -427,7 +427,7 @@ export default function App() {
       )}
 
       {roomReady && !inGame && (
-        <WaitingRoom room={room} me={me} messages={game.messages} onSend={sendGuess} onLeave={handleLeave} onEditProfile={() => setShowProfile(true)} onToast={showToast} />
+        <WaitingRoom room={room} me={me} messages={game.messages} onSend={sendGuess} onLeave={handleLeave} onEditProfile={() => setShowProfile(true)} onToast={showToast} equipped={economy?.equipped} />
       )}
 
       {showGame && room.settings.mode === "mpai" && (
@@ -450,6 +450,7 @@ export default function App() {
         <Game
           room={room}
           meId={me.playerId}
+          equipped={economy?.equipped}
           game={game}
           chooseLeft={chooseLeft}
           chooseWord={chooseWord}

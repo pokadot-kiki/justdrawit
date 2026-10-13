@@ -11,7 +11,8 @@ const MEDALS = ["medal1", "medal2", "medal3"];
 
 // จบเกม — แท่นรางวัลอันดับ 1-3 และอันดับครบทุกคนของโหมดรายคน
 // ทุกคนมีปุ่มกลับห้องรอ (back_to_lobby → server พาทุกคนกลับพร้อมกัน หรือพาเองเมื่อครบเวลา) กับกลับหน้าแรก (leave_room) · หัวห้องมีปุ่มเล่นอีกรอบเลย (start_game)
-export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLobby, returnAt = null, onLeave, teamRanking = null, winner = null, myTeam = null, meId = null, teamNames = {} }) {
+export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLobby, returnAt = null, onLeave, teamRanking = null, winner = null, myTeam = null, meId = null, teamNames = {}, equipped }) {
+  // equipped = ของตกแต่งของ "เราเอง" จาก economy_state — แสดงเฉพาะแถว/การ์ดของเรา (p.playerId === meId)
   // โหมดทีม: ประกาศทีมที่ชนะ (เสมอ = winner เป็น null) พลุเล่นเหมือนเดิมเพราะอยู่ในกล่องเดียวกัน
   const teamMode = Boolean(teamRanking);
   const teamName = (t) => teamNames[t] || `ทีม ${t}`;
@@ -88,7 +89,7 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
                     <span className="team-podium__members">
                       {t.members.map((p) => (
                         <span className="team-podium__member" key={p.playerId}>
-                          {Number.isInteger(p.avatar) && <Avatar index={p.avatar} />}
+                          {Number.isInteger(p.avatar) && <Avatar index={p.avatar} equipped={p.playerId === meId ? equipped : null} />}
                           <span title={p.name}>{p.name}{p.left ? " · ออกแล้ว" : ""}</span>
                         </span>
                       ))}
@@ -111,7 +112,7 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
                     <span className="team-standings__members">
                       {t.members.map((p) => (
                         <span className="team-standings__member" key={p.playerId}>
-                          {Number.isInteger(p.avatar) && <Avatar index={p.avatar} />}
+                          {Number.isInteger(p.avatar) && <Avatar index={p.avatar} equipped={p.playerId === meId ? equipped : null} />}
                           <span title={p.name}>{p.name}{p.left ? " · ออกแล้ว" : ""}</span>
                         </span>
                       ))}
@@ -133,7 +134,7 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
               return (
                 <li className={`podium__item podium__item--${place + 1}${p.playerId === meId ? " podium__item--me" : ""}`} key={p.playerId}>
                   <span className="podium__medal"><Icon name={MEDALS[place]} size={34} /></span>
-                  {Number.isInteger(p.avatar) && <span className="podium__avatar"><Avatar index={p.avatar} /></span>}
+                  {Number.isInteger(p.avatar) && <span className="podium__avatar"><Avatar index={p.avatar} equipped={p.playerId === meId ? equipped : null} /></span>}
                   <span className="podium__name">{p.name}</span>
                   <span className="podium__score">{p.score}</span>
                   {split(p)}
@@ -151,7 +152,7 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
             {ranking.map((p, i) => (
               <li className={`match-ranking__row${p.playerId === meId ? " match-ranking__row--me" : ""}`} key={p.playerId}>
                 <span className="match-ranking__place">{i + 1}.</span>
-                <span className="match-ranking__avatar">{Number.isInteger(p.avatar) && <Avatar index={p.avatar} />}</span>
+                <span className="match-ranking__avatar">{Number.isInteger(p.avatar) && <Avatar index={p.avatar} equipped={p.playerId === meId ? equipped : null} />}</span>
                 <span className="match-ranking__identity">
                   <span className="match-ranking__name" title={p.name}>{p.name}</span>
                   {(p.playerId === meId || p.isHost || p.left) && (

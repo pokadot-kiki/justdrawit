@@ -31,6 +31,7 @@ import { Sparkles, PAGE_SPARKLES } from "../components/Critter";
 export default function Game({
   room,
   meId,
+  equipped,
   game,
   chooseLeft,
   chooseWord,
@@ -254,6 +255,7 @@ export default function Game({
             drawing={drawing}
             guessed={game.guessed}
             meId={meId}
+            equipped={equipped}
           />
           </div>
           <RoomInfo
@@ -390,6 +392,7 @@ export default function Game({
           myTeam={myTeam}
           teamNames={teamNames}
           meId={meId}
+          equipped={equipped}
           isHost={room.hostId === meId}
           onPlayAgain={startGame}
           onBackToLobby={backToLobby}

@@ -33,7 +33,6 @@ export default function Lobby({
   const [joining, setJoining] = useState(Boolean(inviteCode));
   const [showShop, setShowShop] = useState(false);
   const { busy, enter } = useEnterRoom({ connected, onEntered, onError });
-  const frameId = economy?.equipped?.frame; // รอบนี้แสดงแค่กรอบ (ยังไม่ซ้อนหมวก/แว่น)
 
   const name = profile.name;
 
@@ -57,8 +56,8 @@ export default function Lobby({
           <Critter name="star" className="crit crit--side-left" />
           <Ribbon tone="red">PLAY</Ribbon>
 
-          <div className={`avatar-frame-wrap${frameId ? ` avatar-frame--${frameId}` : ""}`} style={{ position: "relative", display: "inline-block" }}>
-            <AvatarPicker value={profile.avatar} onChange={(avatar) => onProfile({ ...profile, avatar })} onEdit={onEditProfile} />
+          <div style={{ position: "relative", display: "inline-block" }}>
+            <AvatarPicker value={profile.avatar} onChange={(avatar) => onProfile({ ...profile, avatar })} onEdit={onEditProfile} equipped={economy?.equipped} />
             {/* ร้านค้าของตกแต่ง: เฉพาะคนล็อกอิน (ผูกกับบัญชีจริง) — Guest ไม่เห็นปุ่มนี้เลย */}
             {loggedIn && (
               <button
@@ -126,6 +125,7 @@ export default function Lobby({
       {joining && <JoinModal initialCode={inviteCode ?? ""} busy={busy} onSubmit={join} onClose={() => setJoining(false)} />}
       {loggedIn && showShop && (
         <AvatarShopModal
+          avatarIndex={profile.avatar}
           economy={economy}
           onBuy={onBuyItem}
           onEquip={onEquipItem}
