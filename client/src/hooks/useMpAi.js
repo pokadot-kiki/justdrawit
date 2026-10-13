@@ -25,10 +25,18 @@ function emptyMp() {
     gallery: null, // { round, word, results }
     watch: null, // { category, time, hintAt, hint, strokes, solvedIds, myPoints }
     watchEnd: null, // { round, word, results }
+    chaos: null, // Server-owned Attack Energy, cooldowns and active effects.
   };
 }
 
 const add = (list, id) => (list.includes(id) ? list : [...list, id]);
+const localUntil = (until, serverNow) => until ? Date.now() + Math.max(0, until - serverNow) : 0;
+const localEffect = (effect, serverNow) => effect ? { ...effect, until: localUntil(effect.until, serverNow) } : null;
+const localChaos = (state) => state ? { ...state,
+  selfEffect: localEffect(state.selfEffect, state.serverNow),
+  aiEffect: localEffect(state.aiEffect, state.serverNow),
+  cooldowns: Object.fromEntries(Object.entries(state.cooldowns ?? {}).map(([id, until]) => [id, localUntil(until, state.serverNow)])),
+} : null;
 
 /**
  * ผูก event ของ Multiplayer vs AI ไว้ที่ App (ไม่ใช่ที่หน้าจอเกม) ด้วยเหตุผลเดียวกับ useGame:
@@ -112,6 +120,9 @@ export function useMpAi(meId) {
       );
     const onWatchEnd = (we) => patch({ phase: "watch_end", watchEnd: we });
     const onTimer = ({ timeLeft }) => patch({ timeLeft });
+    const onChaosState = (state) => patch((m) => ({ chaos: localChaos(state) ?? m.chaos }));
+    const onChaosSelfEffect = ({ effect, serverNow }) => patch((m) => ({ chaos: m.chaos ? { ...m.chaos, selfEffect: localEffect(effect, serverNow) } : m.chaos }));
+    const onChaosAiEffect = ({ effect, serverNow }) => patch((m) => ({ chaos: m.chaos ? { ...m.chaos, aiEffect: localEffect(effect, serverNow) } : m.chaos }));
     const onGameEnd = () => patch({ phase: "over" });
     // เข้ากลางเกม/รีเฟรช: server ส่งภาพรวมทั้งหมดมาทีเดียว
     const onState = (s) => {
@@ -133,6 +144,7 @@ export function useMpAi(meId) {
         myGuesses: s.myGuesses ?? [],
         myPoints: s.myPoints ?? null,
         gallery: s.gallery ?? null,
+        chaos: localChaos(s.chaos),
         watch: s.watch ? { ...s.watch, clockOffset: Date.now() - s.watch.serverNow } : null,
         watchEnd: s.watchEnd ?? null,
       });
@@ -159,6 +171,9 @@ export function useMpAi(meId) {
       mpai_correct: onCorrect,
       mpai_watch_end: onWatchEnd,
       mpai_state: onState,
+      chaos_state: onChaosState,
+      chaos_self_effect: onChaosSelfEffect,
+      chaos_ai_effect: onChaosAiEffect,
       timer: onTimer,
       game_end: onGameEnd,
     };

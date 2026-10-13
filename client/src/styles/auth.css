@@ -1,6 +1,7 @@
 .auth-screen {
+  position: relative;
   min-height: 100dvh;
-  padding: 32px 16px;
+  padding: 16px;
 }
 
 .auth-card {
@@ -8,8 +9,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
-  padding: 34px;
+  gap: 8px;
+  padding: 18px 28px;
   text-align: center;
 }
 
@@ -20,33 +21,52 @@
 
 .auth-card h1 {
   font-family: var(--font-head);
-  font-size: 25px;
+  font-size: 22px;
+}
+
+/* โลโก้ "JUST DRAW IT" บรรทัดเดียว — เฉพาะหน้า Sign In (หน้าอื่นยังเป็นสองบรรทัดตาม .logo ใน theme.css)
+   ต้องเจาะจงกว่า `.auth-card h1` ด้านบน ไม่งั้นโลโก้ (เป็น h1) โดนฟอนต์/ขนาดของหัวข้อทับ
+   ฟอนต์ Press Start 2P ทุกตัวกว้าง 1em → ทั้งบรรทัดยาว ~11.7em (JUST 4 + ช่องไฟ 0.7 + DRAW IT 7)
+   จอ 390px: 5.4vw ≈ 21px → ~246px ในกรอบ ~314px · จอ 320px ≈ 17px → ~202px ในกรอบ ~244px */
+.auth-logo {
+  max-width: 100%;
+}
+
+.auth-card .auth-logo .logo {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 0.7em;
+  white-space: nowrap;
+  font-family: "Press Start 2P", var(--font-pixel);
+  font-size: clamp(14px, 5.4vw, 30px);
+  line-height: 1.3;
 }
 
 .auth-card p {
-  line-height: 1.6;
+  line-height: 1.4;
 }
 
-.auth-guest {
+.auth-submit {
   width: 100%;
-}
-
-.auth-google {
-  width: 100%;
-  min-height: 54px;
+  min-height: 46px;
   display: flex;
   justify-content: center;
   align-items: center;
-  color: var(--ink);
+  /* ไม่ override สี/เงาจาก .big-btn อีกต่อไป — ของเดิม color: var(--ink) ทำให้ตัวหนังสือกับเงา
+     (text-shadow ที่ .big-btn ตั้งไว้ก็เป็นสี ink เหมือนกัน) เป็นสีเดียวกันทั้งคู่ ซ้อนกันแล้วเลอะอ่านไม่ออก
+     โดยเฉพาะตัวไทยที่มีสระ/วรรณยุกต์ซ้อนหลายชั้นอยู่แล้ว — ปล่อยให้ใช้ตัวหนังสือขาว+เงาเข้มแบบ .big-btn ปกติ
+     เหมือนปุ่ม "สร้างห้อง"/"เข้าห้อง" หน้าแรก */
+  line-height: 1.4; /* เผื่อที่แนวตั้งให้สระบน/ล่าง+วรรณยุกต์ไม่ชนกัน (เดิม 1.1 จาก .big-btn แคบไปสำหรับข้อความยาว) */
   text-decoration: none;
 }
 
-.auth-google[aria-disabled="true"] {
+.auth-submit[aria-disabled="true"] {
   opacity: 0.5;
   pointer-events: none;
 }
 
-.auth-google:disabled {
+.auth-submit:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -54,29 +74,13 @@
 .auth-form {
   width: 100%;
   display: grid;
-  gap: 9px;
+  gap: 6px;
   text-align: left;
 }
 
 .auth-form .input {
   width: 100%;
-  min-height: 46px;
-}
-
-.auth-divider {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.auth-divider::before,
-.auth-divider::after {
-  content: "";
-  flex: 1;
-  border-top: 1px solid currentColor;
+  min-height: 40px;
 }
 
 .auth-note {
@@ -86,8 +90,8 @@
 }
 
 .auth-mode-toggle {
-  min-height: 44px;
-  padding: 6px 12px;
+  min-height: 36px;
+  padding: 4px 12px;
   border: 0;
   background: transparent;
   color: var(--blue);
@@ -103,7 +107,7 @@
 
 .auth-message {
   width: 100%;
-  padding: 10px 14px;
+  padding: 6px 14px;
   border: 2px solid var(--red);
   border-radius: var(--r-ctl);
   background: var(--cream);

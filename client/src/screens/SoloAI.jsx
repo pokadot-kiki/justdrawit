@@ -68,7 +68,7 @@ const DIFFICULTIES = [
   ["hard", "ยาก"],
 ];
 
-export default function SoloAI({ initialName = "", boot = null, onName, onBack, profile, onEditProfile }) {
+export default function SoloAI({ initialName = "", boot = null, onName, onBack, profile, onEditProfile, onAchievements }) {
   // intro = กรอกชื่อ · starting = ส่ง ai_start แล้วรอด่านแรก · playing = ช่วง 1 เราวาด AI ทาย
   // watch = ช่วง 2 ดูภาพที่เล่นซ้ำแล้วพิมพ์ทาย · rest = พักระหว่างช่วง · over = จบเกม
   const [phase, setPhase] = useState("intro");
@@ -94,6 +94,12 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
   const [hist, setHist] = useState({ undo: false, redo: false });
   const [showInfo, setShowInfo] = useState(false);
   const [showExit, setShowExit] = useState(false);
+  const [equippedTitle, setEquippedTitle] = useState(null);
+  useEffect(() => {
+    const update = (state) => { if (state?.scope === "solo") setEquippedTitle(state.equipped); };
+    socket.on("achievement_state", update);
+    return () => socket.off("achievement_state", update);
+  }, []);
 
   const [toolChoice, setToolChoice] = useState(TOOLS.PEN);
   const [color, setColor] = useState(PAINT_COLORS[0].hex);
@@ -318,6 +324,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
     if (!boot || phaseRef.current !== "intro") return;
     onName?.(initialName.trim());
     clearStageState();
+    setEquippedTitle(null);
     setScore(0);
     setLives(3);
     setFinal(null);
@@ -351,6 +358,9 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
   }, []);
 
   function applyResume(st) {
+    socket.emit("get_achievements", (result) => {
+      if (result?.ok && result.state?.scope === "solo") setEquippedTitle(result.state.equipped);
+    });
     onName?.(st.name);
     setName(st.name);
     setScore(st.totalScore);
@@ -640,7 +650,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
           <Timer timeLeft={live ? timeLeft : null} />
         </div>
 
-        <TopIcons onInfo={() => setShowInfo(true)} onExit={() => setShowExit(true)} profile={profile ? { ...profile, name } : null} onEditProfile={onEditProfile} />
+        <TopIcons onInfo={() => setShowInfo(true)} onExit={() => setShowExit(true)} profile={profile ? { ...profile, name, title: equippedTitle } : null} onEditProfile={onEditProfile} onAchievements={onAchievements} />
       </header>
 
       <main className="game game--solo">
@@ -825,7 +835,7 @@ export default function SoloAI({ initialName = "", boot = null, onName, onBack, 
                 <Icon name="trophy" size={22} /> อันดับ {final.rank} ของเดือนนี้
               </>
             ) : (
-              "บันทึกคะแนนไม่สำเร็จ"
+              final.guest ? "เล่นแบบ Guest: คะแนนไม่ขึ้น Leaderboard" : "บันทึกคะแนนไม่สำเร็จ"
             )}
           </p>
           <div className="modal__actions">

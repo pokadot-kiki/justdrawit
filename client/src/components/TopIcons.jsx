@@ -101,7 +101,7 @@ export function ExitModal({ onYes, onNo, note }) {
 }
 
 // ── ไอคอนบนแถบบน: แชร์ลิงก์ (เฉพาะในห้อง) · ข้อมูล · ออก (สูง ≥44px ให้นิ้วแตะบนไอแพดได้) ──
-export function TopIcons({ onInfo, onExit, shareCode = null, onToast, profile = null, onEditProfile }) {
+export function TopIcons({ onInfo, onExit, shareCode = null, onToast, profile = null, onEditProfile, onAchievements }) {
   // ปุ่มเปิด/ปิดเสียงกับเพลงย้ายไป AudioDock (components/AudioDock.jsx) ที่อยู่ทุกหน้าตำแหน่งเดียวกัน
 
   // ลิงก์เชิญ: คัดลอก URL ที่มี ?room=รหัส ให้เพื่อนกดแล้วเข้าห้องได้เลย
@@ -111,7 +111,8 @@ export function TopIcons({ onInfo, onExit, shareCode = null, onToast, profile = 
   }
   return (
     <div className="top-icons">
-      {profile && onEditProfile && <ProfileTrigger name={profile.name} avatar={profile.avatar} onClick={onEditProfile} />}
+      {onAchievements && <button type="button" className="icon-btn" onClick={onAchievements} aria-label="Achievements และฉายา" title="Achievements และฉายา">🏆</button>}
+      {profile && onEditProfile && <ProfileTrigger name={profile.name} avatar={profile.avatar} avatarPhoto={profile.avatarPhoto} outfit={profile.outfit} title={profile.title} onClick={onEditProfile} />}
       <AudioButtons />
       {/* แชร์ = คัดลอกลิงก์เชิญ · รหัสห้องแสดงอยู่บนปุ่มเลย (ทุกคนในห้องเห็นและกดได้) */}
       {shareCode && (

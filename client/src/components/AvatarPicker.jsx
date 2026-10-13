@@ -1,8 +1,9 @@
 import { AVATARS } from "../avatars";
-import { AvatarArt, Icon } from "./Icons";
+import { Icon } from "./Icons";
+import { AvatarImage } from "./Avatar";
 
 // อวตารใหญ่ตรงกลาง มีลูกศรซ้ายขวาเปลี่ยนตัววนไปเรื่อยๆ (ค่า 0-5 ตรงกับ avatar ใน events.md)
-export default function AvatarPicker({ value, onChange, onEdit }) {
+export default function AvatarPicker({ value, photoUrl, outfit, onChange, onEdit, onUpload, onDress }) {
   const n = AVATARS.length;
   const step = (d) => onChange((value + d + n) % n);
   return (
@@ -11,12 +12,16 @@ export default function AvatarPicker({ value, onChange, onEdit }) {
         <Icon name="arrowL" size={18} />
       </button>
       {onEdit ? (
-        <button type="button" className="avatar-picker__stage avatar-picker__stage--edit" onClick={onEdit} aria-label="แก้ไขโปรไฟล์และอวตาร">
-          <AvatarArt index={value} size={112} label={`อวตาร ${AVATARS[value]}`} />
-        </button>
+        <div className="avatar-picker__photo-wrap">
+          <button type="button" className="avatar-picker__stage avatar-picker__stage--edit" onClick={onEdit} aria-label="แก้ไขโปรไฟล์และอวตาร">
+            <AvatarImage index={value} photoUrl={photoUrl} outfit={outfit} size={112} />
+          </button>
+          {onUpload && <button type="button" className="avatar-picker__camera" onClick={onUpload} aria-label="อัปโหลดรูปโปรไฟล์" title="อัปโหลดรูปโปรไฟล์">📷</button>}
+          {onDress && <button type="button" className="avatar-picker__dress" onClick={onDress} aria-label="เปิดห้องแต่งตัว Avatar" title="แต่งตัว Avatar">✏️</button>}
+        </div>
       ) : (
         <div className="avatar-picker__stage" aria-live="polite">
-          <AvatarArt index={value} size={112} label={`อวตาร ${AVATARS[value]}`} />
+          <AvatarImage index={value} photoUrl={photoUrl} outfit={outfit} size={112} />
         </div>
       )}
       <button type="button" className="avatar-picker__arrow" onClick={() => step(1)} aria-label="อวตารถัดไป">

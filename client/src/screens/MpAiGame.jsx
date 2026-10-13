@@ -11,7 +11,8 @@ import Modal from "../components/Modal";
 import GameOverModal from "../components/GameOverModal";
 import { MascotNote } from "../components/Mascot";
 import { TopIcons, InfoModal, ExitModal } from "../components/TopIcons";
-import { Icon, AvatarArt } from "../components/Icons";
+import { Icon } from "../components/Icons";
+import Avatar from "../components/Avatar";
 import { play } from "../sound/sfx";
 import { clearBoard } from "../canvas/actions";
 import { drawingActionsAt } from "../canvas/sharedDrawing";
@@ -20,6 +21,7 @@ import { SNAPSHOT_MS, THINK_TIMEOUT_MS } from "../aiSnapshot";
 import ChallengeBanner from "../components/ChallengeBanner";
 import ChallengeIntro from "../components/ChallengeIntro";
 import { galleryStripLayout } from "../galleryLayout";
+import ChaosBar, { ChaosOverlay } from "../components/ChaosBar";
 
 const MAX_SIZE = 12; // แปรงหนาเกินทำให้ AI จำภาพไม่ได้ (วัดไว้ตอนทำ Solo) — ช่วยผู้เล่นเท่านั้น ไม่ใช่กติกา
 const STATUS_TEXT = { missing: "ไม่ได้ส่งภาพ", error: "AI ดูภาพไม่สำเร็จ", timeout: "AI ใช้เวลานานเกิน" };
@@ -41,6 +43,11 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
   const [hist, setHist] = useState({ undo: false, redo: false });
   const [showInfo, setShowInfo] = useState(false);
   const [showExit, setShowExit] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(timer);
+  }, []);
   // AI กำลังดูภาพอยู่ (เหมือน Solo): ข้ามรอบส่งภาพจนกว่าจะได้คำตอบ/ AI_UNAVAILABLE / เกินเวลา
   const [thinking, setThinking] = useState(false);
   const thinkingRef = useRef(false);
@@ -55,10 +62,13 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
   const colourFix = challenge?.type === "colour_fix" ? challenge.color : null;
   const noLift = challenge?.type === "dont_lift_pen";
   const shapesOnly = challenge?.type === "shapes_only";
+  const selfEffect = mp.chaos?.selfEffect?.until > now ? mp.chaos.selfEffect : null;
+  const aiEffect = mp.chaos?.aiEffect?.until > now ? mp.chaos.aiEffect : null;
+  const historyBlocked = Boolean(selfEffect);
   let drawTool = noLift && (tool === TOOLS.BUCKET || isShapeTool(tool)) ? TOOLS.PEN : tool;
   if (shapesOnly && (drawTool === TOOLS.PEN || drawTool === TOOLS.ERASER)) drawTool = TOOLS.LINE;
-  const canDraw = drawPhase && !myDone && !mp.intro && !mp.penLocked && (mp.timeLeft ?? 1) > 0;
-  const canClearLocked = noLift && drawPhase && !myDone && !mp.intro && mp.penLocked && (mp.timeLeft ?? 1) > 0;
+  const canDraw = drawPhase && !myDone && !mp.intro && !mp.penLocked && selfEffect?.id !== "ice_canvas" && (mp.timeLeft ?? 1) > 0;
+  const canClearLocked = noLift && drawPhase && !myDone && !mp.intro && mp.penLocked && !historyBlocked && (mp.timeLeft ?? 1) > 0;
   const solvedMe = mp.watch?.myPoints != null;
 
   function setThink(on) {
@@ -111,6 +121,8 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
 
   function handleAction(action) {
     const { type, ...payload } = action;
+    if (historyBlocked && type === "clear_canvas") return;
+    if (selfEffect?.id === "ice_canvas") return;
     socket.emit(type, payload);
     if (OP_START.has(type)) setHist({ undo: true, redo: false });
     // ส่งเมื่อเส้นจบหรือเครื่องมือแบบคลิกทำงานแล้ว ภาพจึงเป็นภาพที่วาดเสร็จจริง
@@ -119,9 +131,11 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
     }
   }
   function undo() {
+    if (historyBlocked) return;
     socket.emit("undo");
   }
   function redo() {
+    if (historyBlocked) return;
     socket.emit("redo");
   }
   // รอบใหม่ = กระดานใหม่ (Canvas ถูกสร้างใหม่ด้วย key) → ล้างกองย้อน/สถานะรอ AI
@@ -238,8 +252,9 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
                   <MascotNote mood="wait">ดู AI วาด แล้วพิมพ์ทายในแชทเลย!</MascotNote>
                 ) : null
               }
-              overlay={
-                drawPhase && mp.intro ? <ChallengeIntro challenge={challenge} /> : mp.phase === "eval" ? (
+              overlay={<>
+                <ChaosOverlay effect={drawPhase ? selfEffect : watching ? aiEffect : null} />
+                {drawPhase && mp.intro ? <ChallengeIntro challenge={challenge} /> : mp.phase === "eval" ? (
                   <div className="mp-ai__eval" role="status">
                     <Icon name="robot" size={40} />
                     <p>AI กำลังดูภาพสุดท้ายของคนที่ยังไม่ผ่าน</p>
@@ -255,12 +270,13 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
                       รอเพื่อน ({mp.doneIds.length}/{online})
                     </p>
                   </div>
-                ) : null
-              }
+                ) : null}
+              </>}
             />
           )}
 
           <TimeBar timeLeft={live ? mp.timeLeft : null} total={mp.time} />
+          <ChaosBar chaos={mp.chaos} players={players} meId={meId} phase={mp.phase} doneIds={mp.doneIds} now={now} intro={mp.intro} />
         </section>
 
         <aside className="game__side">
@@ -273,7 +289,7 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
                 onTool={setTool}
                 onColor={setColor}
                 onSize={setSize}
-                onClear={() => noLift ? socket.emit("clear_canvas") : canvasRef.current?.dispatch(clearBoard())}
+                onClear={() => { if (historyBlocked) return; if (noLift) socket.emit("clear_canvas"); else canvasRef.current?.dispatch(clearBoard()); }}
                 onUndo={undo}
                 onRedo={redo}
                 canUndo={hist.undo && !noLift}
@@ -286,6 +302,7 @@ export default function MpAiGame({ room, meId, mp, sendSnapshot, sendGuess, game
                 hideShapes={noLift}
                 hidePen={shapesOnly}
                 historyLocked={noLift}
+                historyDisabled={historyBlocked}
               />
             </div>
           )}
@@ -391,8 +408,8 @@ function Gallery({ gallery, meId }) {
         <figure key={r.playerId} className={`mp-gallery__card${r.playerId === meId ? " mp-gallery__card--me" : ""}`}>
           <figcaption>
             <span className="mp-gallery__name">
-              <span className="mp-gallery__avatar"><AvatarArt index={r.avatar} size={24} /></span>
-              <span className="mp-gallery__player-name">{r.name}</span>
+              <span className="mp-gallery__avatar"><Avatar index={r.avatar} photoUrl={r.avatarPhoto} outfit={r.outfit} /></span>
+              <span className="mp-gallery__identity"><span className="mp-gallery__player-name">{r.name}</span>{r.title && <small>« {r.title} »</small>}</span>
             </span>
             <span className={`mp-gallery__ai${r.recognized ? " mp-gallery__ai--ok" : ""}`}>
               {r.recognized ? "AI ทายถูก" : r.status === "ok" ? "AI ยังทายไม่ถูก" : STATUS_TEXT[r.status] ?? "AI ดูภาพไม่สำเร็จ"}

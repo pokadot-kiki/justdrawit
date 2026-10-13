@@ -6,33 +6,35 @@ function validateProfile(data, cleanName, cleanAvatar) {
   return { ok: true, name, avatar: data.avatar };
 }
 
-function updateIdentity(entry, playerId, name, avatar) {
+function updateIdentity(entry, playerId, name, avatar, avatarPhoto) {
   if (entry && (entry.playerId === playerId || entry.id === playerId)) {
     entry.name = name;
     entry.avatar = avatar;
+    entry.avatarPhoto = avatarPhoto;
   }
 }
 
-function applyRoomProfile(room, playerId, name, avatar) {
+function applyRoomProfile(room, playerId, name, avatar, avatarPhoto) {
   const player = room.players.find((p) => p.id === playerId);
   if (!player) return false;
   player.name = name;
   player.avatar = avatar;
-  updateIdentity(room.classicEntrants?.get(playerId), playerId, name, avatar);
-  room.teamParticipants?.forEach((p) => updateIdentity(p, playerId, name, avatar));
-  Object.values(room.teams ?? {}).forEach((lane) => updateIdentity(lane.roundDrawer, playerId, name, avatar));
-  room.lastTeamRoundEnd?.gallery?.forEach((item) => updateIdentity(item.drawer, playerId, name, avatar));
+  player.avatarPhoto = avatarPhoto;
+  updateIdentity(room.classicEntrants?.get(playerId), playerId, name, avatar, avatarPhoto);
+  room.teamParticipants?.forEach((p) => updateIdentity(p, playerId, name, avatar, avatarPhoto));
+  Object.values(room.teams ?? {}).forEach((lane) => updateIdentity(lane.roundDrawer, playerId, name, avatar, avatarPhoto));
+  room.lastTeamRoundEnd?.gallery?.forEach((item) => updateIdentity(item.drawer, playerId, name, avatar, avatarPhoto));
   const mp = room.mp;
-  updateIdentity(mp?.entries?.get(playerId), playerId, name, avatar);
-  mp?.gallery?.results?.forEach((item) => updateIdentity(item, playerId, name, avatar));
-  mp?.watchEnd?.results?.forEach((item) => updateIdentity(item, playerId, name, avatar));
+  updateIdentity(mp?.entries?.get(playerId), playerId, name, avatar, avatarPhoto);
+  mp?.gallery?.results?.forEach((item) => updateIdentity(item, playerId, name, avatar, avatarPhoto));
+  mp?.watchEnd?.results?.forEach((item) => updateIdentity(item, playerId, name, avatar, avatarPhoto));
   mp?.watch?.chat?.forEach((item) => {
     if (item.playerId !== playerId) return;
     item.name = name;
     if (item.system && item.kind === "correct") item.text = `${name} ทายถูก`;
   });
-  room.lastEnded?.ranking?.forEach((item) => updateIdentity(item, playerId, name, avatar));
-  room.lastEnded?.teamRanking?.forEach((team) => team.members?.forEach((item) => updateIdentity(item, playerId, name, avatar)));
+  room.lastEnded?.ranking?.forEach((item) => updateIdentity(item, playerId, name, avatar, avatarPhoto));
+  room.lastEnded?.teamRanking?.forEach((team) => team.members?.forEach((item) => updateIdentity(item, playerId, name, avatar, avatarPhoto)));
   return true;
 }
 

@@ -5,7 +5,7 @@ import { Icon } from "./Icons";
 
 // ปุ่มเข้าสู่ระบบ / ชิปบัญชี — มุมขวาบนของหน้าแรก ข้างปุ่มเพลง/เสียง (ไม่บังคับ ไม่ล็อกอินก็เล่นได้ทุกโหมดเหมือนเดิม)
 // enabled=false (server ยังไม่ได้ตั้งค่า Firebase) → ซ่อนทั้งปุ่ม ไม่โชว์อะไรค้าง ไม่ error
-export default function AuthButton({ enabled, user, avatar = 0, onLogout }) {
+export default function AuthButton({ enabled, user, avatar = 0, avatarPhoto, outfit, onLogout }) {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -47,7 +47,7 @@ export default function AuthButton({ enabled, user, avatar = 0, onLogout }) {
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <Avatar index={avatar} />
+        <Avatar index={avatar} photoUrl={avatarPhoto} outfit={outfit} />
         <span className="auth-chip__name">{user.name || user.email}</span>
       </button>
       {open && (

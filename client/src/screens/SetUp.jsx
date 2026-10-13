@@ -3,6 +3,7 @@ import Ribbon from "../components/Ribbon";
 import Critter from "../components/Critter";
 import { randomName } from "../playerName";
 import { AvatarArt, Icon } from "../components/Icons";
+import { AvatarImage } from "../components/Avatar";
 import { useEnterRoom } from "../hooks/useEnterRoom";
 import OptionRow from "../components/OptionRow";
 import { DIFFICULTY_CHOICES, ROOM_DIFFICULTY_CHOICES, VISIBILITY_CHOICES, TEAM_COUNT_CHOICES, TEAM_MIN_PLAYERS } from "../roomOptions";
@@ -49,8 +50,8 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
     // ไม่ส่ง teamCount ไปเลย — ห้องโหมดทีมจึงเริ่มที่ 2 ทีมเสมอ (ค่าเริ่มต้นฝั่ง server) หัวห้องค่อยปรับในห้องรอ
     enter(
       "create_room",
-      { name: who, avatar, mode, rounds, drawTime, difficulty, visibility },
-      { name: who, avatar }
+      { name: who, avatar, avatarPhoto: profile.avatarPhoto, mode, rounds, drawTime, difficulty, visibility },
+      { name: who, avatar, avatarPhoto: profile.avatarPhoto }
     );
   }
 
@@ -156,7 +157,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
           </p>
           <button type="button" className="setup__who setup__who--edit" onClick={onEditProfile} aria-label="แก้ไขโปรไฟล์">
             <span className="setup__who-art">
-              <AvatarArt index={avatar} size={34} />
+              <AvatarImage index={avatar} photoUrl={profile.avatarPhoto} outfit={profile.outfit} size={34} />
             </span>
             <span className="setup__who-text">
               <small>ผู้เล่น</small>
@@ -233,7 +234,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
               <span className="mode-card__ai-body">
                 <span className="mode-card__duel" aria-hidden="true">
                   <span className="mode-card__fighter">
-                    <AvatarArt index={avatar} size={34} />
+                    <AvatarImage index={avatar} photoUrl={profile.avatarPhoto} outfit={profile.outfit} size={34} />
                     <small>คุณ</small>
                   </span>
                   <span className="mode-card__duel-vs">VS</span>
@@ -272,7 +273,7 @@ export default function SetUp({ connected, profile, onBack, onEntered, onError, 
                 <span className="mode-card__duel" aria-hidden="true">
                   <span className="mode-card__fighter">
                     <span className="mode-card__crowd">
-                      <AvatarArt index={avatar} size={28} />
+                      <AvatarImage index={avatar} photoUrl={profile.avatarPhoto} outfit={profile.outfit} size={28} />
                       <AvatarArt index={3} size={28} />
                     </span>
                     <small>เพื่อนในห้อง</small>

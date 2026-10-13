@@ -221,7 +221,13 @@ HTTP ธรรมดา (หน้าแรกขอใหม่ทุก ~5 ว
 ```js
 {}
 ```
-กดได้ตอนอยู่ใน lobby หรือตอนเกมจบแล้ว (เล่นรอบใหม่) คะแนนทุกคนรีเซ็ตเป็น 0
+กดได้ตอนอยู่ใน lobby หรือตอนเกมจบแล้ว (เล่นรอบใหม่) · Classic/Team เปลี่ยน `RoomState.status` เป็น `"category_selection"` แล้วส่ง `room_update` ทั้งห้อง ยังไม่เลือกคำ เริ่มรอบ หรือจับเวลา · Multiplayer vs AI เริ่มตาม flow เดิม
+
+### `select_category` C → S (หัวห้องเท่านั้น, Classic/Team)
+```js
+{ category: "สัตว์" } // "สัตว์" | "อาหาร" | "สิ่งของ" จาก shared/wordCategories.json
+```
+ใช้ได้เมื่อ `status === "category_selection"` เท่านั้น · callback สำเร็จ `{ ok: true }` หรือ `{ ok: false, error: "NOT_HOST" | "INVALID_CATEGORY" | "INVALID_GAME_STATE" | "NO_CATEGORY_WORDS" | "NOT_ENOUGH_PLAYERS" }` · Server ใช้ `settings.difficulty` ของห้องร่วมกับหมวดเพื่อเลือกคำจาก `server/data/words.json`; ไม่มีคำตรงเงื่อนไขให้ Host เลือกใหม่ได้ · เมื่อสำเร็จจึงส่ง `game_started` และเริ่ม flow รอบแรก · รอบต่อไปใช้หมวดเดิม · กลับ lobby แล้วล้างหมวด
 
 ### `game_started` S → ห้อง
 ```js

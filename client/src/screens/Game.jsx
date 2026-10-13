@@ -45,6 +45,7 @@ export default function Game({
   onLeave,
   onToast,
   onEditProfile,
+  onAchievements,
 }) {
   const players = room.players;
   const isDrawer = game.drawerId === meId;
@@ -235,6 +236,7 @@ export default function Game({
           onToast={onToast}
           profile={players.find((p) => p.id === meId)}
           onEditProfile={onEditProfile}
+          onAchievements={onAchievements}
         />
       </header>
 

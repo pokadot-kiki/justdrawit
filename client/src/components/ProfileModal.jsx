@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Modal from "./Modal";
 import { AvatarArt } from "./Icons";
+import { AvatarImage } from "./Avatar";
 import { AVATARS } from "../avatars";
 import { NAME_MAX_LEN } from "../playerName";
 import { profileInputError } from "../profileValidation";
@@ -13,11 +14,15 @@ const ERROR_TEXT = {
   NOT_IN_GAME: "เกมเดี่ยวสิ้นสุดแล้ว กรุณาลองอีกครั้ง",
   CONNECT_FAILED: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองอีกครั้ง",
   SERVER_ERROR: "บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง",
+  AUTH_REQUIRED: "กรุณาเข้าสู่ระบบอีกครั้งเพื่อจัดการรูปโปรไฟล์",
+  STORAGE_NOT_CONFIGURED: "ยังไม่ได้เปิดใช้ Firebase Storage สำหรับรูปโปรไฟล์",
+  STORAGE_UNAVAILABLE: "ระบบอัปโหลดรูปยังไม่พร้อมใช้งาน กรุณาลองอีกครั้ง",
 };
 
 export default function ProfileModal({ profile, onSave, onClose }) {
   const [name, setName] = useState(profile.name);
   const [avatar, setAvatar] = useState(profile.avatar);
+  const [avatarPhoto, setAvatarPhoto] = useState(profile.avatarPhoto ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const nameRef = useRef(null);
@@ -42,7 +47,7 @@ export default function ProfileModal({ profile, onSave, onClose }) {
     busyRef.current = true;
     setBusy(true);
     try {
-      const result = await onSave({ name: name.trim(), avatar });
+      const result = await onSave({ name: name.trim(), avatar, avatarPhoto });
       if (result?.ok) onClose();
       else setError(ERROR_TEXT[result?.error] ?? "บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง");
     } catch {
@@ -71,12 +76,12 @@ export default function ProfileModal({ profile, onSave, onClose }) {
       <div ref={contentRef} tabIndex={-1} onKeyDown={trapTab}>
         <h2 id="edit-profile-title" className="modal__title">แก้ไขโปรไฟล์</h2>
         <form onSubmit={submit}>
-          <div className="profile-preview"><AvatarArt index={avatar} size={88} /><span>{name.trim() || "ชื่อผู้เล่น"}</span></div>
+          <div className="profile-preview"><AvatarImage index={avatar} photoUrl={avatarPhoto} outfit={profile.outfit} size={88} /><span>{name.trim() || "ชื่อผู้เล่น"}</span></div>
           <fieldset className="profile-avatars" disabled={busy}>
             <legend>เลือกอวตาร</legend>
             <div className="profile-avatars__grid">
               {AVATARS.map((label, index) => (
-                <button key={label} type="button" className={`profile-avatars__item${avatar === index ? " profile-avatars__item--selected" : ""}`} aria-label={`อวตาร ${label}`} aria-pressed={avatar === index} onClick={() => setAvatar(index)}>
+                <button key={label} type="button" className={`profile-avatars__item${!avatarPhoto && avatar === index ? " profile-avatars__item--selected" : ""}`} aria-label={`อวตาร ${label}`} aria-pressed={!avatarPhoto && avatar === index} onClick={() => { setAvatar(index); setAvatarPhoto(null); }}>
                   <AvatarArt index={index} size={48} />
                   <span>{label}</span>
                 </button>

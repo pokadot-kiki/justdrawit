@@ -1,0 +1,8 @@
+[
+  { "id": "cursed_doodle", "name": "ดินสอต้องสาป", "price": 30, "durationMs": 7000, "cooldownMs": 15000 },
+  { "id": "blackout", "name": "หมึกมืด", "price": 40, "durationMs": 6500, "cooldownMs": 18000 },
+  { "id": "pixel_fly", "name": "แมลงพิกเซล", "price": 25, "durationMs": 8000, "cooldownMs": 14000 },
+  { "id": "shaky_hand", "name": "มือสั่น", "price": 35, "durationMs": 6500, "cooldownMs": 16000 },
+  { "id": "ice_canvas", "name": "แช่แข็งผ้าใบ", "price": 50, "durationMs": 3500, "cooldownMs": 22000 },
+  { "id": "rainbow_chaos", "name": "สีรุ้งป่วน", "price": 35, "durationMs": 7500, "cooldownMs": 17000 }
+]

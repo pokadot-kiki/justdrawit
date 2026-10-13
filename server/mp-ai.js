@@ -21,6 +21,8 @@
 // ══════════════════════════════════════════════════════════════════════
 const LEVELS = ["easy", "medium", "hard"];
 const renderDrawing = require("./mp-ai-render");
+const sharp = require("sharp");
+const chaos = require("./chaos");
 
 function envMs(name, fallback) {
   const v = process.env[name];
@@ -42,14 +44,49 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
   // callback ที่ตั้งไว้ก่อนเปลี่ยนช่วง/ห้องถูกลบ/เกมจบ จะเห็น token ไม่ตรงแล้วเลิกทำงานเอง
   const alive = (room, token) => rooms.get(room.code) === room && room.status === "playing" && room.mp && room.mp.token === token;
 
+  function emitChaos(room, pid) {
+    if (room.mp?.chaos) io.to(pid).emit("chaos_state", chaos.snapshot(room.mp.chaos, pid));
+  }
+
+  function activeEffect(room, targetId) {
+    return chaos.active(room?.mp?.chaos, targetId);
+  }
+
+  function onDrawAction(room, pid) {
+    if (room?.mp?.phase === "draw" && chaos.drawingAction(room.mp.chaos, pid)) emitChaos(room, pid);
+  }
+
+  function attack(room, attackerId, itemId, targetId) {
+    const mp = room?.mp;
+    if (!mp || mp.intro || room.status !== "playing" || !room.players.some((player) => player.id === attackerId && player.connected !== false)) return { ok: false, error: "NOT_IN_GAME" };
+    const result = chaos.attack(mp.chaos, { attackerId, targetId, itemId, phase: mp.phase, players: room.players, doneIds: mp.done ?? new Map(), challenge: mp.challenge });
+    if (result.shieldUsed) emitChaos(room, targetId);
+    if (!result.ok) return result;
+    if (itemId === "ice_canvas" && targetId !== "ai") {
+      const board = mp.boards.get(targetId);
+      if (board?.strokeOpen) {
+        const penLocked = closePrivateStroke(board);
+        io.to(targetId).emit("mpai_canvas_history", canvasPayload(board));
+        if (penLocked) io.to(targetId).emit("mpai_pen_locked", {});
+      }
+    }
+    emitChaos(room, attackerId);
+    if (targetId === "ai") io.to(room.code).emit("chaos_ai_effect", { effect: result.effect, serverNow: Date.now() });
+    else io.to(targetId).emit("chaos_self_effect", { effect: result.effect, serverNow: Date.now() });
+    return { ok: true, effect: result.effect, state: chaos.snapshot(mp.chaos, attackerId) };
+  }
+
   function entryOf(room, player) {
     let e = room.mp.entries.get(player.id);
     if (!e) {
-      e = { playerId: player.id, name: player.name, avatar: player.avatar, drawPoints: 0, guessPoints: 0, left: false };
+      e = { playerId: player.id, name: player.name, avatar: player.avatar, avatarPhoto: player.avatarPhoto, outfit: player.outfit, title: player.title, drawPoints: 0, guessPoints: 0, left: false };
       room.mp.entries.set(player.id, e);
     }
     e.name = player.name;
     e.avatar = player.avatar;
+    e.avatarPhoto = player.avatarPhoto;
+    e.outfit = player.outfit;
+    e.title = player.title;
     e.left = false;
     return e;
   }
@@ -129,7 +166,7 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
     if (room.mp) clearTimers(room);
     room.phase = "mpai"; // ไม่ใช่ "drawing" → handler การวาดของเกมห้อง (drawRoom) ทิ้งทุกอย่างอยู่แล้ว
     room.drawerId = null;
-    room.mp = { token: 0, round: 0, phase: null, entries: new Map(), usedWords: new Set(), strokeTimers: [], ticker: null, phaseTimer: null };
+    room.mp = { token: 0, round: 0, phase: null, entries: new Map(), usedWords: new Set(), strokeTimers: [], ticker: null, phaseTimer: null, chaos: chaos.create(room.players) };
     for (const p of room.players) entryOf(room, p);
     startDrawPhase(room);
   }
@@ -141,6 +178,7 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
     const word = ai.pickWord(bank(), pickLevel(room), mp.usedWords);
     if (!word) return finish(room); // ไม่มีคำเลย (ไม่น่าเกิด) → จบเกมแทนการค้าง
     mp.round++;
+    chaos.phaseStart(mp.chaos, room.players, mp.round);
     mp.usedWords.add(word);
     mp.phase = "draw";
     mp.word = word;
@@ -167,6 +205,8 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
     const time = phaseTime(room);
     // ทุกคนเป็นคนวาดคำเดียวกัน จึงบอกคำได้ทั้งห้อง (ช่วงนี้ไม่มีใครเป็นคนทาย)
     io.to(room.code).emit("mpai_draw_start", { round: mp.round, totalRounds: room.settings.rounds, word, category: mp.category, time, challenge: mp.challenge, intro: mp.intro });
+    for (const player of room.players) emitChaos(room, player.id);
+    io.to(room.code).emit("chaos_ai_effect", { effect: null });
     mp.time = time;
     mp.timeLeft = time;
     if (mp.intro) {
@@ -201,18 +241,42 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
 
   // ให้ AI ดูภาพหนึ่งครั้ง (Solo ใช้ฟังก์ชันเดียวกัน: ai.guessImage ไม่ตอบคำที่ทายผิดไปแล้วในภาพนี้ซ้ำ)
   // คืน { guess, correct, confidence } หรือ throw (พัง/เกินเวลา)
+  async function attackedImage(image, effect) {
+    if (!effect || effect.id === "ice_canvas") return image;
+    const input = Buffer.from(image.slice(image.indexOf(",") + 1), "base64");
+    const source = sharp(input);
+    let changed;
+    if (effect.id === "cursed_doodle") changed = await source.flop().png().toBuffer();
+    else if (effect.id === "shaky_hand") changed = await source.blur(2.2).png().toBuffer();
+    else if (effect.id === "rainbow_chaos") changed = await source.modulate({ hue: 130 }).png().toBuffer();
+    else {
+      const { width, height } = await source.metadata();
+      const obstacle = effect.id === "blackout"
+        ? `<rect x="${Math.round(width * .27)}" y="${Math.round(height * .2)}" width="${Math.round(width * .46)}" height="${Math.round(height * .44)}" fill="#17172f"/>`
+        : Array.from({ length: 20 }, (_, i) => `<rect x="${(i * 67 + 19) % width}" y="${(i * 47 + 13) % height}" width="24" height="24" fill="#20202c"/>`).join("");
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${obstacle}</svg>`;
+      changed = await source.composite([{ input: Buffer.from(svg) }]).png().toBuffer();
+    }
+    return `data:image/png;base64,${changed.toString("base64")}`;
+  }
+
   function askAi(room, pid, image) {
     const mp = room.mp;
     return withTimeout(
-      ai.guessImage({
-        image,
+      (async () => {
+        const effect = activeEffect(room, "ai");
+        if (effect?.id === "ice_canvas") await new Promise((resolve) => setTimeout(resolve, Math.min(3500, effect.until - Date.now())));
+        const seenImage = await attackedImage(image, effect);
+        return ai.guessImage({
+        image: seenImage,
         word: mp.word,
         allWords: ai.wordsOf(bank()),
         elapsed: (Date.now() - mp.startedAt) / 1000,
         time: mp.time,
         wrong: (mp.preds.get(pid) || []).filter((p) => !p.correct).map((p) => p.guess),
         requireReal: true,
-      }),
+        });
+      })(),
       EVAL_TIMEOUT_MS
     );
   }
@@ -230,6 +294,7 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
     mp.done.set(pid, { image, guess: out.guess, confidence: Math.round(out.confidence * 100) / 100, points });
     e.drawPoints += points;
     syncScore(room, e);
+    if (chaos.grant(mp.chaos, pid, chaos.CORRECT_REWARD)) emitChaos(room, pid);
     return { guess: out.guess, correct: true, points };
   }
 
@@ -384,13 +449,17 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
     }
     const results = order.map((e) => {
       const pid = e.playerId;
+      const live = room.players.find((p) => p.id === pid);
       const done = mp.done.get(pid);
       const preds = mp.preds.get(pid) || [];
       const image = mp.images.get(pid) ?? done?.image ?? null;
       return {
         playerId: pid,
         name: e.name,
-        avatar: e.avatar,
+        avatar: live?.avatar ?? e.avatar,
+        avatarPhoto: live ? live.avatarPhoto ?? null : e.avatarPhoto ?? null,
+        outfit: live ? live.outfit ?? null : e.outfit ?? null,
+        title: live ? live.title ?? null : e.title ?? null,
         image,
         guess: preds.at(-1)?.guess ?? null,
         predictions: preds.map((p) => p.guess),
@@ -411,6 +480,7 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
   function startWatchPhase(room) {
     const mp = room.mp;
     const token = nextToken(room);
+    chaos.phaseStart(mp.chaos, room.players, mp.round);
     const picked = aiDrawings.pick(bank(), pickLevel(room), mp.usedWords);
     if (!picked) return afterWatch(room, token); // ไม่มีไฟล์ภาพ → ข้ามช่วง 2 ไม่ล่ม
     mp.usedWords.add(picked.word);
@@ -421,6 +491,8 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
     const w = mp.watch;
     // ห้ามมีคำตอบใน event นี้ (มีแค่หมวด)
     io.to(room.code).emit("mpai_watch_start", { round: mp.round, totalRounds: room.settings.rounds, category: w.category, time, hintAt, serverNow: Date.now() });
+    for (const player of room.players) emitChaos(room, player.id);
+    io.to(room.code).emit("chaos_ai_effect", { effect: null });
     mp.strokeTimers.push(
       setTimeout(() => {
         if (!alive(room, token)) return;
@@ -432,9 +504,19 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
       mp.strokeTimers.push(
         setTimeout(() => {
           if (!alive(room, token)) return;
-          const stroke = { points: s.points, color: drawColor, size: drawSize, ms: s.ms, startedAt: w.startedAt + s.at };
-          w.strokes.push(stroke);
-          io.to(room.code).emit("mpai_watch_stroke", stroke);
+          const deliver = () => {
+            if (!alive(room, token) || mp.phase !== "watch") return;
+            const effect = activeEffect(room, "ai");
+            if (effect?.id === "ice_canvas") {
+              mp.strokeTimers.push(setTimeout(deliver, Math.max(1, effect.until - Date.now())));
+              return;
+            }
+            const stroke = { points: effect && ["cursed_doodle", "shaky_hand"].includes(effect.id) ? s.points.map((p) => chaos.point(effect, p.x, p.y)) : s.points,
+              color: chaos.color(effect, drawColor), size: drawSize, ms: s.ms, startedAt: Date.now() };
+            w.strokes.push(stroke);
+            io.to(room.code).emit("mpai_watch_stroke", stroke);
+          };
+          deliver();
         }, s.at)
       );
     }
@@ -470,6 +552,7 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
       const e = entryOf(room, player);
       e.guessPoints += points;
       syncScore(room, e);
+      if (chaos.grant(mp.chaos, player.id, chaos.CORRECT_REWARD)) emitChaos(room, player.id);
       publish("correct_guess", { playerId: player.id, name: player.name, system: true, kind: "correct", text: `${player.name} ทายถูก` });
       io.to(room.code).emit("mpai_correct", { playerId: player.id, name: player.name, points });
       io.to(room.code).emit("room_update", roomState(room));
@@ -504,14 +587,17 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
   // อันดับรายคน รวมคนที่ออกไปแล้ว (คะแนนไม่หาย) · ใช้ endGame เดิม (game_end + บันทึก Leaderboard + กลับห้องรอ)
   function ranking(room) {
     return [...room.mp.entries.values()]
-      .map((e) => ({ playerId: e.playerId, name: e.name, avatar: e.avatar, isHost: e.playerId === room.hostId, score: e.drawPoints + e.guessPoints, drawPoints: e.drawPoints, guessPoints: e.guessPoints, left: e.left }))
+      .map((e) => {
+        const live = room.players.find((p) => p.id === e.playerId);
+        return { playerId: e.playerId, name: live?.name ?? e.name, avatar: live?.avatar ?? e.avatar, avatarPhoto: live ? live.avatarPhoto ?? null : e.avatarPhoto ?? null, outfit: live ? live.outfit ?? null : e.outfit ?? null, title: live ? live.title ?? null : e.title ?? null, isHost: e.playerId === room.hostId, score: e.drawPoints + e.guessPoints, drawPoints: e.drawPoints, guessPoints: e.guessPoints, left: e.left };
+      })
       .sort((a, b) => b.score - a.score);
   }
 
   function finish(room) {
     clearTimers(room);
     room.mp.phase = "over";
-    endGame(room);
+    endGame(room, true);
   }
 
   // ---------- คนหลุด/ออก ----------
@@ -572,6 +658,8 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
   function addPlayer(room, player) {
     if (room.mp) {
       entryOf(room, player);
+      if (!room.mp.chaos.energy.has(player.id)) room.mp.chaos.energy.set(player.id, 0);
+      if (!room.mp.chaos.shields.has(player.id)) room.mp.chaos.shields.set(player.id, 1);
       if (room.mp.phase === "draw" && !room.mp.boards.has(player.id)) room.mp.boards.set(player.id, createPrivateBoard(player.id, room.mp.challenge));
       room.mp.watch?.offlineGrace.delete(player.id);
     }
@@ -581,7 +669,7 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
   function snapshot(room, pid) {
     const mp = room.mp;
     if (!mp) return null;
-    const base = { round: mp.round, totalRounds: room.settings.rounds, phase: mp.phase, timeLeft: mp.timeLeft ?? null, time: mp.time ?? null };
+    const base = { round: mp.round, totalRounds: room.settings.rounds, phase: mp.phase, timeLeft: mp.timeLeft ?? null, time: mp.time ?? null, chaos: chaos.snapshot(mp.chaos, pid) };
     if (mp.phase === "draw" || mp.phase === "eval") {
       Object.assign(base, {
         word: mp.word,
@@ -614,5 +702,6 @@ module.exports = function createMpAi({ io, rooms, ai, aiDrawings, wordBank, make
     return base;
   }
 
-  return { startGame, addPlayer, actionRoom, clearPlayerDrawing, handleSnapshot, handleGuess, onPlayerOffline, onPlayerLeft, checkProgress, stop, snapshot, ranking };
+  return { startGame, addPlayer, actionRoom, clearPlayerDrawing, handleSnapshot, handleGuess, onPlayerOffline, onPlayerLeft, checkProgress, stop, snapshot, ranking,
+    attack, activeEffect, onDrawAction };
 };

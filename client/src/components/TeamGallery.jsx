@@ -30,8 +30,8 @@ export default function TeamGallery({ entries, myTeam }) {
             <strong className="team-gallery__team" title={entry.name}>{entry.name}</strong>
             {entry.team === myTeam && <span className="team-gallery__mine">ภาพทีมของคุณ</span>}
             <span className="team-gallery__drawer">
-              {entry.drawer && <Avatar index={entry.drawer.avatar} />}
-              <span title={entry.drawer?.name ?? ""}>{entry.drawer?.name ?? "ไม่มีคนวาด"}</span>
+              {entry.drawer && <Avatar index={entry.drawer.avatar} photoUrl={entry.drawer.avatarPhoto} outfit={entry.drawer.outfit} />}
+              <span title={entry.drawer?.name ?? ""}>{entry.drawer?.name ?? "ไม่มีคนวาด"}{entry.drawer?.title && <small className="cosmetic-title"> « {entry.drawer.title} »</small>}</span>
             </span>
           </figcaption>
           <div className="team-gallery__art">

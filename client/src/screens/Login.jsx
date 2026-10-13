@@ -2,26 +2,22 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   createUserWithEmailAndPassword,
-  EmailAuthProvider,
-  GoogleAuthProvider,
-  inMemoryPersistence,
-  linkWithCredential,
+  browserLocalPersistence,
   sendEmailVerification,
   setPersistence,
   signInWithEmailAndPassword,
-  signInWithPopup,
   signOut,
 } from "@firebase/auth";
 import { firebaseAuth, firebaseReady } from "../firebase";
 import Logo from "../components/Logo";
 import Ribbon from "../components/Ribbon";
+import AudioDock from "../components/AudioDock";
+import { Icon } from "../components/Icons";
 
 const AUTH_ERRORS = {
   "auth/invalid-credential": "อีเมลหรือรหัสผ่านไม่ถูกต้อง",
   "auth/invalid-email": "รูปแบบอีเมลไม่ถูกต้อง",
   "auth/weak-password": "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร",
-  "auth/popup-closed-by-user": "คุณปิดหน้าต่าง Google ก่อนเข้าสู่ระบบ",
-  "auth/popup-blocked": "เบราว์เซอร์บล็อกหน้าต่าง Google กรุณาอนุญาต popup แล้วลองใหม่",
   "auth/unauthorized-domain": "โดเมนนี้ยังไม่ได้เพิ่มใน Authorized domains ของ Firebase",
   AUTH_NOT_CONFIGURED: "เกมยังไม่ได้ตั้งค่า Firebase Authentication กรุณาแจ้งผู้ดูแลระบบ",
   AUTH_PROVIDER_UNAVAILABLE: "เชื่อมต่อ Firebase ไม่สำเร็จ กรุณาลองใหม่",
@@ -36,8 +32,6 @@ export default function Login({ enabled, error, returnTo, onAuthenticated }) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [pendingGoogleCredential, setPendingGoogleCredential] = useState(null);
-  const [pendingEmailCredential, setPendingEmailCredential] = useState(null);
   const ready = enabled && firebaseReady && Boolean(firebaseAuth);
   const target = typeof returnTo === "string" && returnTo.startsWith("/") && !returnTo.startsWith("//") && !returnTo.includes("\\")
     ? returnTo
@@ -65,7 +59,6 @@ export default function Login({ enabled, error, returnTo, onAuthenticated }) {
       return;
     }
     if (!response.ok) throw new Error(result.error || "AUTH_PROVIDER_UNAVAILABLE");
-    await signOut(firebaseAuth);
     onAuthenticated(result.user);
     navigate(target, { replace: true });
   }
@@ -75,48 +68,13 @@ export default function Login({ enabled, error, returnTo, onAuthenticated }) {
     setMessage(AUTH_ERRORS[code] || "เข้าสู่ระบบไม่สำเร็จ กรุณาตรวจสอบข้อมูลแล้วลองใหม่");
   }
 
-  async function handleGoogleLogin() {
-    if (!ready || busy) return;
-    setBusy(true);
-    setMessage("");
-    try {
-      await setPersistence(firebaseAuth, inMemoryPersistence);
-      const result = await signInWithPopup(firebaseAuth, new GoogleAuthProvider());
-      let user = result.user;
-      if (pendingEmailCredential) {
-        user = (await linkWithCredential(user, pendingEmailCredential)).user;
-        setPendingEmailCredential(null);
-      }
-      await finishLogin(user);
-    } catch (reason) {
-      if (reason?.code === "auth/account-exists-with-different-credential") {
-        const credential = GoogleAuthProvider.credentialFromError(reason);
-        if (credential) {
-          setPendingGoogleCredential(credential);
-          setPendingEmailCredential(null);
-          setEmail(reason.customData?.email || email);
-          setMode("signin");
-          setMessage("อีเมลนี้มีบัญชีอยู่แล้ว กรุณาเข้าสู่ระบบด้วยรหัสผ่านเดิมเพื่อเชื่อมบัญชีกับ Google");
-        } else {
-          showError(reason);
-        }
-      } else if (reason?.code === "auth/email-already-in-use" && pendingEmailCredential) {
-        setMessage("กรุณาใช้ปุ่ม Google เพื่อเข้าสู่บัญชีเดิมและเชื่อมอีเมล");
-      } else {
-        showError(reason);
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function handleEmailSubmit(event) {
     event.preventDefault();
     if (!ready || busy) return;
     setBusy(true);
     setMessage("");
     try {
-      await setPersistence(firebaseAuth, inMemoryPersistence);
+      await setPersistence(firebaseAuth, browserLocalPersistence);
       let user;
       if (mode === "signup") {
         const result = await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
@@ -129,18 +87,12 @@ export default function Login({ enabled, error, returnTo, onAuthenticated }) {
       }
 
       user = (await signInWithEmailAndPassword(firebaseAuth, email.trim(), password)).user;
-      if (pendingGoogleCredential) {
-        user = (await linkWithCredential(user, pendingGoogleCredential)).user;
-        setPendingGoogleCredential(null);
-      }
       await finishLogin(user);
     } catch (reason) {
       if (reason?.code === "auth/email-already-in-use" && mode === "signup") {
-        setPendingEmailCredential(EmailAuthProvider.credential(email.trim(), password));
+        // หน้านี้ล็อกอินได้ด้วยอีเมลอย่างเดียวแล้ว (ไม่มีปุ่ม Google) → พากลับไปโหมดเข้าสู่ระบบ
         setMode("signin");
-        setMessage("อีเมลนี้มีบัญชีอยู่แล้ว หากบัญชีเดิมใช้ Google ให้กดปุ่ม Google เพื่อเชื่อมวิธีเข้าสู่ระบบ");
-      } else if (reason?.code === "auth/account-exists-with-different-credential" && pendingGoogleCredential) {
-        setMessage("เข้าสู่ระบบด้วยวิธีเดิมของบัญชีนี้ก่อน แล้วลองเชื่อม Google อีกครั้ง");
+        setMessage("อีเมลนี้มีบัญชีอยู่แล้ว กรุณาเข้าสู่ระบบด้วยรหัสผ่านของบัญชีนี้");
       } else {
         showError(reason);
       }
@@ -159,29 +111,27 @@ export default function Login({ enabled, error, returnTo, onAuthenticated }) {
 
   return (
     <main className="screen auth-screen">
+      <button type="button" className="back-btn" onClick={() => navigate("/")}>
+        <Icon name="arrowL" size={14} /> กลับ
+      </button>
+      {/* หน้านี้ไม่ได้อยู่ใต้ .top-dock ของ App.jsx (Login คืน JSX ก่อนถึงจุดนั้น) ครอบเองที่นี่แทน
+          เพื่อให้ปุ่มเพลง/เสียงลอยมุมขวาบนเหมือนหน้าอื่น ใช้ CSS ชุดเดียวกัน (theme.css .top-dock) */}
+      <div className="top-dock">
+        <AudioDock />
+      </div>
       <div className="auth-card panel">
-        <Logo />
+        <div className="auth-logo">
+          <Logo />
+        </div>
         <Ribbon tone="red">SIGN IN</Ribbon>
         <h1>เข้าสู่ระบบ (ไม่บังคับ)</h1>
-        <p>เข้าสู่ระบบด้วย Google หรืออีเมล เพื่อให้คะแนนผูกกับบัญชีของคุณ — ไม่เข้าสู่ระบบก็เล่นได้ทุกโหมดเหมือนเดิม</p>
-        <button type="button" className="big-btn big-btn--pink auth-guest" onClick={() => navigate(target, { replace: true })}>
-          เล่นเลยแบบ Guest
-        </button>
+        <p>เข้าสู่ระบบด้วยอีเมลเพื่อให้คะแนนผูกกับบัญชีของคุณ — ไม่เข้าสู่ระบบก็เล่นได้ทุกโหมดเหมือนเดิม</p>
         {(message || firebaseError) && (
           <p className="auth-message" role="alert">{message || firebaseError}</p>
         )}
         {mode === "signup" && (
           <p className="auth-note">สมัครด้วยอีเมลแล้วต้องกดยืนยันจากกล่องจดหมายก่อนเล่น</p>
         )}
-        <button
-          type="button"
-          className="big-btn big-btn--blue auth-google"
-          disabled={!ready || busy}
-          onClick={handleGoogleLogin}
-        >
-          เข้าสู่ระบบด้วย Google
-        </button>
-        <div className="auth-divider"><span>หรือใช้อีเมล</span></div>
         <form className="auth-form" onSubmit={handleEmailSubmit}>
           <label className="field__label" htmlFor="auth-email">อีเมล</label>
           <input
@@ -206,7 +156,7 @@ export default function Login({ enabled, error, returnTo, onAuthenticated }) {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
-          <button type="submit" className="big-btn big-btn--green auth-google" disabled={!ready || busy}>
+          <button type="submit" className="big-btn big-btn--green auth-submit" disabled={!ready || busy}>
             {busy ? "กำลังตรวจสอบ..." : mode === "signup" ? "สมัครด้วยอีเมล" : "เข้าสู่ระบบด้วยอีเมล"}
           </button>
         </form>

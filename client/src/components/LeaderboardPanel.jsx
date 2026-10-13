@@ -6,8 +6,7 @@ import { Icon } from "./Icons";
 // เนื้อในของ Leaderboard — ใช้ร่วมกันทั้งการ์ดในหน้าแรกและหน้า /leaderboard เต็ม (ไม่เขียนซ้ำ)
 // ประกอบด้วย: หัว (ชื่อ + dropdown เลือกเดือน) · แท็บ เล่นกับเพื่อน/แข่งกับ AI · ตารางอันดับ
 // หน้าแรกส่ง scroll เพื่อให้ตารางเลื่อนภายในการ์ด (ไม่ดันการ์ดสูงจนล้น)
-// แสดงได้แค่ "ปีปัจจุบัน" เท่านั้น (ไม่มีตัวเลือก "ตลอดกาล" แล้ว) — server ก็ลบคะแนนปีก่อนออกจากที่เก็บไปแล้วตอนสตาร์ท
-// ดู server/leaderboard.js purgeOldYears/resolveMonth
+// แสดงได้แค่ "ปีปัจจุบัน" เท่านั้น (ไม่มีตัวเลือก "ตลอดกาล" แล้ว) · server เก็บคะแนนเก่าไว้
 
 // สองกระดานแยกกัน (server เก็บแยกด้วยช่อง board) — แท็บแค่เปลี่ยนว่าขอกระดานไหนจาก API
 const BOARDS = [
@@ -27,7 +26,7 @@ function monthsThisYear() {
   return Array.from({ length: now.getMonth() + 1 }, (_, i) => monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
 }
 
-export default function LeaderboardPanel({ limit = 20, scroll = false, meName = "" }) {
+export default function LeaderboardPanel({ limit = 20, scroll = false }) {
   const [months] = useState(monthsThisYear);
   const [month, setMonth] = useState(months[0]); // เปิดมาเห็นเดือนปัจจุบันก่อน
   const [tab, setTab] = useState("multi");
@@ -40,7 +39,6 @@ export default function LeaderboardPanel({ limit = 20, scroll = false, meName = 
     <RankTable
       board={board}
       limit={limit}
-      meName={meName}
       showLevel={tab === "solo"} // กระดานเล่นกับเพื่อนไม่มี "ด่าน"
       emptyIcon={info.icon}
       emptyHint={tab === "solo" ? undefined : "ชวนเพื่อนมาเล่นให้จบหนึ่งเกม แล้วคะแนนจะขึ้นกระดานนี้เอง!"}

@@ -8,6 +8,8 @@ import "./styles/lobby.css"; // ห้องรอ (WaitingRoom)
 import "./styles/setup.css"; // หน้า SET UP (การ์ดโหมด + กล่องแข่งกับ AI)
 import "./styles/mpai.css"; // โหมด Multiplayer vs AI (MpAiGame)
 import "./styles/auth.css";
+import "./styles/achievements.css";
+import "./styles/economy.css";
 import "./prefs"; // ตั้ง data-motion ที่ <html> ก่อน React วาดหน้าแรก
 
 // BrowserRouter ผูกหน้าจอเข้ากับ URL (/ · /setup · /room/12345 · /leaderboard · /solo)

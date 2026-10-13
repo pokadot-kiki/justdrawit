@@ -88,8 +88,8 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
                     <span className="team-podium__members">
                       {t.members.map((p) => (
                         <span className="team-podium__member" key={p.playerId}>
-                          {Number.isInteger(p.avatar) && <Avatar index={p.avatar} />}
-                          <span title={p.name}>{p.name}{p.left ? " · ออกแล้ว" : ""}</span>
+                          {Number.isInteger(p.avatar) && <Avatar index={p.avatar} photoUrl={p.avatarPhoto} outfit={p.outfit} />}
+                          <span title={p.name}>{p.name}{p.title && <small className="cosmetic-title"> « {p.title} »</small>}{p.left ? " · ออกแล้ว" : ""}</span>
                         </span>
                       ))}
                     </span>
@@ -111,8 +111,8 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
                     <span className="team-standings__members">
                       {t.members.map((p) => (
                         <span className="team-standings__member" key={p.playerId}>
-                          {Number.isInteger(p.avatar) && <Avatar index={p.avatar} />}
-                          <span title={p.name}>{p.name}{p.left ? " · ออกแล้ว" : ""}</span>
+                          {Number.isInteger(p.avatar) && <Avatar index={p.avatar} photoUrl={p.avatarPhoto} outfit={p.outfit} />}
+                          <span title={p.name}>{p.name}{p.title && <small className="cosmetic-title"> « {p.title} »</small>}{p.left ? " · ออกแล้ว" : ""}</span>
                         </span>
                       ))}
                     </span>
@@ -133,8 +133,8 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
               return (
                 <li className={`podium__item podium__item--${place + 1}${p.playerId === meId ? " podium__item--me" : ""}`} key={p.playerId}>
                   <span className="podium__medal"><Icon name={MEDALS[place]} size={34} /></span>
-                  {Number.isInteger(p.avatar) && <span className="podium__avatar"><Avatar index={p.avatar} /></span>}
-                  <span className="podium__name">{p.name}</span>
+                  {Number.isInteger(p.avatar) && <span className="podium__avatar"><Avatar index={p.avatar} photoUrl={p.avatarPhoto} outfit={p.outfit} /></span>}
+                  <span className="podium__name">{p.name}{p.title && <small className="cosmetic-title">« {p.title} »</small>}</span>
                   <span className="podium__score">{p.score}</span>
                   {split(p)}
                 </li>
@@ -151,9 +151,10 @@ export default function GameOverModal({ ranking, isHost, onPlayAgain, onBackToLo
             {ranking.map((p, i) => (
               <li className={`match-ranking__row${p.playerId === meId ? " match-ranking__row--me" : ""}`} key={p.playerId}>
                 <span className="match-ranking__place">{i + 1}.</span>
-                <span className="match-ranking__avatar">{Number.isInteger(p.avatar) && <Avatar index={p.avatar} />}</span>
+                <span className="match-ranking__avatar">{Number.isInteger(p.avatar) && <Avatar index={p.avatar} photoUrl={p.avatarPhoto} outfit={p.outfit} />}</span>
                 <span className="match-ranking__identity">
                   <span className="match-ranking__name" title={p.name}>{p.name}</span>
+                  {p.title && <small className="cosmetic-title">« {p.title} »</small>}
                   {(p.playerId === meId || p.isHost || p.left) && (
                     <span className="match-ranking__badges">
                       {p.playerId === meId && <YouTag />}

@@ -11,7 +11,6 @@ export default function RankTable({
   limit = 20,
   compact = false,
   emptyText,
-  meName = "",
   showLevel = true,
   emptyHint = "ลองเล่นโหมด Solo แข่งกับ AI แล้วมาเป็นคนแรกบนกระดานนี้กัน!",
   emptyIcon = "robot",
@@ -61,7 +60,7 @@ export default function RankTable({
         {rows.map((row) => (
           <tr
             key={row.rank}
-            className={`${row.rank <= 3 ? `rank-row rank-row--${row.rank}` : "rank-row"}${meName && row.name === meName ? " rank-row--me" : ""}`}
+            className={`${row.rank <= 3 ? `rank-row rank-row--${row.rank}` : "rank-row"}${row.isMe ? " rank-row--me" : ""}`}
           >
             <td className="rank-row__rank">{MEDALS[row.rank] ? <Icon name={MEDALS[row.rank]} size={compact ? 20 : 26} label={`อันดับ ${row.rank}`} /> : row.rank}</td>
             {/* ชื่อแสดงผ่าน {} ของ React = ข้อความธรรมดาเสมอ
@@ -69,7 +68,7 @@ export default function RankTable({
                 (ห้ามเปลี่ยนไปใช้ dangerouslySetInnerHTML ที่นี่เด็ดขาด) */}
             <td className="rank-row__name">
               {row.name}
-              {meName && row.name === meName && <YouTag />}
+              {row.isMe && <YouTag />}
             </td>
             {showLevel && <td className="rank-row__level">{row.levelReached}</td>}
             <td className="rank-row__score">{row.score}</td>

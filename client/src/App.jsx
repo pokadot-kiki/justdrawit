@@ -1,20 +1,29 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { onAuthStateChanged, signOut } from "@firebase/auth";
 import { socket } from "./socket";
 import { errorText } from "./messages";
 import { useGame } from "./hooks/useGame";
 import { useMpAi } from "./hooks/useMpAi";
+import { useEconomy } from "./hooks/useEconomy";
 import MpAiGame from "./screens/MpAiGame";
 import Lobby from "./screens/Lobby";
+import AvatarShop from "./screens/AvatarShop";
+import AvatarDressingRoom from "./screens/AvatarDressingRoom";
 import { initialName, loadAvatar, saveAvatar, saveName } from "./playerName";
 import { AVATARS } from "./avatars";
 import { getUserAuth } from "./prefs";
 import ProfileModal from "./components/ProfileModal";
+import AvatarUploadModal from "./components/AvatarUploadModal";
+import { firebaseAuth } from "./firebase";
+import { avatarStorageError, loadAvatarPhoto, removeAvatarPhoto, storageReady, uploadAvatarPhoto } from "./avatarStorage";
 import WaitingRoom from "./screens/WaitingRoom";
 import Game from "./screens/Game";
 import Leaderboard from "./screens/Leaderboard";
 import SoloAI from "./screens/SoloAI";
 import SetUp from "./screens/SetUp";
+import CategorySelection from "./screens/CategorySelection";
+import Achievements from "./screens/Achievements";
 const Login = lazy(() => import("./screens/Login"));
 import AudioDock from "./components/AudioDock";
 import AuthButton from "./components/AuthButton";
@@ -35,6 +44,8 @@ function parseRoute(pathname) {
   if (path === "/setup") return { screen: "setup" };
   if (path === "/leaderboard") return { screen: "leaderboard" };
   if (path === "/solo") return { screen: "solo" };
+  if (path === "/shop") return { screen: "shop" };
+  if (path === "/dressing-room") return { screen: "dressing" };
   const m = /^\/room\/(\d{5})$/.exec(path);
   if (m) return { screen: "room", code: m[1] };
   return { screen: "unknown" };
@@ -54,12 +65,15 @@ export default function App() {
   const [me, setMe] = useState(null); // { playerId, name, avatar, code } ของเครื่องนี้
   const [inGame, setInGame] = useState(false); // อยู่ในห้องแล้วเกมเริ่มหรือยัง (ห้องรอ ↔ หน้าเกม)
   // ชื่อ + อวตารที่เลือกในหน้าแรก อยู่ที่นี่เพื่อให้ติดไปหน้า SET UP / Solo ได้ ไม่ต้องกรอกซ้ำ
-  const [profile, setProfile] = useState(() => ({ name: initialName(getUserAuth()?.username), avatar: loadAvatar(AVATARS.length, getUserAuth()?.username) }));
+  const [profile, setProfile] = useState(() => ({ name: initialName(getUserAuth()?.username), avatar: loadAvatar(AVATARS.length, getUserAuth()?.username), avatarPhoto: null }));
   const [showProfile, setShowProfile] = useState(false);
+  const [showAvatarUpload, setShowAvatarUpload] = useState(false);
+  const [showAchievements, setShowAchievements] = useState(false);
   // ค่าเริ่ม Solo ที่ส่งมาจากหน้า SET UP (เลือกโหมด "แข่งกับ AI") → SoloAI เริ่มเกมทันทีด้วยความยากนี้
   // null = เข้า /solo ตรง ๆ (เช่นรีเฟรช) จะเห็นหน้ากรอกชื่อตามปกติ
   const [soloBoot, setSoloBoot] = useState(null);
   const [toast, setToast] = useState(null);
+  const { economy, buyItem, saveOutfit, resetEconomy } = useEconomy();
   const toastTimer = useRef(null);
   // me แบบอ่านได้ทันที (ไม่ต้องรอ React วาดรอบใหม่) + socket.id ตอนที่เราเข้าห้องสำเร็จ
   // ถ้า socket.id ตอนนี้ไม่ตรงกับที่จำไว้ แปลว่าหลุดแล้วต่อใหม่ → server ยังไม่รู้ว่า socket ตัวใหม่นี้อยู่ห้องไหน ต้อง rejoin
@@ -87,6 +101,35 @@ export default function App() {
       });
     return () => { active = false; };
   }, []);
+
+  // รูปอยู่ใน Firebase Storage ตาม UID เท่านั้น ไม่เก็บ URL หรือไฟล์ใน localStorage
+  useEffect(() => {
+    if (!auth.user?.uid || !firebaseAuth) {
+      setProfile((previous) => previous.avatarPhoto ? { ...previous, avatarPhoto: null } : previous);
+      return undefined;
+    }
+    let active = true;
+    const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
+      if (!active) return;
+      if (!user || user.uid !== auth.user.uid) {
+        setProfile((previous) => previous.avatarPhoto ? { ...previous, avatarPhoto: null } : previous);
+        return;
+      }
+      try {
+        await storageReady();
+        const avatarPhoto = await loadAvatarPhoto(user.uid);
+        if (!active) return;
+        setProfile((previous) => ({ ...previous, avatarPhoto }));
+        const own = meRef.current;
+        if (own?.code && socket.connected && own.avatarPhoto !== avatarPhoto) {
+          socket.timeout(6000).emit("update_profile", { name: own.name, avatar: own.avatar, avatarPhoto }, () => {});
+        }
+      } catch {
+        // Storage ยังไม่พร้อม: คงอวตารตัวละครเดิม และแจ้งสาเหตุเมื่อเปิดหน้ารูปโปรไฟล์
+      }
+    });
+    return () => { active = false; unsubscribe(); };
+  }, [auth.user?.uid]);
 
   useEffect(() => {
     if (route.screen === "login" && auth.user) navigate("/", { replace: true });
@@ -126,12 +169,14 @@ export default function App() {
     // หน้าจอแค่เอาค่าที่ได้ไปแสดง ไม่ต้องคำนวณเอง
     const onRoomUpdate = (next) => {
       setRoom(next);
+      if (next.status === "category_selection") setInGame(false);
       const own = next.code === meRef.current?.code ? next.players?.find((p) => p.id === meRef.current?.playerId) : null;
       if (own) {
-        const info = { ...meRef.current, name: own.name, avatar: own.avatar };
+        const info = { ...meRef.current, name: own.name, avatar: own.avatar, avatarPhoto: own.avatarPhoto ?? null, outfit: own.outfit };
         meRef.current = info;
         setMe(info);
-        setProfile((previous) => previous.name === own.name && previous.avatar === own.avatar ? previous : { name: own.name, avatar: own.avatar });
+        setProfile((previous) => previous.name === own.name && previous.avatar === own.avatar && previous.avatarPhoto === (own.avatarPhoto ?? null)
+          ? previous : { name: own.name, avatar: own.avatar, avatarPhoto: own.avatarPhoto ?? null });
       }
     };
     const onGameStarted = () => setInGame(true);
@@ -140,6 +185,10 @@ export default function App() {
     // server พาทุกคนกลับห้องรอหลังจบเกม (ห้องเดิม หัวห้องเดิม) → สลับไปหน้าห้องรอ
     const onLobbyReturn = () => setInGame(false);
     const onGameError = (err) => showToast(errorText(err?.code));
+    const onAchievementUnlocked = (data) => showToast(`ปลดล็อก Achievement และฉายา: ${data?.title}`);
+    const onEconomyReward = (data) => {
+      if (Number.isSafeInteger(data?.coins) && data.coins > 0) showToast(`ได้รับ ${data.coins} Coins จากการเล่นเกม`);
+    };
     // ถูกหัวห้องเตะออก — กลับหน้าแรกพร้อมข้อความ · ออกจาก URL ห้องแล้ว effect จะไม่ rejoin กลับเอง
     const onKicked = () => {
       showToast("คุณถูกหัวห้องเชิญออกจากห้อง");
@@ -154,6 +203,8 @@ export default function App() {
     socket.on("game_end", onGameEnd);
     socket.on("lobby_return", onLobbyReturn);
     socket.on("game_error", onGameError);
+    socket.on("achievement_unlocked", onAchievementUnlocked);
+    socket.on("economy_reward", onEconomyReward);
     socket.on("kicked", onKicked);
 
     // สำคัญมาก: socket อาจต่อติดไปแล้วก่อนที่ effect นี้จะได้ทำงาน (เกิดจริงตอน dev
@@ -169,6 +220,8 @@ export default function App() {
       socket.off("game_end", onGameEnd);
       socket.off("lobby_return", onLobbyReturn);
       socket.off("game_error", onGameError);
+      socket.off("achievement_unlocked", onAchievementUnlocked);
+      socket.off("economy_reward", onEconomyReward);
       socket.off("kicked", onKicked);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,22 +234,33 @@ export default function App() {
   useEffect(() => saveAvatar(profile.avatar, AVATARS.length, getUserAuth()?.username), [profile.avatar]);
 
   async function saveProfile(next) {
+    if ((route.screen === "room" || route.screen === "solo") && !socket.connected) return { ok: false, error: "CONNECT_FAILED" };
+    const avatarPhoto = next.avatarPhoto === undefined ? profile.avatarPhoto : next.avatarPhoto;
+    if (avatarPhoto === null && profile.avatarPhoto && auth.user?.uid) {
+      if (firebaseAuth?.currentUser?.uid !== auth.user.uid) return { ok: false, error: "AUTH_REQUIRED" };
+      try {
+        await storageReady();
+        await removeAvatarPhoto(auth.user.uid);
+      } catch (reason) {
+        return { ok: false, error: reason?.code || reason?.message || "STORAGE_UNAVAILABLE" };
+      }
+    }
+    const update = { ...next, avatarPhoto };
     if (route.screen !== "room" && route.screen !== "solo") {
-      setProfile(next);
+      setProfile(update);
       return { ok: true };
     }
-    if (!socket.connected) return { ok: false, error: "CONNECT_FAILED" };
     return new Promise((resolve) => {
-      socket.timeout(6000).emit("update_profile", next, (err, result) => {
+      socket.timeout(6000).emit("update_profile", update, (err, result) => {
         if (err) return resolve({ ok: false, error: "CONNECT_FAILED" });
         if (!result?.ok) {
           if (route.screen === "solo" && result?.error === "NOT_IN_GAME") {
-            setProfile(next);
+            setProfile(update);
             return resolve({ ok: true });
           }
           return resolve(result ?? { ok: false, error: "SERVER_ERROR" });
         }
-        const saved = { name: result.name, avatar: result.avatar };
+        const saved = { name: result.name, avatar: result.avatar, avatarPhoto: result.avatarPhoto ?? null };
         setProfile(saved);
         if (meRef.current) {
           meRef.current = { ...meRef.current, ...saved };
@@ -205,6 +269,24 @@ export default function App() {
         resolve({ ok: true });
       });
     });
+  }
+
+  async function uploadPhoto(file) {
+    if (!auth.user?.uid || firebaseAuth?.currentUser?.uid !== auth.user.uid) return { ok: false, error: "AUTH_REQUIRED" };
+    try {
+      await storageReady();
+      const avatarPhoto = await uploadAvatarPhoto(auth.user.uid, file);
+      setProfile((previous) => ({ ...previous, avatarPhoto }));
+      return { ok: true };
+    } catch (reason) {
+      return { ok: false, error: reason?.code || reason?.message || "STORAGE_UNAVAILABLE" };
+    }
+  }
+
+  async function selectPresetAvatar(avatar) {
+    const result = await saveProfile({ ...profile, avatar, avatarPhoto: null });
+    if (!result.ok) showToast(avatarStorageError(result.error));
+    return result;
   }
 
   // ล้างสถานะห้องในเครื่อง (ไม่ได้บอก server — คนเรียกเป็นคนตัดสินใจว่าต้องส่ง leave_room ไหม)
@@ -244,11 +326,11 @@ export default function App() {
       if (rejoiningRef.current === key) rejoiningRef.current = null;
       if (err) return showToast(errorText("CONNECT_FAILED"));
       if (res?.ok) {
-        const info = { playerId: res.playerId, name: res.name, avatar: res.avatar, code: res.code };
+        const info = { playerId: res.playerId, name: res.name, avatar: res.avatar, avatarPhoto: res.avatarPhoto ?? null, outfit: res.outfit, code: res.code };
         meRef.current = info;
         joinedSidRef.current = socket.id;
         setMe(info);
-        setProfile((p) => ({ ...p, name: res.name, avatar: res.avatar }));
+        setProfile((p) => ({ ...p, name: res.name, avatar: res.avatar, avatarPhoto: res.avatarPhoto ?? null }));
         return;
       }
       clearRoom();
@@ -289,7 +371,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inGame]);
 
-  const showGame = roomReady && inGame;
+  const showGame = roomReady && inGame && room.status !== "category_selection";
   // returnTo: หน้าที่จะกลับไปหลังล็อกอินสำเร็จ (กดปุ่ม "เข้าสู่ระบบ" จากหน้าไหนก็กลับไปหน้านั้น)
   const returnTo = route.screen === "login"
     ? new URLSearchParams(location.search).get("returnTo") || "/"
@@ -299,8 +381,13 @@ export default function App() {
     try {
       const response = await fetch("/api/auth/logout", { method: "POST" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (firebaseAuth) {
+        try { await signOut(firebaseAuth); } catch { /* server session ถูกลบแล้ว ให้กลับเป็น Guest ต่อ */ }
+      }
       socket.disconnect();
+      resetEconomy();
       setAuth({ loading: false, enabled: true, user: null, error: null });
+      setProfile((previous) => ({ ...previous, avatarPhoto: null }));
       socket.connect(); // ต่อใหม่ทันทีแบบ Guest — ออกจากระบบแล้วยังเล่นต่อได้เลย ไม่ต้องเด้งไปไหน
     } catch (error) {
       showToast(`ออกจากระบบไม่สำเร็จ (${error.message})`);
@@ -318,6 +405,7 @@ export default function App() {
           returnTo={returnTo}
           onAuthenticated={(user) => {
             socket.disconnect();
+            resetEconomy();
             setAuth({ loading: false, enabled: true, user, error: null });
             socket.connect();
           }}
@@ -333,7 +421,7 @@ export default function App() {
       {!showGame && route.screen !== "solo" && (
         <div className="top-dock">
           {route.screen === "lobby" && (
-            <AuthButton enabled={auth.enabled} user={auth.user} avatar={profile.avatar} onLogout={handleLogout} />
+            <AuthButton enabled={auth.enabled} user={auth.user} avatar={profile.avatar} avatarPhoto={profile.avatarPhoto} outfit={economy?.equipped} onLogout={handleLogout} />
           )}
           <AudioDock />
         </div>
@@ -344,20 +432,30 @@ export default function App() {
           connected={connected}
           profile={profile}
           onProfile={setProfile}
+          onSelectAvatar={selectPresetAvatar}
+          canUploadPhoto={Boolean(auth.user)}
+          onUploadPhoto={() => setShowAvatarUpload(true)}
           onEditProfile={() => setShowProfile(true)}
           inviteCode={inviteCode}
           onEntered={handleEntered}
           // หน้า Lobby ส่ง "รหัส error" มา ที่นี่แปลงเป็นข้อความไทยก่อนโชว์
           onError={(code) => showToast(errorText(code))}
           onOpenSetup={() => navigate("/setup")}
+          onAchievements={() => setShowAchievements(true)}
+          economy={economy}
+          onShop={() => navigate("/shop")}
+          onDress={() => navigate("/dressing-room")}
         />
       )}
+
+      {route.screen === "shop" && <AvatarShop economy={economy} profile={profile} onBuy={buyItem} onBack={goHome} onDress={() => navigate("/dressing-room")} />}
+      {route.screen === "dressing" && <AvatarDressingRoom economy={economy} profile={profile} onSave={saveOutfit} onAvatar={selectPresetAvatar} onBack={goHome} onShop={() => navigate("/shop")} />}
 
       {/* SET UP: เลือกโหมด/รอบ/เวลา/ความยาก/ประเภทห้อง แล้วสร้างห้อง */}
       {route.screen === "setup" && (
         <SetUp
           connected={connected}
-          profile={profile}
+          profile={{ ...profile, outfit: economy?.equipped }}
           onEditProfile={() => setShowProfile(true)}
           onBack={goHome}
           onEntered={handleEntered}
@@ -377,8 +475,9 @@ export default function App() {
       {route.screen === "solo" && (
         <SoloAI
           initialName={profile.name}
-          profile={profile}
+          profile={{ ...profile, outfit: economy?.equipped }}
           onEditProfile={() => setShowProfile(true)}
+          onAchievements={() => setShowAchievements(true)}
           boot={soloBoot}
           onName={(name) => setProfile((p) => ({ ...p, name }))}
           onBack={() => {
@@ -395,8 +494,12 @@ export default function App() {
         </div>
       )}
 
-      {roomReady && !inGame && (
-        <WaitingRoom room={room} me={me} messages={game.messages} onSend={sendGuess} onLeave={handleLeave} onEditProfile={() => setShowProfile(true)} onToast={showToast} />
+      {roomReady && room.status === "category_selection" && (
+        <CategorySelection room={room} me={me} onLeave={handleLeave} />
+      )}
+
+      {roomReady && !inGame && room.status !== "category_selection" && (
+        <WaitingRoom room={room} me={me} messages={game.messages} onSend={sendGuess} onLeave={handleLeave} onEditProfile={() => setShowProfile(true)} onAchievements={() => setShowAchievements(true)} onToast={showToast} />
       )}
 
       {showGame && room.settings.mode === "mpai" && (
@@ -433,6 +536,7 @@ export default function App() {
           onLeave={handleLeave}
           // Toast ตัวกลางอยู่ที่ App หน้าเกมจึงขอยืมใช้ (เช่นตอนกดคัดลอกรหัสห้อง)
           onToast={showToast}
+          onAchievements={() => setShowAchievements(true)}
           onEditProfile={() => setShowProfile(true)}
         />
       )}
@@ -440,7 +544,9 @@ export default function App() {
       {/* หลุดจาก server ระหว่างอยู่ในห้อง: บอกให้รู้ว่ากำลังต่อใหม่ (ต่อติดแล้ว rejoin เองโดยอัตโนมัติ) */}
       {roomReady && !connected && <div className="reconnect-note">การเชื่อมต่อหลุด กำลังต่อใหม่...</div>}
 
-      {showProfile && <ProfileModal profile={roomReady ? { name: me.name, avatar: me.avatar } : profile} onSave={saveProfile} onClose={() => setShowProfile(false)} />}
+      {showProfile && <ProfileModal profile={roomReady ? { name: me.name, avatar: me.avatar, avatarPhoto: me.avatarPhoto, outfit: me.outfit } : { ...profile, outfit: economy?.equipped }} onSave={saveProfile} onClose={() => setShowProfile(false)} />}
+      {showAvatarUpload && auth.user && <AvatarUploadModal profile={{ ...profile, outfit: economy?.equipped }} onSave={uploadPhoto} onRemove={() => saveProfile({ ...profile, avatarPhoto: null })} onClose={() => setShowAvatarUpload(false)} />}
+      {showAchievements && <Achievements onClose={() => setShowAchievements(false)} />}
 
       {/* key ผูกกับ id ของ toast เพื่อให้แสดงข้อความซ้ำแล้วเล่นอนิเมชันใหม่ */}
       <Toast key={toast?.id ?? "none"} toast={toast} />

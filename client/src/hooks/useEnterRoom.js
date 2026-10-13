@@ -8,7 +8,7 @@ export function useEnterRoom({ connected, onEntered, onError }) {
   const [busy, setBusy] = useState(false);
 
   // event = "create_room" | "join_room" · payload ตามหน้าตาใน events.md §1
-  function enter(event, payload, { name, avatar }, retried = false) {
+  function enter(event, payload, { name, avatar, avatarPhoto = null }, retried = false) {
     if (!retried && (busy || !connected)) return;
     setBusy(true);
 
@@ -27,11 +27,11 @@ export function useEnterRoom({ connected, onEntered, onError }) {
       if (res?.error === "NAME_TAKEN" && event === "join_room" && !retried) {
         answered = true;
         const next = withSuffix(payload.name);
-        return enter(event, { ...payload, name: next }, { name: next, avatar }, true);
+        return enter(event, { ...payload, name: next }, { name: next, avatar, avatarPhoto }, true);
       }
       if (!res?.ok) return finish(() => onError(res?.error));
       // join_room ไม่ได้ส่ง code กลับมา เราใช้รหัสที่ผู้ใช้พิมพ์เอง
-      finish(() => onEntered({ playerId: res.playerId, code: res.code ?? payload.code, name, avatar }));
+      finish(() => onEntered({ playerId: res.playerId, code: res.code ?? payload.code, name, avatar, avatarPhoto }));
     });
   }
 

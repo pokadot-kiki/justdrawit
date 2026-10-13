@@ -27,7 +27,7 @@ function currentMonthKey() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-// Leaderboard แสดงได้แค่ปีปัจจุบันเท่านั้น (ข้อมูลปีก่อนถูกลบออกจากที่เก็บตอนสตาร์ทอยู่แล้ว — ดู purgeOldYears)
+// Leaderboard แสดงได้แค่ปีปัจจุบันเท่านั้น โดยไม่ลบคะแนนเก่าออกจากที่เก็บ
 // month รูปแบบถูก (ผ่าน isValidMonth แล้ว) แต่เป็นปีอื่น หรือไม่ส่งมาเลย (undefined) → ใช้เดือนปัจจุบันแทนเงียบๆ
 // รูปแบบผิด ไม่เรียกฟังก์ชันนี้ — index.js เช็ค isValidMonth แล้วตอบ 400 ไปก่อนแล้ว
 function resolveMonth(month) {
@@ -83,9 +83,8 @@ async function init() {
       console.warn(`ต่อ Upstash ไม่สำเร็จ (${err.message}) — Leaderboard ใช้ไฟล์แทน (คะแนนจะหายเมื่อรีสตาร์ทบน Render)`);
     }
   }
-  // ทำทั้งสองโหมด (ไฟล์/Upstash) เพราะ loadScores/writeScores สลับโหมดให้เองอยู่แล้ว — ไม่ตั้ง env ก็ยังลบของปีก่อนออกจากไฟล์ได้
-  purgeOldYears();
-  if (remote) await flush(); // โหมด Upstash: รอให้เขียนที่ลบแล้วจริงก่อนเปิดรับคน กันข้อมูลเก่าโผล่กลับมาถ้า server ดับกลางทาง
+  // เก็บคะแนนเก่าไว้ตามเดิม; หน้า Leaderboard เลือกแสดงเฉพาะปีปัจจุบัน
+  if (remote) await flush();
 }
 
 // เขียนทั้งก้อนกลับ Upstash เบื้องหลัง · ถ้ามีรอบกำลังเขียนอยู่ ไม่เริ่มซ้อน แต่ทำเครื่องหมายว่ามีของใหม่ให้เขียนซ้ำอีกรอบ
@@ -184,17 +183,6 @@ function backupIfBroken() {
   console.warn(`scores.json เสีย — เก็บสำรองไว้ที่ ${path.basename(backup)} แล้วเริ่มรายการใหม่`);
 }
 
-// ลบคะแนนของปีก่อนทิ้งจากที่เก็บ (ทั้งไฟล์และ Upstash) เรียกครั้งเดียวตอนสตาร์ท — ไม่แตะของปีปัจจุบันเด็ดขาด
-// เหตุผล: Leaderboard แสดงได้แค่ปีปัจจุบัน ข้อมูลเก่าไม่มีทางถูกเห็นอีกแล้ว เก็บไว้เปลืองที่และข้อมูลไม่หมดอายุทิ้งเอง
-function purgeOldYears() {
-  const year = currentMonthKey().slice(0, 4);
-  const rows = loadScores();
-  const kept = rows.filter((r) => typeof r.playedAt === "string" && r.playedAt.startsWith(year));
-  if (kept.length === rows.length) return; // ไม่มีของปีก่อนค้างอยู่ ไม่ต้องเขียนทับเปล่าๆ
-  writeScores(kept);
-  console.log(`Leaderboard: ลบคะแนนปีก่อน ${rows.length - kept.length} แถว (เหลือของปี ${year} ${kept.length} แถว)`);
-}
-
 // เวลาท้องถิ่นของ server แบบ "2026-10-05 20:14" ตาม events.md
 function formatPlayedAt(date) {
   const p = (n) => String(n).padStart(2, "0");
@@ -237,6 +225,12 @@ function saveScore({ name, score, levelReached, board, accountId } = {}, playedA
   }
 }
 
+// Runtime ต้องมี accountId ที่มาจาก Firebase session ซึ่ง Server ตรวจแล้วเท่านั้น
+// saveScore เดิมยังใช้กับการอ่าน/ทดสอบข้อมูลเก่าที่ไม่มี accountId ได้
+function saveVerifiedScore(input) {
+  return typeof input?.accountId === "string" && ACCOUNT_ID_RE.test(input.accountId) ? saveScore(input) : null;
+}
+
 function isValidMonth(month) {
   return typeof month === "string" && MONTH_RE.test(month);
 }
@@ -277,14 +271,15 @@ function bestPerAccount(month = null, board = "solo") {
 }
 
 // 20 อันดับแรก · อันดับไม่ซ้ำกัน นับ 1, 2, 3...
-function getLeaderboard(month = null, board = "solo") {
+function getLeaderboard(month = null, board = "solo", viewerAccountId = null) {
   return {
     month,
     board,
     // ส่งเฉพาะ 4 ช่องที่หน้าจอใช้ ไม่ส่ง id กับเวลาเล่น
     top: bestPerAccount(month, board)
       .slice(0, TOP_LIMIT)
-      .map((r, i) => ({ rank: i + 1, name: r.name, score: r.score, levelReached: r.levelReached })),
+      .map((r, i) => ({ rank: i + 1, name: r.name, score: r.score, levelReached: r.levelReached,
+        ...(viewerAccountId && r.accountId === viewerAccountId ? { isMe: true } : {}) })),
   };
 }
 
@@ -306,4 +301,4 @@ function rankOf({ name, score, levelReached, accountId }) {
   return ahead.length + 1;
 }
 
-module.exports = { init, flush, SCORES_FILE, saveScore, getLeaderboard, rankOf, isValidMonth, isValidBoard, resolveMonth, loadScores, writeScores, formatPlayedAt };
+module.exports = { init, flush, SCORES_FILE, saveScore, saveVerifiedScore, getLeaderboard, rankOf, isValidMonth, isValidBoard, resolveMonth, loadScores, writeScores, formatPlayedAt };

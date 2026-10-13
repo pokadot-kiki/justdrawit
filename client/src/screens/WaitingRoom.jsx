@@ -24,7 +24,7 @@ const TEAM_MIN = TEAM_MIN_PLAYERS; // โหมดทีมต้องมีท
 const TEAM_NAME_MAX = 16;
 const TEAM_BALANCE_MAX_DIFF = 1; // ทีมใหญ่สุดกับเล็กสุดห่างกันได้ไม่เกินเท่านี้คน (server เช็คซ้ำเสมอ)
 
-export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, onEditProfile, onToast }) {
+export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, onEditProfile, onAchievements, onToast }) {
   const [linkCopied, setLinkCopied] = useState(false);
   // กล่องกติกาโชว์เองครั้งแรกที่เข้าห้อง (จำไว้ในเบราว์เซอร์) ครั้งต่อไปกดดูเองได้จากปุ่ม ℹ️ ในหน้าเกม
   const [showRules, setShowRules] = useState(() => !rulesSeen());
@@ -144,10 +144,11 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
         key={player.id}
         className={`lb-player${isMe ? " lb-player--me" : ""}${player.connected === false ? " lb-player--away" : ""}`}
       >
-        <Avatar index={player.avatar} />
+        <Avatar index={player.avatar} photoUrl={player.avatarPhoto} outfit={player.outfit} />
         <span className="lb-player__info">
           <span className="lb-player__name">
             {player.name}
+            {player.title && <small className="player-title">« {player.title} »</small>}
             {player.connected === false && <small> (หลุด กำลังรอ...)</small>}
           </span>
           <span className="lb-player__score">{player.score ?? 0} คะแนน</span>
@@ -258,7 +259,8 @@ export default function WaitingRoom({ room, me, messages = [], onSend, onLeave, 
         <span className="lb-top__code">ห้อง {room.code}</span>
         <span className="lb-top__spacer" />
         <AudioButtons />
-        <ProfileTrigger name={me?.name ?? ""} avatar={me?.avatar ?? 0} onClick={onEditProfile} className="lb-top__me" />
+        {room.settings.mode !== "mpai" && <button type="button" className="btn" onClick={onAchievements}>🏆 Achievements</button>}
+        <ProfileTrigger name={me?.name ?? ""} avatar={me?.avatar ?? 0} avatarPhoto={me?.avatarPhoto} outfit={me?.outfit} title={room.players.find((player) => player.id === me?.playerId)?.title} onClick={onEditProfile} className="lb-top__me" />
         <button type="button" className="btn btn--danger lb-top__leave" onClick={onLeave}>
           <Icon name="door" size={18} /> ออกจากห้อง
         </button>

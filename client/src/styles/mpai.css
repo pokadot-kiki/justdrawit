@@ -310,3 +310,97 @@
   background: var(--green-soft);
   color: #15803d;
 }
+
+/* CHAOS ATTACK stays inside the existing canvas column. Only item cards scroll. */
+.mp-ai .chaos-bar {
+  display: grid;
+  grid-template-columns: minmax(130px, 155px) minmax(0, 1fr);
+  gap: 7px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 7px;
+  border: 3px solid var(--ink);
+  border-radius: var(--r-card);
+  background: #fff3c8;
+  box-shadow: var(--shadow-xs);
+  color: var(--ink);
+}
+
+.chaos-bar__energy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: #ffe7a1;
+  font-size: 11px;
+}
+
+.chaos-bar__energy strong { font-family: var(--font-pixel); font-size: 12px; }
+.chaos-bar__energy b { white-space: nowrap; }
+.chaos-bar__energy small { font-size: 10px; line-height: 1.35; }
+.chaos-bar__notice { display: inline-block; align-self: flex-start; padding: 2px 5px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: #fff; color: #8a4b00; font-size: 11px; font-weight: 800; }
+.chaos-bar__meter { height: 11px; overflow: hidden; border: 2px solid var(--ink); border-radius: 8px; background: #fff; }
+.chaos-bar__meter i { display: block; height: 100%; background: #f6a634; transition: width .2s ease; }
+.chaos-bar__items { display: flex; gap: 7px; width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scroll-snap-type: x proximity; }
+.chaos-item-wrap { flex: 0 0 116px; min-width: 0; scroll-snap-align: start; }
+.chaos-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
+  width: 100%;
+  min-height: 143px;
+  height: 100%;
+  padding: 6px 4px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: #fff9e8;
+  color: var(--ink);
+  text-align: center;
+  cursor: pointer;
+}
+.chaos-item:hover:not(:disabled), .chaos-item--selected { background: #fff0b9; transform: translateY(-1px); }
+.chaos-item:disabled { background: #f3efdf; color: #5e5a57; cursor: not-allowed; }
+.chaos-item-wrap:focus-visible { outline: 3px solid #bd7318; outline-offset: 2px; }
+.chaos-item strong { font-size: 11px; line-height: 1.2; min-height: 27px; }
+.chaos-item__price { padding: 2px 4px; border: 1px solid var(--ink); border-radius: 5px; background: #ffe2a0; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.chaos-item__ability { font-size: 10px; line-height: 1.2; font-weight: 700; }
+.chaos-item__status { width: 100%; padding: 2px; border-radius: 4px; background: #d9f3c9; color: #2f5a27; font-size: 9px; line-height: 1.15; font-style: normal; font-weight: 800; }
+.chaos-item__status--disabled { background: #ece3d0; color: #684e32; }
+.chaos-art { display: block; width: 36px; height: 36px; flex: none; }
+.chaos-bar__message { grid-column: 1 / -1; margin: 0; font-size: 11px; font-weight: 700; }
+.chaos-targets { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+
+.chaos-overlay { position: absolute; inset: 0; z-index: 4; overflow: hidden; pointer-events: none; }
+.chaos-overlay__label { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); padding: 4px 8px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: #fff3c8; color: var(--ink); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.chaos-overlay__blackout { position: absolute; top: 20%; left: 27%; width: 46%; height: 44%; background: #17172f; box-shadow: 0 0 0 3px #333454; }
+.chaos-overlay--ice_canvas { background: rgba(154, 224, 246, .42); }
+.chaos-overlay--shaky_hand { border: 6px dashed #708af7; }
+.chaos-overlay--rainbow_chaos { border: 6px solid #fa7f80; }
+.chaos-overlay__flies i { position: absolute; width: 12px; height: 12px; background: #312b41; box-shadow: 4px 0 #8b6e56, 0 4px #8b6e56; animation: chaos-fly 1.7s ease-in-out infinite alternate; }
+.chaos-overlay__flies i:nth-child(1) { left: 12%; top: 24%; }
+.chaos-overlay__flies i:nth-child(2) { left: 47%; top: 12%; animation-delay: -.7s; }
+.chaos-overlay__flies i:nth-child(3) { left: 71%; top: 48%; animation-delay: -.3s; }
+.chaos-overlay__flies i:nth-child(4) { left: 28%; top: 73%; animation-delay: -1s; }
+.chaos-overlay__flies i:nth-child(5) { left: 81%; top: 80%; animation-delay: -.5s; }
+@keyframes chaos-fly { to { transform: translate(24px, -18px); } }
+
+@media (min-width: 1001px) {
+  .game.mp-ai:not(.mp-ai--gallery) { grid-template-rows: auto auto auto auto; align-content: start; }
+  .game.mp-ai:not(.mp-ai--gallery) .chaos-bar { grid-column: 2; grid-row: 4; }
+  .game.mp-ai:not(.mp-ai--gallery) .game__players,
+  .game.mp-ai:not(.mp-ai--gallery) .game__side { grid-row: 1 / 5; }
+}
+
+@media (max-width: 699px) {
+  .mp-ai .chaos-bar { grid-template-columns: 105px minmax(0, 1fr); gap: 4px; padding: 4px; }
+  .chaos-bar__energy { padding: 4px; font-size: 10px; }
+  .chaos-bar__energy strong { font-size: 10px; }
+  .chaos-item-wrap { flex-basis: 110px; }
+}

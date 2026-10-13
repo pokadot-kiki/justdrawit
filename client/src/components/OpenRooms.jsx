@@ -43,7 +43,7 @@ export default function OpenRooms({ disabled, onJoin }) {
                 <span className="open-room__host">ห้องของ {r.host}</span>
                 <span className="open-room__meta">
                   {r.mode === "team" ? "แข่งทีม" : "แข่งเดี่ยว"} · คำระดับ{difficultyLabel(r.difficulty)} ·{" "}
-                  {r.status === "playing" ? "กำลังเล่น" : "รอผู้เล่น"}
+                  {r.status === "playing" ? "กำลังเล่น" : r.status === "category_selection" ? "กำลังเลือกหมวด" : "รอผู้เล่น"}
                 </span>
                 <span className="open-room__count">
                   {r.players}/{r.maxPlayers}

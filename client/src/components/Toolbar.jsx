@@ -41,6 +41,7 @@ export default function Toolbar({
   // hidePen: shapes_only แสดงปากกา+ยางลบแบบกดไม่ได้ พร้อมคำอธิบาย (server ทิ้งเส้นมือเปล่าทุกครั้ง)
   hidePen = false,
   historyLocked = false,
+  historyDisabled = false,
 }) {
   // colour_fix: กลุ่มเลือกสีใช้ไม่ได้ทั้งกลุ่ม (สีล็อกจาก server แล้ว ไม่ใช่สีที่ผู้ใช้เลือก)
   const colourLocked = Boolean(lockedColor);
@@ -61,7 +62,7 @@ export default function Toolbar({
           className="tool tool--action"
           aria-label="ย้อนกลับ"
           title={historyLocked ? "กติกา ห้ามยกปากกา: ย้อนกลับไม่ได้" : "ย้อนกลับ (⌘Z)"}
-          disabled={locked || !canUndo}
+          disabled={locked || historyDisabled || !canUndo}
           onClick={onUndo}
         >
           <Icon name="undo" size={28} />
@@ -71,7 +72,7 @@ export default function Toolbar({
           className="tool tool--action"
           aria-label="ทำซ้ำ"
           title={historyLocked ? "กติกา ห้ามยกปากกา: ทำซ้ำไม่ได้" : "ทำซ้ำ (⌘⇧Z)"}
-          disabled={locked || !canRedo}
+          disabled={locked || historyDisabled || !canRedo}
           onClick={onRedo}
         >
           <Icon name="redo" size={28} />
@@ -185,7 +186,7 @@ export default function Toolbar({
             </button>
           ))}
         {/* ล้างจอทำทันที ไม่ใช่โหมด จึงไม่ได้ค้างสถานะกดไว้แบบสามปุ่มบน */}
-        <button type="button" className="tool tool--danger" aria-label="ล้างจอ" title={canClearWhileLocked ? "ล้างจอแล้วเริ่มวาดเส้นใหม่" : "ล้างจอ"} disabled={locked && !canClearWhileLocked} onClick={onClear}>
+        <button type="button" className="tool tool--danger" aria-label="ล้างจอ" title={historyDisabled ? "ถูก CHAOS ATTACK: ล้างจอไม่ได้ชั่วคราว" : canClearWhileLocked ? "ล้างจอแล้วเริ่มวาดเส้นใหม่" : "ล้างจอ"} disabled={historyDisabled || (locked && !canClearWhileLocked)} onClick={onClear}>
           <Icon name="trash" size={30} />
         </button>
       </div>

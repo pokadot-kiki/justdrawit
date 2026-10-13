@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const OFFLINE_WAIT_MS = 80; // ย่อค่าผ่าน env สำหรับเทสเท่านั้น
 process.env.MPAI_OFFLINE_WAIT_MS = String(OFFLINE_WAIT_MS);
 const createMpAi = require("../mp-ai");
+const chaos = require("../chaos");
 const { scoreFor } = require("../ai");
 
 function fixture() {
@@ -14,7 +15,7 @@ function fixture() {
   const players = ["a", "b", "c"].map((id) => ({ id, name: id.toUpperCase(), score: 0, connected: true }));
   const watch = { word: "cat", category: "animal", time: 60, hintAt: 30, startedAt: Date.now(), strokes: [], solved: new Map(), eligibleIds: new Set(players.map((p) => p.id)), offlineGrace: new Map(), chat: [] };
   const room = { code: "ROOM", hostId: "a", status: "playing", settings: { rounds: 1 }, players, mp: {
-    token: 1, round: 1, phase: "watch", strokeTimers: [], entries: new Map(players.map((p) => [p.id, { playerId: p.id, name: p.name, drawPoints: 0, guessPoints: 0, left: false }])), watch,
+    token: 1, round: 1, phase: "watch", strokeTimers: [], chaos: chaos.create(players), entries: new Map(players.map((p) => [p.id, { playerId: p.id, name: p.name, drawPoints: 0, guessPoints: 0, left: false }])), watch,
   } };
   const api = createMpAi({ io, rooms: new Map([[room.code, room]]), ai: { scoreFor }, normalize: (s) => s.trim().toLowerCase(), roomState: () => ({}) });
   const guess = (id, text) => api.handleGuess({ data: { pid: id } }, room, players.find((p) => p.id === id), text);

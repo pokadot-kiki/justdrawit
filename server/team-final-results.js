@@ -7,7 +7,10 @@ module.exports = function teamFinalResults(room, teams, scores, names) {
     score: scores[team],
     members: room.teamParticipants
       .filter((p) => p.team === team)
-      .map((p) => ({ playerId: p.playerId, name: p.name, avatar: p.avatar, left: !present.has(p.playerId) })),
+      .map((p) => {
+        const live = room.players.find((player) => player.id === p.playerId);
+        return { playerId: p.playerId, name: live?.name ?? p.name, avatar: live?.avatar ?? p.avatar, avatarPhoto: live ? live.avatarPhoto ?? null : p.avatarPhoto ?? null, outfit: live ? live.outfit ?? null : p.outfit ?? null, title: live ? live.title ?? null : p.title ?? null, left: !present.has(p.playerId) };
+      }),
   })).sort((a, b) => b.score - a.score);
   return {
     teamRanking,

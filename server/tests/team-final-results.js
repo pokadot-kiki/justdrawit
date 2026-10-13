@@ -51,7 +51,8 @@ test("departed starter retains saved name and avatar; result survives later room
   f.room.players = f.room.players.filter((p) => p.id !== departed.playerId);
   const saved = teamFinalResults(f.room, f.teams, f.scores, f.names);
   assert.deepEqual(saved.teamRanking[0].members[1], {
-    playerId: departed.playerId, name: departed.name, avatar: departed.avatar, left: true,
+    playerId: departed.playerId, name: departed.name, avatar: departed.avatar,
+    avatarPhoto: null, outfit: null, title: null, left: true,
   });
   f.room.teamParticipants[1].name = "Changed";
   f.room.players = [];
